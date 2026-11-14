@@ -10,6 +10,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { apiPost, loadFixture, newRunId } from './support/fixture';
+import { openEpubReader, waitForLayoutSettled } from './support/waits';
 
 const EPUB_BYTES = readFileSync(path.join(__dirname, 'assets', 'tiny.epub'));
 const EVIDENCE_DIR = path.join(__dirname, 'visual-evidence', 'reader-selection-menu-fit');
@@ -63,10 +64,8 @@ for (const width of [390, 360]) {
     const bookId = await seedEpub(baseUrl);
     await enableAskNostos(page);
     await page.setViewportSize({ width, height: 800 });
-    await page.goto(`${baseUrl}/read/${bookId}`, { waitUntil: 'domcontentloaded' });
+    await openEpubReader(page, `${baseUrl}/read/${bookId}`);
     const frame = page.frameLocator('#epub-viewer iframe');
-    await frame.locator('p').first().waitFor({ timeout: 45_000 });
-    await page.waitForTimeout(800);
 
     await frame.locator('p').first().evaluate((el) => {
       const doc = el.ownerDocument;
@@ -79,7 +78,7 @@ for (const width of [390, 360]) {
     const bar = page.getByTestId('selection-bar');
     await expect(bar).toBeVisible();
     for (const id of ACTIONS) await expect(page.getByTestId(id)).toBeVisible();
-    await page.waitForTimeout(400);
+    await waitForLayoutSettled(page, '[data-testid="selection-bar"]');
 
     const layout = await bar.evaluate((el, ids) => {
       const style = getComputedStyle(el);

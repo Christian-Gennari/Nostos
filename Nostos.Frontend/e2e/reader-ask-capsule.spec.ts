@@ -10,6 +10,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { apiPost, loadFixture, newRunId } from './support/fixture';
+import { waitForLayoutSettled } from './support/waits';
 
 const EPUB_BYTES = readFileSync(path.join(__dirname, 'assets', 'reader-margins.epub'));
 const EVIDENCE_DIR = path.join(__dirname, 'visual-evidence', 'reader-ask-capsule');
@@ -72,7 +73,7 @@ for (const viewport of [
     const trigger = page.getByTestId('assistant-trigger');
     await expect(trigger).toBeVisible();
     // Wait out the chrome's fade before reading geometry and colours.
-    await page.waitForTimeout(400);
+    await waitForLayoutSettled(page, '[data-testid="reader-layout"]');
 
     const result = await trigger.evaluate((el) => {
       const box = el.getBoundingClientRect();

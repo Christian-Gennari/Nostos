@@ -355,7 +355,7 @@ async function openAssistant(page, { trigger = 'dock' } = {}) {
   }
   const panel = page.locator('[data-testid="assistant-panel"]');
   await panel.waitFor({ state: 'visible' });
-  await page.waitForTimeout(550);
+  await settle(page);
   return panel;
 }
 
@@ -378,13 +378,42 @@ async function context(browser, { width, height, theme, mobile = false }) {
   return ctx;
 }
 
+/**
+ * Waits until the page is visually at rest: no finite CSS animation or
+ * transition is still running and the document box has held still for three
+ * frames. Every capture below used to sleep a few hundred milliseconds hoping
+ * the surface had finished moving; this is the condition that sleep stood for.
+ */
+async function settle(page, selector) {
+  await page.evaluate(async (target) => {
+    const root = target ? document.querySelector(target) ?? document : document;
+    const running = root.getAnimations({ subtree: true }).filter((animation) => {
+      const timing = animation.effect?.getComputedTiming?.();
+      return typeof timing?.endTime === 'number' && Number.isFinite(timing.endTime);
+    });
+    await Promise.all(running.map((animation) => animation.finished.catch(() => undefined)));
+    const element = target ? document.querySelector(target) : document.documentElement;
+    if (!element) return;
+    const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => resolve()));
+    let previous = '';
+    let unchanged = 0;
+    for (let frame = 0; frame < 180 && unchanged < 3; frame += 1) {
+      await nextFrame();
+      const box = element.getBoundingClientRect();
+      const signature = [box.x, box.y, box.width, box.height].join(',');
+      unchanged = signature === previous ? unchanged + 1 : 0;
+      previous = signature;
+    }
+  }, selector);
+}
+
 async function stable(page) {
   // The library keeps an SSE change stream open, so `networkidle` never
-  // arrives. Fonts and one paint are enough for a 1:1 capture.
+  // arrives. Fonts and a settled layout are enough for a 1:1 capture.
   await page.evaluate(async () => {
     await document.fonts.ready;
   }).catch(() => {});
-  await page.waitForTimeout(500);
+  await settle(page);
 }
 
 async function shot(page, name) {
@@ -481,15 +510,15 @@ async function main() {
 
     // Expanded workspace.
     await page.locator('[data-testid="assistant-expand"]').click();
-    await page.waitForTimeout(450);
+    await settle(page);
     await shot(page, '03-library-empty-state-expanded-light');
     await page.locator('[data-testid="assistant-expand"]').click();
-    await page.waitForTimeout(450);
+    await settle(page);
 
     // A turn with numbered citations.
     await rawTurn(page, 'What do my notes say about attention?');
     await page.getByTestId('assistant-entry-sources').first().waitFor({ timeout: 20_000 });
-    await page.waitForTimeout(500);
+    await settle(page);
     await shot(page, '04-turn-citations-light');
     await measure(page, 'assistant-answer-light', {
       reply: '.entry-assistant .entry-text',
@@ -501,7 +530,7 @@ async function main() {
     // An applied changeset with Undo.
     await rawTurn(page, 'Move my Le Guin books into a new collection.');
     await page.getByTestId('assistant-changeset-undo').waitFor({ timeout: 20_000 });
-    await page.waitForTimeout(400);
+    await settle(page);
     await shot(page, '05-changed-card-light');
     await measure(page, 'changeset-applied-light', {
       card: '.changeset',
@@ -514,12 +543,12 @@ async function main() {
     await rawTurn(page, 'Regroup everything into Fiction and Essays.');
     await page.getByTestId('assistant-changeset-details-toggle').last().waitFor({ timeout: 20_000 });
     await page.getByTestId('assistant-changeset-details-toggle').last().click();
-    await page.waitForTimeout(300);
+    await settle(page);
     await shot(page, '06-review-card-light');
 
     await rawTurn(page, 'Which book should I read next?');
     await page.locator('.entry-error .entry-text').last().waitFor({ timeout: 20_000 });
-    await page.waitForTimeout(300);
+    await settle(page);
     await shot(page, '07-error-retryable-light');
     await measure(page, 'assistant-error-light', {
       entry: '.entry-error',
@@ -559,7 +588,7 @@ async function main() {
     await openAssistant(page);
     await rawTurn(page, 'Regroup everything into Fiction and Essays.');
     await page.getByTestId('assistant-changeset').waitFor({ timeout: 20_000 });
-    await page.waitForTimeout(600);
+    await settle(page);
     await shot(page, '06b-review-card-long-light');
     MEASUREMENTS['review-long-light'] = await page.evaluate(() => {
       const body = document.querySelector('[data-testid="assistant-body"]');
@@ -589,7 +618,7 @@ async function main() {
     await openAssistant(page);
     await rawTurn(page, 'What have I been reading lately?');
     await page.locator('.entry-error').waitFor({ timeout: 20_000 });
-    await page.waitForTimeout(300);
+    await settle(page);
     await shot(page, '08-error-no-provider-light');
     await ctx.close();
   }
@@ -612,7 +641,7 @@ async function main() {
     await shot(page, '09-library-empty-state-dark');
     await rawTurn(page, 'What do my notes say about attention?');
     await page.getByTestId('assistant-entry-sources').first().waitFor({ timeout: 20_000 });
-    await page.waitForTimeout(400);
+    await settle(page);
     await shot(page, '10-turn-citations-dark');
     await measure(page, 'assistant-answer-dark', {
       panel: '.assistant-panel',
@@ -655,7 +684,7 @@ async function main() {
     await openAssistant(page);
     await rawTurn(page, 'Keep this thought: a library is a record of attention.');
     await page.getByTestId('assistant-anchor-prompt').waitFor({ timeout: 20_000 });
-    await page.waitForTimeout(300);
+    await settle(page);
     await shot(page, '11-anchor-prompt-light');
     await ctx.close();
   }
@@ -678,7 +707,7 @@ async function main() {
     await openAssistant(page);
     await rawTurn(page, 'What have I been reading lately?');
     await page.getByTestId('assistant-pending').waitFor({ timeout: 20_000 });
-    await page.waitForTimeout(500);
+    await settle(page);
     await shot(page, '12-pending-light');
     await ctx.close();
   }
@@ -708,11 +737,11 @@ async function main() {
 
     await page.goto(`${BASE}/read/${bookId}`, { waitUntil: 'domcontentloaded' });
     await page.frameLocator('#epub-viewer iframe').locator('p').first().waitFor({ timeout: 45_000 });
-    await page.waitForTimeout(800);
+    await settle(page);
 
     await page.getByTestId('reader-chrome-reveal').focus();
     await page.keyboard.press('Enter');
-    await page.waitForTimeout(500);
+    await settle(page);
     await shot(page, '13-reader-capsule-light');
     await measure(page, 'reader-capsule-light', {
       capsule: '.assistant-trigger .trigger-capsule',
@@ -736,15 +765,15 @@ async function main() {
       el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, button: 0 }));
     });
     await page.locator('[data-testid="selection-menu"]').waitFor({ timeout: 15_000 });
-    await page.waitForTimeout(300);
+    await settle(page);
     await shot(page, '14-selection-menu-light');
 
     // The panel, opened from the capsule, with the reader's starter questions.
     await page.keyboard.press('Escape');
-    await page.waitForTimeout(300);
+    await settle(page);
     await page.locator('[data-testid="assistant-trigger"]').first().click();
     await page.locator('[data-testid="assistant-panel"]').waitFor({ state: 'visible' });
-    await page.waitForTimeout(600);
+    await settle(page);
     await shot(page, '15-reader-empty-state-light');
     await ctx.close();
   }
@@ -819,11 +848,11 @@ async function main() {
     await shot(page, '21-library-empty-state-phone-light');
     await rawTurn(page, 'What do my notes say about attention?');
     await page.getByTestId('assistant-entry-sources').first().waitFor({ timeout: 20_000 });
-    await page.waitForTimeout(400);
+    await settle(page);
     await shot(page, '22-turn-citations-phone-light');
     await rawTurn(page, 'Move my Le Guin books into a new collection.');
     await page.getByTestId('assistant-changeset-undo').waitFor({ timeout: 20_000 });
-    await page.waitForTimeout(400);
+    await settle(page);
     await shot(page, '23-changed-card-phone-light');
     await ctx.close();
   }
@@ -855,7 +884,7 @@ async function main() {
     });
     await rawTurn(page, 'What have I been reading lately?');
     await page.locator('.entry-error').waitFor({ timeout: 20_000 });
-    await page.waitForTimeout(300);
+    await settle(page);
     await shot(page, '25-error-allowance-phone-dark');
     await ctx.close();
   }
@@ -878,10 +907,10 @@ async function main() {
 
     await page.goto(`${BASE}/read/${bookId}`, { waitUntil: 'domcontentloaded' });
     await page.frameLocator('#epub-viewer iframe').locator('p').first().waitFor({ timeout: 45_000 });
-    await page.waitForTimeout(800);
+    await settle(page);
     await page.getByTestId('reader-chrome-reveal').focus();
     await page.keyboard.press('Enter');
-    await page.waitForTimeout(500);
+    await settle(page);
     await shot(page, '26-reader-capsule-phone-dark');
 
     await page.frameLocator('#epub-viewer iframe').locator('p').first().evaluate((el) => {
@@ -900,7 +929,7 @@ async function main() {
       el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, button: 0 }));
     });
     await page.locator('[data-testid="selection-bar"]').waitFor({ timeout: 15_000 }).catch(() => {});
-    await page.waitForTimeout(400);
+    await settle(page);
     await shot(page, '27-selection-bar-phone-dark');
     await ctx.close();
   }
@@ -916,7 +945,7 @@ async function main() {
     const paletteInput = page.getByPlaceholder('Search everything…');
     await paletteInput.waitFor({ timeout: 15_000 }).catch(() => {});
     await paletteInput.fill('attention').catch(() => {});
-    await page.waitForTimeout(500);
+    await settle(page);
     await shot(page, '28-command-palette-light');
     await ctx.close();
   }

@@ -1,6 +1,9 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
 
+import { apiDelete } from './support/brain-fixture';
 import { apiGet, apiPost, loadFixture } from './support/fixture';
+import { STUDIO_PAGE_SELECTOR } from './support/studio-editor';
+import { waitForLayoutSettled } from './support/waits';
 
 /**
  * Issue #1220 on the real backend: highlights imported from a Kindle arrive
@@ -48,8 +51,23 @@ async function freshPage(browser: Browser, baseURL: string, viewport = { width: 
 test('imported highlights start a draft with their sources (issue #1220)', async ({ browser }) => {
   const { baseUrl } = loadFixture();
 
-  const writings = await apiGet<unknown[]>(baseUrl, '/api/writings');
-  test.skip(writings.length > 0, 'The empty-Studio offer needs a library with no writings; run this spec on its own fixture.');
+  // The empty-Studio offer only exists while the library has no writings, and
+  // every spec shares one backend. Clear them here instead of skipping: the
+  // fixture is disposable, earlier specs have finished with their own, and
+  // this spec creates the only writing it needs. The two books the clippings
+  // name go too, so a repeat run imports them afresh instead of reporting
+  // "nothing new".
+  for (const writing of await apiGet<{ id: string }[]>(baseUrl, '/api/writings')) {
+    await apiDelete(baseUrl, `/api/writings/${writing.id}`);
+  }
+  expect(await apiGet<unknown[]>(baseUrl, '/api/writings')).toHaveLength(0);
+  const library = await apiGet<{ items: { id: string; title: string }[] }>(
+    baseUrl,
+    '/api/books?pageSize=200',
+  );
+  for (const book of library.items.filter((item) => [MEDITATIONS, ESSAYS].includes(item.title))) {
+    await apiDelete(baseUrl, `/api/books/${book.id}`);
+  }
 
   for (const title of [MEDITATIONS, ESSAYS]) {
     const author = PASSAGES.find((passage) => passage.book === title)!.author;
@@ -59,8 +77,9 @@ test('imported highlights start a draft with their sources (issue #1220)', async
   // Import My Clippings.txt from Settings.
   const importer = await freshPage(browser, baseUrl);
   await importer.goto('/settings?section=import');
-  await importer.getByTestId('highlight-import-action').click();
-  await importer.getByTestId('highlight-import-input').setInputFiles({
+  // The Import section routes a dropped or chosen file to its own flow; My
+  // Clippings.txt is read as highlights.
+  await importer.getByTestId('import-drop-zone-input').setInputFiles({
     name: 'My Clippings.txt',
     mimeType: 'text/plain',
     buffer: Buffer.from(clippings(), 'utf8'),
@@ -93,7 +112,8 @@ test('imported highlights start a draft with their sources (issue #1220)', async
   for (const passage of PASSAGES) {
     await expect(importer.getByText(passage.text, { exact: false }).first()).toBeVisible();
   }
-  await importer.waitForTimeout(500);
+  // The draft has rendered; capture it at rest.
+  await waitForLayoutSettled(importer, STUDIO_PAGE_SELECTOR);
   await importer.screenshot({ path: `${EVIDENCE}/draft-opened-desktop-light.png` });
 
   const draft = await apiGet<{ name: string; content: string }>(baseUrl, `/api/writings/${writingId}`);

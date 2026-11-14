@@ -15,6 +15,7 @@ import { expect, type Page } from '@playwright/test';
 import JSZip from 'jszip';
 
 import { apiGet, apiPost, apiPut, loadFixture } from './fixture';
+import { waitForRenditionSize, waitUntilStable } from './waits';
 
 const PARAGRAPHS = 1000;
 const SUBCHAPTERS = 5;
@@ -125,12 +126,12 @@ async function targetOnVisiblePage(page: Page): Promise<{ onPage: boolean; detai
 
 /**
  * Seed a saved position near the end of the long chapter, open the reader,
- * optionally force resizes during the opening, wait for quiet, and check the
- * page and the saved progress.
+ * optionally re-layout the reader box while the opening is still settling,
+ * wait for the page to hold still, and check the page and the saved progress.
  */
 export async function expectRestoreLandsOnSavedPage(
   page: Page,
-  resizesAtMs: number[] = [],
+  resizesDuringOpening = 0,
 ): Promise<void> {
   const { baseUrl } = loadFixture();
   const { bytes, targetCfi } = await buildLongEpub();
@@ -148,18 +149,32 @@ export async function expectRestoreLandsOnSavedPage(
   await page.goto(`${baseUrl}/read/${bookId}`, { waitUntil: 'domcontentloaded' });
   const frame = page.frameLocator('#epub-viewer iframe');
   await frame.locator('p').first().waitFor({ timeout: 45_000 });
-  const opened = Date.now();
-  for (const at of resizesAtMs) {
-    await page.waitForTimeout(Math.max(0, at - (Date.now() - opened)));
+
+  // Re-layout the reader box while it is still opening (#1271). Every resize
+  // waits for the rendition to adopt the new box, so this is a fixed number of
+  // real re-layouts rather than a race against a wall clock.
+  for (let resize = 0; resize < resizesDuringOpening; resize += 1) {
+    await waitForRenditionSize(page);
     await page.setViewportSize({ width: viewport.width, height: viewport.height - 40 });
-    await page.waitForTimeout(30);
+    await waitForRenditionSize(page);
     await page.setViewportSize(viewport);
+    await waitForRenditionSize(page);
   }
 
-  // Two seconds of quiet after the opening churn.
-  await page.waitForTimeout(2_500);
+  // The saved page is what the opening restore puts on screen.
   await frame.locator(`#p${TARGET_PARAGRAPH}`).waitFor({ state: 'attached' });
-  const landed = await targetOnVisiblePage(page);
+  await expect
+    .poll(async () => (await targetOnVisiblePage(page)).onPage, {
+      timeout: 30_000,
+      message: 'the reader restored the saved page',
+    })
+    .toBe(true);
+  // ...and no later re-layout moves it: the re-anchor after a resize reports
+  // no completion, so wait for the page the reader shows to hold still.
+  const landed = await waitUntilStable(() => targetOnVisiblePage(page), {
+    quietMs: 500,
+    description: 'the restored page',
+  });
   expect(landed.onPage, landed.detail).toBe(true);
 
   const saved = await apiGet<any>(baseUrl, `/api/books/${bookId}`);

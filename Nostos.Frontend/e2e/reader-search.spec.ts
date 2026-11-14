@@ -191,8 +191,10 @@ test.describe('unified reader search', () => {
 
     await page.goto(`${baseUrl}/read/${bookId}`, { waitUntil: 'domcontentloaded' });
     await page.locator('#viewerContainer canvas').first().waitFor({ timeout: 60_000 });
-    // Capability detection samples this single page. Give its async text-content
-    // read a short settle, then prove both click and keyboard surfaces stay shut.
+    // Capability detection samples this single page. Its async text-content read
+    // lives inside the PDF reader and reports nothing to the page, so a short
+    // fixed settle is the only way to let it finish before proving that both
+    // click and keyboard surfaces stay shut (a scanned book has no search).
     await page.waitForTimeout(800);
 
     const toggle = page.getByTestId('reader-search-toggle');

@@ -14,6 +14,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
 import { apiPost, loadFixture, newRunId } from './support/fixture';
+import { waitForLayoutSettled } from './support/waits';
 
 test.use({ serviceWorkers: 'block' });
 
@@ -33,7 +34,7 @@ async function openEditBook(page: Page, baseUrl: string, bookId: string): Promis
   await page.getByText('Book details', { exact: true }).click();
   await expect(page.locator('app-dialog-actions')).toBeVisible();
   // The sheet animates in; measure the settled layout.
-  await page.waitForTimeout(400);
+  await waitForLayoutSettled(page, '[role="dialog"], .dialog-card, app-dialog-actions');
 }
 
 test.describe('Edit book footer on a phone', () => {

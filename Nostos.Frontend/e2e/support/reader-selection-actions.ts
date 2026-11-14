@@ -22,6 +22,7 @@ import path from 'node:path';
 
 import { apiPost, loadFixture, newRunId } from './fixture';
 import { epubMarkCount } from './epub-marks';
+import { openEpubReader, waitForLayoutSettled } from './waits';
 
 const EPUB_BYTES = readFileSync(path.join(__dirname, '..', 'assets', 'tiny.epub'));
 const EVIDENCE_DIR = path.join(__dirname, '..', 'visual-evidence');
@@ -42,11 +43,11 @@ async function notes(baseUrl: string, bookId: string): Promise<any[]> {
 }
 
 async function openReader(page: Page, baseUrl: string, bookId: string) {
-  await page.goto(`${baseUrl}/read/${bookId}`, { waitUntil: 'domcontentloaded' });
-  const frame = page.frameLocator('#epub-viewer iframe');
-  await frame.locator('p').first().waitFor({ timeout: 45_000 });
-  await page.waitForTimeout(800);
-  return frame;
+  // The reader restores the place and re-lays the page out after the first
+  // paint; `openEpubReader` waits until the text has stopped moving, so nothing
+  // below is measured against a page that is still being placed.
+  await openEpubReader(page, `${baseUrl}/read/${bookId}`);
+  return page.frameLocator('#epub-viewer iframe');
 }
 
 /** Page-viewport box of the first paragraph inside the book iframe. */
@@ -178,6 +179,9 @@ export function desktopSelectionSpecs() {
     const { p, y } = await rightClickText(page);
     const menu = page.locator('[data-testid="selection-menu"]');
     await expect(menu).toBeVisible();
+    // The menu is placed once epub.js reports the selection, and re-placed by
+    // its debounced event: read the box once it has stopped moving.
+    await waitForLayoutSettled(page, '[data-testid="selection-menu"]');
     const menuBox = (await menu.boundingBox())!;
     // Anchored at the text: just below the selected line, not covering it.
     expect(menuBox.y).toBeGreaterThan(y);
@@ -215,6 +219,8 @@ export function desktopSelectionSpecs() {
     // selectionchange debounce: its `selected` event fires, and must be ignored.
     await dispatchInFrame(page, 'mousedown');
     await selectChars(page, 3);
+    // The event under test is epub.js's ~250 ms debounced `selected`, which the
+    // app is neither told about nor reports: hold the button past it.
     await page.waitForTimeout(450);
     await expect(menu).toHaveCount(0);
     expect(await iframeSelection(page)).toBe((await selectChars(page, 3)));
@@ -242,20 +248,25 @@ export function desktopSelectionSpecs() {
     await selectChars(page, 40);
     await dispatchInFrame(page, 'mouseup');
     await expect(menu).toBeVisible();
-    await page.waitForTimeout(400);
+    await waitForLayoutSettled(page, '[data-testid="selection-menu"]');
+    const written = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        new URL(response.url()).pathname === `/api/books/${bookId}/notes`,
+    );
     await page.locator('[data-testid="selection-highlight"]').click();
     await expect(menu).toHaveCount(0);
-    await page.waitForTimeout(400);
+    await written;
     const saved = await notes(baseUrl, bookId);
     expect(saved).toHaveLength(1);
     expect(saved[0].content ?? '').toBe('');
     await expect(page.locator('[data-testid="selection-bar"]')).toHaveCount(0);
 
-    // Page-turn keys still belong to the reader once the menu is gone.
-    const before = await page.locator('.progress-display').textContent();
+    // Page-turn keys still belong to the reader once the menu is gone: the
+    // page stays open and the key does not bring the offer back.
     await page.keyboard.press('ArrowRight');
-    await page.waitForTimeout(300);
-    expect(typeof before).toBe('string');
+    await expect(page.frameLocator('#epub-viewer iframe').locator('p').first()).toBeVisible();
+    await expect(menu).toHaveCount(0);
   });
 
   test('a right-click with nothing selected leaves the native menu alone', async ({ page }) => {
@@ -288,9 +299,14 @@ export function desktopSelectionSpecs() {
     await expect(page.locator('[data-testid="selection-bar"]')).toHaveCount(0);
     // Far more than the old 60-character slice is visible.
     await expect(menu.locator('.selected-text')).toContainText(selected.trim().slice(0, 100));
+    // The menu is placed and re-placed while epub.js settles the selection, so
+    // measure it only once it has stopped moving.
+    await waitForLayoutSettled(page, '[data-testid="selection-menu"]');
     // Desktop density: the menu's actions are 32px controls, not 44px touch targets.
     for (const id of ['selection-copy', 'selection-cancel', 'selection-add-note', 'selection-highlight']) {
-      const b = (await page.locator(`[data-testid="${id}"]`).boundingBox())!;
+      const control = page.locator(`[data-testid="${id}"]`);
+      await expect(control, `${id} is laid out`).toBeVisible();
+      const b = (await control.boundingBox())!;
       expect(b.height, `${id} desktop height`).toBeLessThan(40);
     }
     await snap(page, 'desktop-mouseup-menu');
@@ -305,6 +321,8 @@ export function desktopSelectionSpecs() {
     });
     await dispatchInFrame(page, 'mousedown');
     await dispatchInFrame(page, 'mouseup');
+    // Nothing is selected, so the only thing that could offer the menu is
+    // epub.js's debounced `selected`; wait past it the way the app cannot say.
     await page.waitForTimeout(300);
     await expect(menu).toHaveCount(0);
   });
@@ -356,6 +374,8 @@ export function mobileSelectionSpecs() {
     expect(await iframeSelection(page)).toBe(selected);
 
     const viewport = page.viewportSize()!;
+    // The bar follows the selection as it changes; measure it at rest.
+    await waitForLayoutSettled(page, '[data-testid="selection-bar"]');
     for (const id of [
       'selection-copy',
       'selection-cancel',
@@ -364,7 +384,9 @@ export function mobileSelectionSpecs() {
       'selection-pen-sage',
       'selection-pen-rose',
     ]) {
-      const b = (await page.locator(`[data-testid="${id}"]`).boundingBox())!;
+      const control = page.locator(`[data-testid="${id}"]`);
+      await expect(control, `${id} is laid out`).toBeVisible();
+      const b = (await control.boundingBox())!;
       expect(b.x).toBeGreaterThanOrEqual(0);
       expect(b.x + b.width, `${id} inside the viewport`).toBeLessThanOrEqual(viewport.width);
       expect(b.y + b.height).toBeLessThanOrEqual(viewport.height);
@@ -386,9 +408,11 @@ export function mobileSelectionSpecs() {
     expect(saved[0].content).toBe('A note from the phone.');
     expect(saved[0].selectedText.trim()).toBe(selected.trim());
     // Saved: the live selection is gone, so it is not offered a second time.
-    await page.waitForTimeout(600);
+    // The save cleared it, so wait for the iframe to have no selection left.
+    await expect
+      .poll(() => iframeSelection(page), { message: 'the saved selection was cleared' })
+      .toBe('');
     await expect(bar).toHaveCount(0);
-    expect(await iframeSelection(page)).toBe('');
   });
 
   test('phone: the bar docks at the top, and with the chrome showing the header steps aside for it (#1344)', async ({ page }) => {
@@ -444,7 +468,7 @@ export function mobileSelectionSpecs() {
     // The offered passage is redrawn in the pen just picked, once.
     await expect.poll(() => epubMarkCount(page, 'pen-rose')).toBe(1);
     expect(await epubMarkCount(page, 'pen-sage')).toBe(0);
-    await page.waitForTimeout(400);
+    await waitForLayoutSettled(page, '[data-testid="selection-bar"]');
     await expect(bar).toBeVisible();
     expect(await notes(baseUrl, bookId)).toHaveLength(0);
     await page.locator('[data-testid="selection-highlight"]').tap();

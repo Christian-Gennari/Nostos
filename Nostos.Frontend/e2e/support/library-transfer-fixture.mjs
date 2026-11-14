@@ -26,38 +26,36 @@
  *
  * State lives in e2e/support/library-transfer-fixture-state.json.
  */
-import { spawn, spawnSync } from 'node:child_process';
-import { deflateRawSync } from 'node:zlib';
 import {
-  closeSync,
   existsSync,
-  mkdirSync,
   mkdtempSync,
-  openSync,
   readFileSync,
   rmSync,
   writeFileSync,
-  copyFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import net from 'node:net';
 import crypto from 'node:crypto';
 
+import {
+  DIST_BROWSER,
+  E2E_DIR,
+  createLogger,
+  ensureBuilds,
+  freePort,
+  preserveBackendLog,
+  spawnBackend as spawnHostBackend,
+  stopProcess,
+  waitForHealthy,
+  waitForPortFree,
+} from './host-launcher.mjs';
+
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const E2E_DIR = path.resolve(HERE, '..');
-const FRONTEND_DIR = path.resolve(E2E_DIR, '..');
-const REPO_ROOT = path.resolve(FRONTEND_DIR, '..');
-const BACKEND_DIR = path.join(REPO_ROOT, 'Nostos.Backend');
 const STATE_FILE = path.join(HERE, 'library-transfer-fixture-state.json');
 const TEST_RESULTS = path.join(E2E_DIR, 'test-results', 'library-transfer');
 
-const DLL = path.join(BACKEND_DIR, 'bin', 'Debug', 'net10.0', 'Nostos.Backend.dll');
-const DIST_BROWSER = path.join(FRONTEND_DIR, 'dist', 'Nostos.Frontend', 'browser');
-
 const CHUNK_SIZE_BYTES = 4 * 1024 * 1024; // contract minimum: >= 5 chunks for a 17 MiB archive
-const HEALTH_TIMEOUT_MS = 240_000;
 
 // Only the immutable export source is global. Every mutating scenario
 // launches its own fresh destination on demand so browser projects and repeat
@@ -66,9 +64,7 @@ const BASE_INSTANCES = {
   source: 'a',
 };
 
-function log(...args) {
-  console.log('[lt-fixture]', ...args);
-}
+const log = createLogger('lt-fixture');
 
 function readState() {
   if (!existsSync(STATE_FILE)) return { instances: {} };
@@ -79,116 +75,27 @@ function writeState(state) {
   writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
 }
 
-function freePort() {
-  return new Promise((resolve, reject) => {
-    const server = net.createServer();
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => {
-      const { port } = server.address();
-      server.close(() => resolve(port));
-    });
-  });
-}
-
-async function waitForHealthy(baseUrl, timeoutMs = HEALTH_TIMEOUT_MS) {
-  const deadline = Date.now() + timeoutMs;
-  let lastErr = null;
-  while (Date.now() < deadline) {
-    try {
-      const res = await fetch(`${baseUrl}/api/books?pageSize=1`);
-      if (res.ok) return;
-      lastErr = new Error(`HTTP ${res.status}`);
-    } catch (err) {
-      lastErr = err;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 300));
-  }
-  throw new Error(`Backend at ${baseUrl} not healthy within ${timeoutMs}ms (${lastErr})`);
-}
-
-async function waitForPortFree(port, timeoutMs = 30_000) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const free = await new Promise((resolve) => {
-      const server = net.createServer();
-      server.once('error', () => resolve(false));
-      server.listen(port, '127.0.0.1', () => server.close(() => resolve(true)));
-    });
-    if (free) return;
-    await new Promise((resolve) => setTimeout(resolve, 300));
-  }
-  throw new Error(`Port ${port} did not free within ${timeoutMs}ms`);
-}
-
-function build() {
-  if (process.env.E2E_SKIP_BUILDS === '1') {
-    for (const [label, p] of [
-      ['backend DLL', DLL],
-      ['Angular dist index', path.join(DIST_BROWSER, 'index.html')],
-    ]) {
-      if (!existsSync(p)) throw new Error(`E2E_SKIP_BUILDS=1 but ${label} missing at ${p}`);
-    }
-    log('E2E_SKIP_BUILDS=1: reusing existing build artifacts');
-    return;
-  }
-
-  log('building backend (dotnet build -c Debug)...');
-  const backend = spawnSync(
-    'dotnet',
-    ['build', path.join(BACKEND_DIR, 'Nostos.Backend.csproj'), '-c', 'Debug', '--nologo', '-v', 'q'],
-    { stdio: 'inherit', timeout: 600_000 },
-  );
-  if (backend.status !== 0) throw new Error(`dotnet build failed (exit ${backend.status})`);
-  if (!existsSync(DLL)) throw new Error(`Backend DLL not found: ${DLL}`);
-
-  log('building Angular frontend (npm run build)...');
-  const frontend = spawnSync('npm', ['run', 'build'], {
-    cwd: FRONTEND_DIR,
-    stdio: 'inherit',
-    timeout: 900_000,
-  });
-  if (frontend.status !== 0) throw new Error(`npm run build failed (exit ${frontend.status})`);
-  if (!existsSync(path.join(DIST_BROWSER, 'index.html'))) {
-    throw new Error(`Angular build output missing index.html at ${DIST_BROWSER}`);
-  }
-}
-
 function spawnBackend(instance) {
-  const logFd = openSync(path.join(instance.tempDir, 'backend.log'), 'a');
-  let child;
-  try {
-    child = spawn(
-      'dotnet',
-      [DLL, '--contentRoot', instance.tempDir, '--urls', `http://127.0.0.1:${instance.port}`],
-      {
-        env: {
-          ...process.env,
-          ASPNETCORE_ENVIRONMENT: 'Production',
-          DOTNET_NOLOGO: '1',
-          Logging__LogLevel__Default: process.env.LT_LOG_LEVEL ?? 'Warning',
-          // 4 MiB chunking: the contract minimum, forcing >= 5 chunks on the
-          // ~17.5 MiB synthetic archive. Margins are zeroed for disposable roots.
-          Storage__ChunkBytes: String(CHUNK_SIZE_BYTES),
-          Storage__MinChunkBytes: String(CHUNK_SIZE_BYTES),
-          Storage__MaxChunkBytes: String(CHUNK_SIZE_BYTES),
-          Storage__DiskSafetyMarginBytes: '0',
-          Storage__DiskSafetyMarginPercent: '0',
-          // Make the post-activation derived rebuild prompt so the browser
-          // suite can assert the NEW generation is indexed without waiting a
-          // production startup delay.
-          ActivationMaintenance__StartupDelaySeconds: '1',
-          ActivationMaintenance__DerivedRebuildIntervalSeconds: '2',
-        },
-        stdio: ['ignore', logFd, logFd],
-        detached: true,
-      },
-    );
-  } finally {
-    closeSync(logFd);
-  }
-  child.unref();
-  child.on('error', (err) => log(`[${instance.name}] spawn error: ${err.message}`));
-  return child;
+  return spawnHostBackend({
+    tempDir: instance.tempDir,
+    port: instance.port,
+    log,
+    env: {
+      Logging__LogLevel__Default: process.env.LT_LOG_LEVEL ?? 'Warning',
+      // 4 MiB chunking: the contract minimum, forcing >= 5 chunks on the
+      // ~17.5 MiB synthetic archive. Margins are zeroed for disposable roots.
+      Storage__ChunkBytes: String(CHUNK_SIZE_BYTES),
+      Storage__MinChunkBytes: String(CHUNK_SIZE_BYTES),
+      Storage__MaxChunkBytes: String(CHUNK_SIZE_BYTES),
+      Storage__DiskSafetyMarginBytes: '0',
+      Storage__DiskSafetyMarginPercent: '0',
+      // Make the post-activation derived rebuild prompt so the browser
+      // suite can assert the NEW generation is indexed without waiting a
+      // production startup delay.
+      ActivationMaintenance__StartupDelaySeconds: '1',
+      ActivationMaintenance__DerivedRebuildIntervalSeconds: '2',
+    },
+  });
 }
 
 function newInstance(name, seed) {
@@ -610,7 +517,7 @@ async function launchInstance(name, seed = 'none') {
 }
 
 async function launchAll() {
-  build();
+  ensureBuilds(log);
   // Self-heal a crashed previous run: stop and drop anything still recorded.
   const stale = readState();
   if (Object.keys(stale.instances ?? {}).length > 0) {
@@ -645,14 +552,17 @@ async function restartInstance(name, { hard = false } = {}) {
   if (!instance) throw new Error(`Unknown instance '${name}'.`);
   log(`restarting '${name}' (pid ${instance.backendPid}, hard=${hard}) over ${instance.tempDir}`);
   if (instance.backendPid) {
-    try {
+    if (hard) {
       // A hard restart simulates a crash: SIGKILL, no graceful shutdown wait.
-      process.kill(instance.backendPid, hard ? 'SIGKILL' : 'SIGTERM');
-    } catch (err) {
-      log(`pid ${instance.backendPid} already gone: ${err.message}`);
+      try {
+        process.kill(instance.backendPid, 'SIGKILL');
+      } catch (err) {
+        log(`pid ${instance.backendPid} already gone: ${err.message}`);
+      }
+    } else {
+      await stopProcess(instance.backendPid, { graceMs: 1_200, log });
     }
   }
-  await new Promise((resolve) => setTimeout(resolve, hard ? 200 : 1_200));
   await waitForPortFree(instance.port);
   const child = spawnBackend(instance);
   instance.backendPid = child.pid;
@@ -671,28 +581,8 @@ async function killInstance(name, { preserveRoot = false } = {}) {
     return;
   }
   log(`stopping '${name}' (pid ${instance.backendPid})`);
-  if (instance.backendPid) {
-    try {
-      process.kill(instance.backendPid, 'SIGTERM');
-    } catch {
-      // already gone
-    }
-    await new Promise((resolve) => setTimeout(resolve, 1_500));
-    try {
-      process.kill(instance.backendPid, 'SIGKILL');
-    } catch {
-      // already gone
-    }
-  }
-  const logPath = path.join(instance.tempDir, 'backend.log');
-  if (existsSync(logPath)) {
-    try {
-      mkdirSync(TEST_RESULTS, { recursive: true });
-      copyFileSync(logPath, path.join(TEST_RESULTS, `backend-${name}.log`));
-    } catch (err) {
-      log(`could not preserve ${name} log: ${err.message}`);
-    }
-  }
+  await stopProcess(instance.backendPid, { graceMs: 1_500, log });
+  preserveBackendLog(instance.tempDir, TEST_RESULTS, `backend-${name}.log`, log);
   if (!preserveRoot && process.env.E2E_KEEP_FIXTURE !== '1') {
     rmSync(instance.tempDir, { recursive: true, force: true });
   }

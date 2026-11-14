@@ -9,6 +9,12 @@ import path from 'node:path';
 
 import { apiPost, loadFixture, newRunId } from './support/fixture';
 import { epubMarkCount } from './support/epub-marks';
+import {
+  openEpubReader,
+  waitForLayoutSettled,
+  waitForRenditionSize,
+  waitUntilStable,
+} from './support/waits';
 
 const EPUB_BYTES = readFileSync(path.join(__dirname, 'assets', 'reader-margins.epub'));
 const EVIDENCE_DIR = path.join(__dirname, 'visual-evidence');
@@ -39,10 +45,28 @@ function countNoteRequests(page: Page, bookId: string) {
   return seen;
 }
 
+/** Opens the book and waits for the one notes read and the one topics read it makes. */
 async function open(page: Page, baseUrl: string, bookId: string) {
-  await page.goto(`${baseUrl}/read/${bookId}`, { waitUntil: 'domcontentloaded' });
-  await page.frameLocator('#epub-viewer iframe').locator('p').first().waitFor({ timeout: 45_000 });
-  await page.waitForTimeout(800);
+  const reads = waitForBookReads(page, bookId);
+  await openEpubReader(page, `${baseUrl}/read/${bookId}`);
+  await reads;
+}
+
+/** The notes list and the topics browse the reader issues when a book opens. */
+function waitForBookReads(page: Page, bookId: string): Promise<unknown> {
+  const notes = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return response.request().method() === 'GET' && url.pathname === `/api/books/${bookId}/notes`;
+  });
+  const topics = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      response.request().method() === 'GET' &&
+      url.pathname === '/api/notes' &&
+      url.searchParams.has('bookId')
+    );
+  });
+  return Promise.all([notes, topics]);
 }
 
 async function highlightFirstWords(page: Page, chars: number) {
@@ -60,7 +84,9 @@ async function highlightFirstWords(page: Page, chars: number) {
     el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, button: 0 })));
   const menu = page.locator('[data-testid="selection-menu"]');
   await expect(menu).toBeVisible();
-  await page.waitForTimeout(400);
+  // epub.js re-places the menu from its debounced selection event; click once
+  // the surface has stopped moving.
+  await waitForLayoutSettled(page, '[data-testid="selection-menu"]');
   await page.locator('[data-testid="selection-highlight"]').click();
   await expect(menu).toHaveCount(0);
 }
@@ -87,23 +113,31 @@ test('EPUB: a new highlight paints at once with no list reload, and survives ref
 
   // Reflow: the mark follows the text.
   await page.setViewportSize({ width: 900, height: 700 });
-  await page.waitForTimeout(1200);
+  await waitForRenditionSize(page);
   await expect.poll(() => marks(page)).toBe(1);
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.waitForTimeout(1200);
+  await waitForRenditionSize(page);
   await expect.poll(() => marks(page)).toBe(1);
 
   // Leave and reopen: the mark comes back from the single list read.
   const reopened = countNoteRequests(page, bookId);
+  const reopenedReads = waitForBookReads(page, bookId);
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.frameLocator('#epub-viewer iframe').locator('p').first().waitFor({ timeout: 45_000 });
-  await page.waitForTimeout(1200);
+  await waitForRenditionSize(page);
+  await waitForLayoutSettled(page, '#epub-viewer');
+  await reopenedReads;
   await expect.poll(() => marks(page)).toBe(1);
   expect(reopened.lists).toBe(1);
   await page.screenshot({ path: path.join(EVIDENCE_DIR, 'reader-notes-once-epub-reopened.png') });
 
-  // Deleting removes the mark at once, with no refresh.
-  const box = (await page.frameLocator('#epub-viewer iframe').locator('p').first().boundingBox())!;
+  // Deleting removes the mark at once, with no refresh. The card that opens
+  // from a mark is anchored to the mark's box, and the reader reports nothing
+  // when its opening work is done: wait for the mark to hold still instead of
+  // touching it while the page is still being placed.
+  const markBox = () => page.frameLocator('#epub-viewer iframe').locator('p').first().boundingBox();
+  await waitUntilStable(markBox, { quietMs: 1_000, description: "the first paragraph's box" });
+  const box = (await markBox())!;
   await page.mouse.click(box.x + 14, box.y + 8);
   await page.getByTestId('highlight-card-delete').click();
   await page.locator('.confirm-modal-card .btn-confirm').click();
@@ -124,11 +158,12 @@ test('PDF: a new highlight paints at once with no list reload, and survives scro
   expect((await fetch(`${baseUrl}/api/books/${bookId}/file`, { method: 'POST', body: form })).ok).toBe(true);
 
   const seen = countNoteRequests(page, bookId);
+  const reads = waitForBookReads(page, bookId);
   await page.goto(`${baseUrl}/read/${bookId}`, { waitUntil: 'domcontentloaded' });
   await page.locator('#viewerContainer canvas').first().waitFor({ timeout: 60_000 });
   const span = page.locator('#viewerContainer .page[data-page-number="1"] .textLayer span').first();
   await span.waitFor({ timeout: 30_000 });
-  await page.waitForTimeout(800);
+  await reads;
   expect(seen.lists).toBe(1);
   expect(seen.browses).toBe(1);
 
@@ -144,7 +179,9 @@ test('PDF: a new highlight paints at once with no list reload, and survives scro
   });
   const menu = page.locator('[data-testid="selection-menu"]');
   await expect(menu).toBeVisible();
-  await page.waitForTimeout(400);
+  // pdf.js re-places the menu from its debounced selection event; click once
+  // the surface has stopped moving.
+  await waitForLayoutSettled(page, '[data-testid="selection-menu"]');
   await page.locator('[data-testid="selection-highlight"]').click();
   await expect(menu).toHaveCount(0);
   await expect.poll(() => pdfBoxes(page)).toBeGreaterThan(0);
@@ -154,9 +191,10 @@ test('PDF: a new highlight paints at once with no list reload, and survives scro
   expect(seen.lists).toBe(1);
   expect(seen.browses).toBe(1);
 
-  // Scroll away and back: the page repaints its mark.
+  // Scroll away and back: the page repaints its mark. The pager's page field
+  // moving is the app's own word that the view actually went to the end.
   await page.locator('#viewerContainer').evaluate((el) => { el.scrollTop = el.scrollHeight; });
-  await page.waitForTimeout(800);
+  await expect(page.locator('.page-input')).not.toHaveValue('1');
   await page.locator('#viewerContainer').evaluate((el) => { el.scrollTop = 0; });
   await expect.poll(() => pdfBoxes(page)).toBe(painted);
 

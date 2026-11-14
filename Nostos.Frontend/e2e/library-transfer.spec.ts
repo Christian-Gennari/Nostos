@@ -39,6 +39,7 @@ import {
   writeTransferArtifact,
   type LibraryTransferInstance,
 } from './support/library-transfer-harness';
+import { waitUntilStable } from './support/waits';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -621,12 +622,19 @@ test('scenario d1: reload mid-upload resumes with only the missing chunks', asyn
     }
     await expect(reselect).toContainText('Select the same file again to resume');
 
-    // Authoritative post-reload receipt state: no chunk is in flight now, so
-    // the resume must request exactly the complement of these ranges.
-    await page.waitForTimeout(1_000);
-    const session = await (
-      await fetch(`${destination.baseUrl}/api/portability/migration/jobs/${jobId}/upload-session`)
-    ).json();
+    // Authoritative post-reload receipt state: the browser aborted its upload
+    // at reload, but the server may still be finishing the one part that was
+    // already on the wire. Read the receipts until they stop moving, then the
+    // resume must request exactly their complement.
+    const session = await waitUntilStable(
+      async () =>
+        (await (
+          await fetch(
+            `${destination.baseUrl}/api/portability/migration/jobs/${jobId}/upload-session`,
+          )
+        ).json()) ?? null,
+      { description: 'the upload receipts', quietMs: 750, intervalMs: 250 },
+    );
     const received = new Set<number>();
     for (const range of session.receivedRanges ?? []) {
       for (let index = range.startIndex; index <= range.endIndex; index += 1) received.add(index);
@@ -1018,26 +1026,30 @@ test('scenario e4: a backend restart mid-upload recovers after it is back', asyn
     const beforeReload = await navigationOrigin(page);
     // The client either retries transparently or surfaces a retryable failure;
     // either way the same page must recover without reselecting from zero.
-    const deadline = Date.now() + 300_000;
-    let recovered = false;
-    while (Date.now() < deadline) {
-      if (await page.getByTestId('library-activation-overlay').isVisible().catch(() => false)) {
-        recovered = true;
-        break;
-      }
-      if (await page.getByTestId('import-reselect').isVisible().catch(() => false)) {
-        await selectArchive(page, archive);
-      } else if (await page.getByTestId('import-failed').isVisible().catch(() => false)) {
-        const action = page.getByTestId('import-failure-action');
-        if (await action.isVisible().catch(() => false)) {
-          await action.click();
-        } else {
-          await selectArchive(page, archive);
-        }
-      }
-      await page.waitForTimeout(1_000);
-    }
-    expect(recovered, 'import reached activation after the backend restart').toBe(true);
+    await expect
+      .poll(
+        async () => {
+          if (await page.getByTestId('library-activation-overlay').isVisible().catch(() => false)) {
+            return true;
+          }
+          if (await page.getByTestId('import-reselect').isVisible().catch(() => false)) {
+            await selectArchive(page, archive);
+          } else if (await page.getByTestId('import-failed').isVisible().catch(() => false)) {
+            const action = page.getByTestId('import-failure-action');
+            if (await action.isVisible().catch(() => false)) {
+              await action.click();
+            } else {
+              await selectArchive(page, archive);
+            }
+          }
+          return false;
+        },
+        {
+          timeout: 300_000,
+          message: 'import reached activation after the backend restart',
+        },
+      )
+      .toBe(true);
 
     // Recovery reused the same durable job and session, and no chunk the
     // server had already received was requested again.
@@ -1100,6 +1112,10 @@ test('scenario e5: a second tab is blocked by the lease with no double upload', 
       await expect(second.getByTestId('transfer-other-tab')).toContainText(
         'An import is already in progress in another tab.',
       );
+      // KEPT DELAY: this scenario fails the same way on `main` (the owner
+      // finishes uploading and its Cancel is gone before the second tab is
+      // asserted), so its timing is left untouched rather than guessed at.
+      // Listed in the PR body.
       await second.waitForTimeout(2_500);
       expect(secondChunks).toEqual([]);
       await secondErrors.settle();

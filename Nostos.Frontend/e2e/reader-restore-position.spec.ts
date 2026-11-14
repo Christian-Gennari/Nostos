@@ -12,6 +12,6 @@ test('desktop: reopening deep inside a long chapter lands on the saved page', as
   await expectRestoreLandsOnSavedPage(page);
 });
 
-test('desktop: the saved page survives resizes right after opening', async ({ page }) => {
-  await expectRestoreLandsOnSavedPage(page, [100, 400]);
+test('desktop: the saved page survives re-layouts while the reader opens', async ({ page }) => {
+  await expectRestoreLandsOnSavedPage(page, 2);
 });

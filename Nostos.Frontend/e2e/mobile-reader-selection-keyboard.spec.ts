@@ -16,11 +16,29 @@
 import { expect, test, type Page } from '@playwright/test';
 
 import { apiGet, apiPut, loadFixture } from './support/fixture';
-import { buildLongEpub, seedBook } from './support/reader-restore-position';
+import { buildLongEpub, seedBook, TARGET_PARAGRAPH } from './support/reader-restore-position';
+import { waitForLayoutSettled, waitForRenditionSize, waitUntilStable } from './support/waits';
 
 test.use({ serviceWorkers: 'block' });
 
 type Ending = 'highlight' | 'note' | 'cancel';
+
+/**
+ * Waits until the reader has taken the emulated keyboard into account: the
+ * shell keeps `--reader-keyboard-inset` on its host at the height the keyboard
+ * covers, so this is the app's own answer rather than a guessed delay.
+ */
+async function waitForKeyboardInset(page: Page, inset: string): Promise<void> {
+  await expect
+    .poll(
+      () =>
+        page
+          .locator('app-reader-shell')
+          .evaluate((el) => (el as HTMLElement).style.getPropertyValue('--reader-keyboard-inset')),
+      { message: `the reader's keyboard inset is ${inset}` },
+    )
+    .toBe(inset);
+}
 
 /** The id of the first paragraph whose box overlaps the page on screen. */
 async function firstParagraphOnPage(page: Page): Promise<string> {
@@ -88,8 +106,15 @@ async function expectPageKept(page: Page, ending: Ending): Promise<void> {
   const viewport = page.viewportSize()!;
   await page.goto(`${baseUrl}/read/${bookId}`, { waitUntil: 'domcontentloaded' });
   await page.frameLocator('#epub-viewer iframe').locator('p').first().waitFor({ timeout: 45_000 });
-  // Let the opening restore settle (#1271) before marking anything.
-  await page.waitForTimeout(2_500);
+  // The opening restore (#1271) must have landed before anything is marked:
+  // the long chapter's saved paragraph is the one on screen.
+  await waitForRenditionSize(page);
+  await expect
+    .poll(async () => (await paragraphOnPage(page, `p${TARGET_PARAGRAPH}`)).onPage, {
+      timeout: 45_000,
+      message: 'the reader restored the saved page',
+    })
+    .toBe(true);
 
   const writes: string[] = [];
   page.on('request', (request) => {
@@ -111,14 +136,14 @@ async function expectPageKept(page: Page, ending: Ending): Promise<void> {
     // A plain Highlight opens no keyboard; any other resize of the reader box
     // while the bar is up (the browser toolbar) must not move the page either.
     await page.setViewportSize(keyboardOpen);
-    await page.waitForTimeout(800);
+    await waitForRenditionSize(page);
     await page.setViewportSize(viewport);
-    await page.waitForTimeout(300);
+    await waitForRenditionSize(page);
     await page.getByTestId('selection-highlight').tap();
   } else {
     await page.getByTestId('selection-add-note').tap();
     await page.setViewportSize(keyboardOpen);
-    await page.waitForTimeout(800);
+    await waitForRenditionSize(page);
     if (ending === 'note') {
       await page.getByTestId('selection-note-input').fill('Kept on the page.');
       await page.getByTestId('selection-save-note').tap();
@@ -127,12 +152,16 @@ async function expectPageKept(page: Page, ending: Ending): Promise<void> {
     }
     // The keyboard closes once the bar is gone.
     await page.setViewportSize(viewport);
+    await waitForRenditionSize(page);
   }
   await expect(bar).toHaveCount(0);
 
-  // Past the resize debounce and the settle window.
-  await page.waitForTimeout(3_000);
-  const after = await paragraphOnPage(page, marked);
+  // The re-layout epub.js runs after a resize reports no completion, so wait
+  // for the page the reader shows to hold still, then check it.
+  const after = await waitUntilStable(() => paragraphOnPage(page, marked), {
+    quietMs: 500,
+    description: 'the page after the re-layout',
+  });
   expect(after.onPage, after.detail).toBe(true);
 
   const notes = await apiGet<any[]>(baseUrl, `/api/books/${bookId}/notes`);
@@ -169,7 +198,13 @@ test('phone: the keyboard overlays the reader, the bar rides above it, and leavi
 
   await page.goto(`${baseUrl}/read/${bookId}`, { waitUntil: 'domcontentloaded' });
   await page.frameLocator('#epub-viewer iframe').locator('p').first().waitFor({ timeout: 45_000 });
-  await page.waitForTimeout(2_500);
+  await waitForRenditionSize(page);
+  await expect
+    .poll(async () => (await paragraphOnPage(page, `p${TARGET_PARAGRAPH}`)).onPage, {
+      timeout: 45_000,
+      message: 'the reader restored the saved page',
+    })
+    .toBe(true);
   expect(await viewportMeta()).toContain('interactive-widget=resizes-visual');
 
   await selectStartOf(page, await firstParagraphOnPage(page));
@@ -187,7 +222,8 @@ test('phone: the keyboard overlays the reader, the bar rides above it, and leavi
   }, height - 340);
   // The bar is docked at the top (#1344), so the keyboard does not move it:
   // it stays at the top edge, and the note field stays above the keyboard.
-  await page.waitForTimeout(300);
+  await waitForKeyboardInset(page, '340px');
+  await waitForLayoutSettled(page, '[data-testid="selection-bar"]');
   expect(Math.round((await bar.boundingBox())!.y)).toBeLessThanOrEqual(1);
   const field = (await page.getByTestId('selection-note-input').boundingBox())!;
   expect(field.y + field.height).toBeLessThanOrEqual(height - 340);
@@ -200,7 +236,7 @@ test('phone: the keyboard overlays the reader, the bar rides above it, and leavi
     delete (vv as any).height;
     vv.dispatchEvent(new Event('resize'));
   });
-  await page.waitForTimeout(300);
+  await waitForKeyboardInset(page, '0px');
   expect(Math.round((await bar.boundingBox())!.y)).toBeLessThanOrEqual(1);
 
   await page.getByTestId('selection-cancel').tap();

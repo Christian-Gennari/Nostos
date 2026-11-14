@@ -13,12 +13,12 @@ import path from 'node:path';
 
 import { apiPost, apiPut, loadFixture, newRunId } from './support/fixture';
 import { buildLongEpub, TARGET_PARAGRAPH } from './support/reader-restore-position';
+import { waitForLayoutSettled, waitForRenditionSize } from './support/waits';
 
 test.use({ serviceWorkers: 'block' });
 
 const PDF_CODE = 'ngx-extended-pdf-viewer';
 const EPUB_CODE = 'EPUBJS';
-const HOLD_MS = 2500;
 
 const PDF_BYTES = readFileSync(path.join(__dirname, 'assets', 'reader-notes.pdf'));
 const EPUB_BYTES = readFileSync(path.join(__dirname, 'assets', 'reader-margins.epub'));
@@ -43,21 +43,40 @@ async function seed(
   return bookId;
 }
 
-/** Every script the page loaded, with its size and whether it holds each engine. */
+/**
+ * Every script the page loaded, with its size and whether it holds each engine.
+ *
+ * Reading a response body is asynchronous, so the list grows after the response
+ * event fires: `whenIdle()` resolves once every script seen so far has been
+ * read, which is what the "no PDF code" claims need to be true.
+ */
 function scriptLog(page: Page) {
   const scripts: { url: string; bytes: number; pdf: boolean; epub: boolean; passage: boolean }[] = [];
-  page.on('response', async (response) => {
+  let inFlight = 0;
+  const idleWaiters: (() => void)[] = [];
+  page.on('response', (response) => {
     if (!response.url().endsWith('.js')) return;
-    const body = await response.text().catch(() => '');
-    scripts.push({
-      url: response.url().split('/').pop()!,
-      bytes: Buffer.byteLength(body),
-      pdf: body.includes(PDF_CODE),
-      epub: body.includes(EPUB_CODE),
-      passage: body.includes('passage-viewer-title'),
-    });
+    inFlight += 1;
+    response
+      .text()
+      .catch(() => '')
+      .then((body) => {
+        scripts.push({
+          url: response.url().split('/').pop()!,
+          bytes: Buffer.byteLength(body),
+          pdf: body.includes(PDF_CODE),
+          epub: body.includes(EPUB_CODE),
+          passage: body.includes('passage-viewer-title'),
+        });
+      })
+      .finally(() => {
+        inFlight -= 1;
+        if (inFlight === 0) idleWaiters.splice(0).forEach((resolve) => resolve());
+      });
   });
-  return scripts;
+  const whenIdle = () =>
+    new Promise<void>((resolve) => (inFlight === 0 ? resolve() : idleWaiters.push(resolve)));
+  return Object.assign(scripts, { whenIdle });
 }
 
 /** Holds the chunk carrying `marker` until `release` is called. */
@@ -102,7 +121,7 @@ test('an EPUB open loads no PDF code, even after the idle prefetch', async ({ pa
   await page.goto(`${baseUrl}/read/${bookId}`, { waitUntil: 'domcontentloaded' });
   await openFrame(page).waitFor({ timeout: 45_000 });
   await expect.poll(() => scripts.some((script) => script.passage), { timeout: 15_000 }).toBe(true);
-  await page.waitForTimeout(500);
+  await scripts.whenIdle();
 
   report('EPUB', scripts);
   expect(scripts.filter((script) => script.epub).length).toBeGreaterThan(0);
@@ -117,7 +136,7 @@ test('an audiobook open loads neither the PDF viewer nor epub.js', async ({ page
   await page.goto(`${baseUrl}/read/${bookId}`, { waitUntil: 'domcontentloaded' });
   await page.locator('app-audio-reader').waitFor({ timeout: 45_000 });
   await expect.poll(() => scripts.some((script) => script.passage), { timeout: 15_000 }).toBe(true);
-  await page.waitForTimeout(500);
+  await scripts.whenIdle();
 
   report('audiobook', scripts);
   expect(scripts.filter((script) => script.pdf || script.epub)).toEqual([]);
@@ -130,7 +149,7 @@ test('a PDF open loads no epub.js', async ({ page }) => {
 
   await page.goto(`${baseUrl}/read/${bookId}`, { waitUntil: 'domcontentloaded' });
   await page.locator('#viewerContainer canvas').first().waitFor({ timeout: 60_000 });
-  await page.waitForTimeout(500);
+  await scripts.whenIdle();
 
   report('PDF', scripts);
   expect(scripts.filter((script) => script.pdf).length).toBeGreaterThan(0);
@@ -170,8 +189,8 @@ test('a page link waits for a PDF viewer that arrives late, with no layout shift
   await page.goto(`${baseUrl}/read/${bookId}?sourcePage=2`, { waitUntil: 'domcontentloaded' });
   const spinner = page.locator('nostos-loading-indicator.reader-loading');
   await spinner.waitFor({ timeout: 30_000 });
-  await page.waitForTimeout(HOLD_MS);
-  expect(chunk.wasHeld()).toBe(true);
+  // The chunk is on the wire and the reader cannot mount until it arrives.
+  await expect.poll(() => chunk.wasHeld(), { timeout: 30_000 }).toBe(true);
   await expect(page.locator('app-pdf-reader')).toHaveCount(0);
   await page.screenshot({ path: path.join(__dirname, 'visual-evidence', 'reader-format-chunk-pdf-held.png') });
 
@@ -186,7 +205,7 @@ test('a page link waits for a PDF viewer that arrives late, with no layout shift
     }), { timeout: 20_000 })
     .toBe(true);
   const shift = await layoutShift(page);
-  console.log(`[chunks] PDF held ${HOLD_MS} ms: layout shift ${shift.toFixed(4)}`);
+  console.log(`[chunks] PDF chunk held until released: layout shift ${shift.toFixed(4)}`);
   expect(shift).toBeLessThan(0.01);
 });
 
@@ -201,8 +220,8 @@ test('a saved place and search work on an EPUB reader that arrives late', async 
   await page.goto(`${baseUrl}/read/${bookId}`, { waitUntil: 'domcontentloaded' });
   const spinner = page.locator('nostos-loading-indicator.reader-loading');
   await spinner.waitFor({ timeout: 30_000 });
-  await page.waitForTimeout(HOLD_MS);
-  expect(chunk.wasHeld()).toBe(true);
+  // The chunk is on the wire and the reader cannot mount until it arrives.
+  await expect.poll(() => chunk.wasHeld(), { timeout: 30_000 }).toBe(true);
   const before = (await spinner.boundingBox())!;
 
   chunk.release();
@@ -231,9 +250,11 @@ test('a saved place and search work on an EPUB reader that arrives late', async 
     }, { timeout: 20_000 })
     .toBe(true);
 
-  await page.waitForTimeout(600);
+  // The restore has re-laid the page out; no shift may have come with it.
+  await waitForRenditionSize(page);
+  await waitForLayoutSettled(page, '#epub-page');
   const shift = await layoutShift(page);
-  console.log(`[chunks] EPUB held ${HOLD_MS} ms: layout shift ${shift.toFixed(4)}`);
+  console.log(`[chunks] EPUB chunk held until released: layout shift ${shift.toFixed(4)}`);
   expect(shift).toBeLessThan(0.01);
 
   await page.keyboard.press('Control+f');
@@ -250,10 +271,11 @@ test('read aloud and the Aa panel work on an EPUB reader that arrives late', asy
 
   await page.goto(`${baseUrl}/read/${bookId}`, { waitUntil: 'domcontentloaded' });
   await page.locator('nostos-loading-indicator.reader-loading').waitFor({ timeout: 30_000 });
-  await page.waitForTimeout(HOLD_MS);
+  await expect.poll(() => chunk.wasHeld(), { timeout: 30_000 }).toBe(true);
   chunk.release();
   await openFrame(page).waitFor({ timeout: 45_000 });
-  await page.waitForTimeout(800);
+  await waitForRenditionSize(page);
+  await waitForLayoutSettled(page, '#epub-viewer');
 
   const paragraph = (await openFrame(page).boundingBox())!;
   await page.mouse.click(paragraph.x + 40, paragraph.y + 8);
@@ -272,8 +294,7 @@ test('an audiobook keeps a time link for a player that arrives late', async ({ p
 
   await page.goto(`${baseUrl}/read/${bookId}?sourceTime=2`, { waitUntil: 'domcontentloaded' });
   await page.locator('nostos-loading-indicator.reader-loading').waitFor({ timeout: 30_000 });
-  await page.waitForTimeout(HOLD_MS);
-  expect(chunk.wasHeld()).toBe(true);
+  await expect.poll(() => chunk.wasHeld(), { timeout: 30_000 }).toBe(true);
   chunk.release();
 
   await page.locator('app-audio-reader').waitFor({ timeout: 30_000 });
