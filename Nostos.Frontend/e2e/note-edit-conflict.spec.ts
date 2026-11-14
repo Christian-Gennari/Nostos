@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 import { apiGet, apiPost, apiPut, loadFixture } from './support/fixture';
+import { waitForLayoutSettled } from './support/waits';
 
 /**
  * Issue #1404 on the real backend: a note saved from another tab or device is
@@ -52,7 +53,8 @@ for (const [name, viewport, dark] of [
     // Nothing was written over the newer words.
     const stored = await apiGet<{ content: string }>(baseUrl, `/api/notes/${note.id}`);
     expect(stored.content).toContain('changed in the other tab');
-    await page.waitForTimeout(600); // let the dialog finish fading in
+    // Let the dialog finish fading in before capturing it.
+    await waitForLayoutSettled(page, '[role="alertdialog"]');
     await page.screenshot({ path: `${EVIDENCE}/conflict-${name}.png` });
 
     if (name === 'desktop-light') {

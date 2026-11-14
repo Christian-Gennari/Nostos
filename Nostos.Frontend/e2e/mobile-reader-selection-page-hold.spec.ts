@@ -14,6 +14,11 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { apiPost, loadFixture } from './support/fixture';
+import {
+  waitForLayoutSettled,
+  waitForRenditionSize,
+  waitUntilStable,
+} from './support/waits';
 
 // Multi-page fixture: 12 pages at 390px with default typography.
 const EPUB = readFileSync(path.join(__dirname, 'assets', 'reader-margins.epub'));
@@ -92,7 +97,8 @@ test('phone: a handle dragged towards the next page holds the page and keeps the
   const frame = page.frameLocator('#epub-viewer iframe');
   await frame.locator('p').first().waitFor({ timeout: 45_000 });
   await expect(page.locator('.loading-overlay')).toHaveClass(/is-hidden/);
-  await page.waitForTimeout(800);
+  await waitForRenditionSize(page);
+  await waitForLayoutSettled(page, '#epub-viewer');
 
   // Reveal the pager, then turn to page 2 so the starting offset is one whole
   // page in — the page the handles are dragged from.
@@ -192,11 +198,15 @@ test('phone: a handle dragged towards the next page holds the page and keeps the
     extended.start.replace(/\s+/g, ' ').trim(),
   );
 
-  // Let the capture and any deferred release settle. The page must still be
-  // the one the selection started on, so the handle cannot have taken the
-  // selection onto the next page and there is no off-grid offset to turn from.
-  await page.waitForTimeout(600);
-  expect(await stage(page)).toEqual(held);
+  // The page must still be the one the selection started on: the handle cannot
+  // have taken the selection onto the next page, and there is no off-grid
+  // offset to turn from. A deferred release can fire up to the selection
+  // anchor's 1000 ms grace, so wait for the page to hold still past it.
+  const settledStage = await waitUntilStable(() => stage(page), {
+    quietMs: 1_100,
+    description: 'the page after the selection',
+  });
+  expect(settledStage).toEqual(held);
   await expect(bar).toBeVisible();
   expect(await iframeSelection(page)).toBe(extended.selected);
 
@@ -218,7 +228,8 @@ test('phone: tapping an in-book link still moves the page while the touch hold w
   const link = frame.locator('#jump');
   await link.waitFor({ timeout: 45_000 });
   await expect(page.locator('.loading-overlay')).toHaveClass(/is-hidden/);
-  await page.waitForTimeout(800);
+  await waitForRenditionSize(page);
+  await waitForLayoutSettled(page, '#epub-viewer');
 
   const first = await stage(page);
   expect(first.left).toBe(0);
@@ -229,10 +240,13 @@ test('phone: tapping an in-book link still moves the page while the touch hold w
   // first, or the hold puts the link's page move straight back.
   await link.tap();
 
-  // The page lands on the linked paragraph, on the page grid.
+  // The page lands on the linked paragraph, on the page grid. The touch hold's
+  // release is a 500 ms timer, so wait for the grid to hold still past it.
   await expect.poll(async () => (await stage(page)).left).toBeGreaterThan(0);
-  await page.waitForTimeout(600);
-  const landed = await stage(page);
+  const landed = await waitUntilStable(() => stage(page), {
+    quietMs: 700,
+    description: 'the page the link landed on',
+  });
   expect(landed.left % landed.width).toBe(0);
   const index = landed.left / landed.width;
   const target = await frame.locator('#later').evaluate((p) => {

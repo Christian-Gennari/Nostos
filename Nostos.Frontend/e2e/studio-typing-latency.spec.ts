@@ -77,9 +77,18 @@ test('typing at the end of an 80,000-word writing stays responsive', async ({ pa
 
     for (let i = 0; i < KEYS; i++) {
       await page.keyboard.type(i % 7 === 6 ? ' ' : 'abcdefg'[i % 7]);
+      // The typing rate *is* the measurement's input, not a wait for app state:
+      // a human-paced gap between keys, held for every key alike.
       await page.waitForTimeout(KEY_GAP_MS);
     }
-    await page.waitForTimeout(500);
+
+    // Each sample is recorded a frame after its keydown; wait for the samples
+    // instead of assuming the last ones have landed.
+    const samples = () =>
+      page.evaluate(() => (window as unknown as { __latency: number[] }).__latency.length);
+    await expect
+      .poll(samples, { timeout: 10_000, message: 'the latency samples were collected' })
+      .toBeGreaterThanOrEqual(KEYS - 2);
 
     const latency = await page.evaluate(() => (window as unknown as { __latency: number[] }).__latency);
     expect(latency.length).toBeGreaterThanOrEqual(KEYS - 2);

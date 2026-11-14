@@ -10,6 +10,7 @@ import path from 'node:path';
 
 import { apiPost, loadFixture, newRunId } from './support/fixture';
 import { epubMarkCount } from './support/epub-marks';
+import { waitForLayoutSettled, waitForRenditionSize, waitUntilStable } from './support/waits';
 
 const EPUB_BYTES = readFileSync(path.join(__dirname, 'assets', 'reader-margins.epub'));
 const PDF_BYTES = readFileSync(path.join(__dirname, 'assets', 'reader-notes.pdf'));
@@ -69,16 +70,38 @@ function countRequests(page: Page, bookId: string) {
 }
 
 async function openEpub(page: Page, baseUrl: string, bookId: string) {
+  const reads = waitForBookReads(page, bookId);
   await page.goto(`${baseUrl}/read/${bookId}`, { waitUntil: 'domcontentloaded' });
   await page.frameLocator('#epub-viewer iframe').locator('p').first().waitFor({ timeout: 45_000 });
+  await waitForRenditionSize(page);
+  await reads;
 }
 
 async function openPdf(page: Page, baseUrl: string, bookId: string, pageNumber = 1) {
+  const reads = waitForBookReads(page, bookId);
   await page.goto(`${baseUrl}/read/${bookId}`, { waitUntil: 'domcontentloaded' });
   await page
     .locator(`#viewerContainer .page[data-page-number="${pageNumber}"] .textLayer span`)
     .first()
     .waitFor({ timeout: 60_000 });
+  await reads;
+}
+
+/** The notes list and the topics browse the reader issues when a book opens. */
+function waitForBookReads(page: Page, bookId: string): Promise<unknown> {
+  const notes = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return response.request().method() === 'GET' && url.pathname === `/api/books/${bookId}/notes`;
+  });
+  const topics = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      response.request().method() === 'GET' &&
+      url.pathname === '/api/notes' &&
+      url.searchParams.has('bookId')
+    );
+  });
+  return Promise.all([notes, topics]);
 }
 
 const penMarks = (page: Page) => epubMarkCount(page, 'pen-sage');
@@ -177,13 +200,14 @@ test('EPUB: a quote saved while the book is open appears without reopening', asy
 
   const seen = countRequests(page, bookId);
   await openEpub(page, baseUrl, bookId);
-  await page.waitForTimeout(800);
   expect(await penMarks(page)).toBe(0);
 
   await ask(page, 'Find the line about the bridges over the Danube and save it.');
   await expect.poll(() => penMarks(page)).toBe(1);
-  await page.waitForTimeout(600);
-  expect(await penMarks(page)).toBe(1);
+  // A duplicate paint would arrive a beat later; hold still before asserting.
+  expect(
+    await waitUntilStable(() => penMarks(page), { quietMs: 400, description: 'the painted marks' }),
+  ).toBe(1);
   // Painted from the one note, not by reading the book's notes again.
   expect(seen.lists).toBe(1);
   expect(seen.locates).toBe(1);
@@ -212,9 +236,12 @@ test('EPUB: a quote that is not found, or found twice, stays an unpainted note a
   await page.screenshot({ path: path.join(EVIDENCE_DIR, 'epub-not-found-unpainted.png') });
 
   // The memo stops the search on the next opening.
+  const reopenedReads = waitForBookReads(page, bookId);
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.frameLocator('#epub-viewer iframe').locator('p').first().waitFor({ timeout: 45_000 });
-  await page.waitForTimeout(1500);
+  await waitForRenditionSize(page);
+  await waitForLayoutSettled(page, '#epub-viewer');
+  await reopenedReads;
   expect(seen.locates).toBe(0);
   expect(await penMarks(page)).toBe(0);
   for (const note of await notes(baseUrl, bookId)) expect(note.cfiRange ?? null).toBeNull();
@@ -254,8 +281,10 @@ test('PDF: a quote saved with the book closed gets rects like a hand-made highli
   expect(painted.bottom).toBeGreaterThan(span.y);
 
   const reopened = countRequests(page, bookId);
+  const reopenedReads = waitForBookReads(page, bookId);
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.locator('.page[data-page-number="1"] .textLayer span').first().waitFor({ timeout: 60_000 });
+  await reopenedReads;
   await expect.poll(() => pdfBoxes(page)).toBeGreaterThan(0);
   expect(reopened.locates).toBe(0);
 
@@ -273,14 +302,15 @@ test('PDF: a quote saved while the book is open appears without reopening', asyn
 
   const seen = countRequests(page, bookId);
   await openPdf(page, baseUrl, bookId);
-  await page.waitForTimeout(800);
   expect(await pdfBoxes(page)).toBe(0);
 
   await ask(page, 'Save the line about the anger of Achilles.');
   await expect.poll(() => pdfBoxes(page)).toBeGreaterThan(0);
-  const painted = await pdfBoxes(page);
-  await page.waitForTimeout(600);
-  expect(await pdfBoxes(page)).toBe(painted);
+  const painted = await waitUntilStable(() => pdfBoxes(page), {
+    quietMs: 400,
+    description: 'the painted boxes',
+  });
+  expect(painted).toBeGreaterThan(0);
   expect(seen.lists).toBe(1);
   expect(seen.locates).toBe(1);
   await page.screenshot({ path: path.join(EVIDENCE_DIR, 'pdf-saved-open.png') });

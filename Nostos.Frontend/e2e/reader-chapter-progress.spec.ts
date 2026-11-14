@@ -13,7 +13,8 @@ import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import JSZip from 'jszip';
 
-import { apiPost, loadFixture } from './support/fixture';
+import { apiGet, apiPost, loadFixture } from './support/fixture';
+import { waitForLayoutSettled } from './support/waits';
 
 const EVIDENCE = process.env.CHAPTER_PROGRESS_EVIDENCE
   ? path.join(__dirname, 'visual-evidence', '1269-chapter-progress')
@@ -129,6 +130,11 @@ async function revealPager(page: Page): Promise<void> {
   }).toPass({ timeout: 20_000 });
 }
 
+/** The page grid's current offset, in px: which page the rendition is showing. */
+async function pageOffset(page: Page): Promise<number> {
+  return page.locator('#epub-page > .epub-container').evaluate((el) => el.scrollLeft);
+}
+
 /** The bar's fill as a share of its track, 0–100. */
 async function fill(page: Page): Promise<number> {
   return page.locator('.reader-progress-track').evaluate((track) => {
@@ -140,7 +146,8 @@ async function fill(page: Page): Promise<number> {
 async function shoot(page: Page, name: string): Promise<void> {
   if (!EVIDENCE) return;
   mkdirSync(EVIDENCE, { recursive: true });
-  await page.waitForTimeout(250);
+  // The bar fades in with the chrome; capture it at rest.
+  await waitForLayoutSettled(page, '[data-testid="reader-chrome-bottom"]');
   await page
     .getByTestId('reader-chrome-bottom')
     .screenshot({ path: path.join(EVIDENCE, `${name}-390-${process.env.CHAPTER_PROGRESS_EVIDENCE}.png`) });
@@ -170,9 +177,11 @@ test('EPUB: the bar switches to the chapter, resets at the next chapter, and is 
   const toggle = page.getByTestId('reader-progress-toggle');
   await expect(toggle).toHaveAttribute('aria-pressed', 'false');
   const next = page.getByRole('button', { name: 'Next page' });
-  for (let i = 0; i < 3; i++) {
+  for (let turn = 0; turn < 3; turn++) {
+    const before = await pageOffset(page);
     await next.click();
-    await page.waitForTimeout(250);
+    // The rendition moves the page grid; wait for the turn itself.
+    await expect.poll(() => pageOffset(page)).toBeGreaterThan(before);
   }
   await expect.poll(() => fill(page)).toBeGreaterThan(0);
   const book = await fill(page);
@@ -193,9 +202,16 @@ test('EPUB: the bar switches to the chapter, resets at the next chapter, and is 
   await revealPager(page);
   expect(await fill(page)).toBeLessThan(5);
 
-  // Remembered across a reload (after the debounced progress write, so the
-  // book reopens in chapter 2).
-  await page.waitForTimeout(1_500);
+  // Remembered across a reload, which needs the debounced progress write to
+  // have landed first: wait for the stored place to be the new one.
+  const storedLocation = async () => {
+    const saved = await apiGet<any>(baseUrl, `/api/books/${bookId}`);
+    return (saved?.book ?? saved).lastLocation;
+  };
+  const storedBefore = await storedLocation();
+  await expect
+    .poll(storedLocation, { timeout: 15_000, message: 'the debounced progress write landed' })
+    .not.toBe(storedBefore);
   await page.reload();
   await page.frameLocator('#epub-viewer iframe').locator('p').first().waitFor({ timeout: 45_000 });
   await revealPager(page);
@@ -220,7 +236,17 @@ test('PDF: the outline places the chapter bar and the page field stays', async (
     await input.fill(String(n));
     await input.press('Enter');
     await expect(input).toHaveValue(String(n), { timeout: 10_000 });
-    await page.waitForTimeout(400);
+    // The page asked for is the one on screen before the bar is measured.
+    await expect
+      .poll(
+        async () => {
+          const box = await page.locator(`#viewerContainer .page[data-page-number="${n}"]`).boundingBox();
+          const height = page.viewportSize()!.height;
+          return !!box && box.y < height && box.y + box.height > 0;
+        },
+        { message: `page ${n} is the page on screen` },
+      )
+      .toBe(true);
   };
 
   await go(7);

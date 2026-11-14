@@ -291,15 +291,17 @@ test.describe('resumable book upload (#1266)', () => {
         'the first upload session',
       );
 
-      // Cut the first run while the body is still in flight. Hold it down long
-      // enough for the engine's four attempts to run out and show the copy.
-      await page.waitForTimeout(1_200);
+      // Cut the first run while the body is still in flight: wait until the
+      // upload has moved past its first part, so the cut lands on live work.
+      await expect
+        .poll(() => partRequests.length, { timeout: 120_000, message: 'a second part was requested' })
+        .toBeGreaterThanOrEqual(2);
       await setNetwork(cdp, true);
-      await page.waitForTimeout(12_000);
-      await setNetwork(cdp, false);
+      // The engine retries with backoff; the copy appears once they run out.
       await expect(dialog.getByText(/connection was interrupted/i)).toBeVisible({
-        timeout: 30_000,
+        timeout: 120_000,
       });
+      await setNetwork(cdp, false);
 
       // Resume 1: the server should answer with the receipts it kept.
       const successfulResumedParts = new Set<number>();
@@ -313,6 +315,10 @@ test.describe('resumable book upload (#1266)', () => {
       page.on('response', onResponse);
 
       await dialog.getByRole('button', { name: 'Try again' }).first().click();
+      // The copy belongs to the failure just handled; the new run clears it.
+      await expect(dialog.getByText(/connection was interrupted/i)).toBeHidden({
+        timeout: 120_000,
+      });
       await expect
         .poll(() => successfulResumedParts.size, { timeout: 120_000 })
         .toBeGreaterThanOrEqual(2);
@@ -320,11 +326,10 @@ test.describe('resumable book upload (#1266)', () => {
       // Cut the resumed run too, so the final attempt is a genuine second
       // resume from durable receipts.
       await setNetwork(cdp, true);
-      await page.waitForTimeout(12_000);
-      await setNetwork(cdp, false);
       await expect(dialog.getByText(/connection was interrupted/i)).toBeVisible({
-        timeout: 30_000,
+        timeout: 120_000,
       });
+      await setNetwork(cdp, false);
       page.off('response', onResponse);
 
       // Final resume: no more cuts. Count only the part requests this attempt
