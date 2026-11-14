@@ -336,6 +336,70 @@ public sealed class EndpointErrorWireFormatTests : IClassFixture<LibraryEndpoint
             """);
     }
 
+    // -------------------------------------------------------------- providers
+
+    [Fact]
+    public async Task Provider_rejections_keep_their_problem_details_and_error_envelope()
+    {
+        await AssertProblemAsync(
+            await Client.GetAsync("/api/providers/nope/search?query=classic"),
+            HttpStatusCode.NotFound,
+            """
+            {"type":"https://tools.ietf.org/html/rfc9110#section-15.5.5","title":"provider_unknown","status":404,"detail":"No content provider is registered as 'nope'."}
+            """);
+
+        await AssertBodyAsync(
+            await Client.GetAsync(
+                "/api/providers/gutenberg/search?query=" + new string('a', 201)),
+            HttpStatusCode.BadRequest,
+            Json,
+            """
+            {"error":"Search text is limited to 200 characters."}
+            """);
+    }
+
+    [Fact]
+    public async Task Provider_settings_rejection_is_problem_details()
+    {
+        await AssertProblemAsync(
+            await Client.PutAsJsonAsync("/api/settings/providers/gutenberg", new { }),
+            HttpStatusCode.BadRequest,
+            """
+            {"type":"https://tools.ietf.org/html/rfc9110#section-15.5.1","title":"invalid_provider_preference","status":400,"detail":"Provide the 'enabled' value for this provider."}
+            """);
+    }
+
+    [Fact]
+    public async Task Ai_provider_settings_validation_keeps_the_error_envelope()
+    {
+        await AssertBodyAsync(
+            await Client.PutAsJsonAsync(
+                "/api/settings/ai-provider",
+                new { llm = new { baseUrl = "not-a-url" } }),
+            HttpStatusCode.BadRequest,
+            Json,
+            """
+            {"error":"baseUrl must be an absolute http:// or https:// URL."}
+            """);
+    }
+
+    // ------------------------------------------------------------- portability
+
+    [Fact]
+    public async Task Empty_portable_archive_keeps_the_error_and_message_envelope()
+    {
+        using var content = new StreamContent(new MemoryStream());
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
+
+        await AssertBodyAsync(
+            await Client.PostAsync("/api/portability/import", content),
+            HttpStatusCode.BadRequest,
+            Json,
+            """
+            {"error":"empty_archive","message":"Portable archive request body is empty."}
+            """);
+    }
+
     // ---------------------------------------------------------------- shared
 
     /// <summary>

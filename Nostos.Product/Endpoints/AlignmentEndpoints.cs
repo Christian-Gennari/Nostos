@@ -269,8 +269,8 @@ public static class AlignmentEndpoints
                     "The target book was not found or is not accessible."));
         }
 
-        var source = await books.GetByIdAsync(sourceId);
-        var target = await books.GetByIdAsync(targetId);
+        var source = await books.GetByIdAsync(sourceId, ct);
+        var target = await books.GetByIdAsync(targetId, ct);
 
         if (source is null || target is null)
         {
@@ -309,10 +309,7 @@ public static class AlignmentEndpoints
         string code,
         int status,
         string detail) =>
-        Results.Problem(
-            title: code,
-            statusCode: status,
-            detail: detail);
+        ApiErrors.Problem(status, code, detail);
 
     private static IResult MapException(
         Exception ex,

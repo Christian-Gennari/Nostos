@@ -1,6 +1,7 @@
 using Nostos.Backend.Configuration;
 using Nostos.Backend.Services.Ai;
 using Nostos.Product.Services.Ai;
+using Nostos.Product.Http;
 
 namespace Nostos.Backend.Endpoints;
 
@@ -205,7 +206,7 @@ public static class TranscriptionEndpoints
     };
 
     private static IResult Failure(string code, int statusCode, string detail) =>
-        Results.Problem(statusCode: statusCode, title: code, detail: detail);
+        ApiErrors.Problem(statusCode, code, detail);
 
     /// <summary>The JSON body returned on success.</summary>
     public sealed record TranscriptionResponse(

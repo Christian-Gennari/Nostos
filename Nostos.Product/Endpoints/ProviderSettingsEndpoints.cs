@@ -1,6 +1,8 @@
 using Nostos.Backend.Providers;
 using Nostos.Shared.Dtos;
 
+using Nostos.Product.Http;
+
 namespace Nostos.Backend.Endpoints;
 
 /// <summary>
@@ -52,10 +54,10 @@ public static class ProviderSettingsEndpoints
         // the repo has a real empty-body-PUT data-loss incident behind this.
         if (request?.Enabled is not { } enabled)
         {
-            return Results.Problem(
-                statusCode: StatusCodes.Status400BadRequest,
-                title: "invalid_provider_preference",
-                detail: "Provide the 'enabled' value for this provider.");
+            return ApiErrors.Problem(
+                StatusCodes.Status400BadRequest,
+                "invalid_provider_preference",
+                "Provide the 'enabled' value for this provider.");
         }
 
         var entry = await enablement.SetAsync(providerId, enabled, ct);

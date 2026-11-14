@@ -43,6 +43,7 @@ const backendSources = import.meta.glob(
     '../../../../../Nostos.Product/Endpoints/BookUploadHttpContracts.cs',
     '../../../../../Nostos.Product/Endpoints/BookUploadEndpoints.cs',
     '../../../../../Nostos.Product/Http/ResumableChunkRequest.cs',
+    '../../../../../Nostos.Product/Http/ApiErrors.cs',
   ],
   { query: '?raw', import: 'default', eager: true },
 ) as Record<string, string>;
@@ -63,6 +64,7 @@ const BOOK_CONTRACTS = backendSource('BookUploadContracts.cs');
 const BOOK_HTTP_CONTRACTS = backendSource('BookUploadHttpContracts.cs');
 const BOOK_ENDPOINTS = backendSource('BookUploadEndpoints.cs');
 const CHUNK_REQUEST = backendSource('ResumableChunkRequest.cs');
+const API_ERRORS = backendSource('ApiErrors.cs');
 
 const BOOK_DTO_SOURCE =
   Object.entries(appSources).find(([path]) => path.endsWith('/book-upload.dtos.ts'))?.[1] ?? '';
@@ -368,6 +370,10 @@ describe('resumable book upload contract parity with the backend source (#1266)'
     // The part route reads its headers through the shared chunk parser (#1629).
     expect(BOOK_ENDPOINTS).toContain('ResumableChunkRequest.TryRead');
     expect(CHUNK_REQUEST).toContain('MigrationChunkHeaders.ChunkHashHeaderName');
-    expect(BOOK_HTTP_CONTRACTS).toContain('BookUploadErrorResponse');
+    // The upload error body is produced by the shared helper (issue #1632)
+    // rather than a type declared beside the routes; the wire keys are the
+    // same two the client reads.
+    expect(BOOK_HTTP_CONTRACTS).toContain('ApiErrors.ErrorWithCode');
+    expect(API_ERRORS).toContain('ApiCodeAndMessageBody(string Error, string Message)');
   });
 });

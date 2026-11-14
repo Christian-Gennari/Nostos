@@ -3,6 +3,7 @@ using Nostos.Backend.Data.Models;
 using Nostos.Backend.Mapping;
 using Nostos.Backend.Services;
 using Nostos.Backend.Services.Notes;
+using Nostos.Product.Http;
 using Nostos.Shared.Dtos;
 
 namespace Nostos.Backend.Endpoints;
@@ -27,15 +28,15 @@ public static class TopicsEndpoints
         // GET all topics (The Index)
         group.MapGet(
             "/",
-            async (string? search, ITopicRepository repo) =>
+            async (string? search, ITopicRepository repo, CancellationToken ct) =>
             {
                 if (string.IsNullOrWhiteSpace(search))
                 {
-                    var dtos = await repo.GetAllWithUsageCountAsync();
+                    var dtos = await repo.GetAllWithUsageCountAsync(ct);
                     return Results.Ok(dtos);
                 }
 
-                var results = await repo.SearchByNoteTextAsync(search);
+                var results = await repo.SearchByNoteTextAsync(search, ct);
                 return Results.Ok(results);
             }
         );
@@ -43,42 +44,21 @@ public static class TopicsEndpoints
         // GET aggregate topic statistics (The Index header)
         group.MapGet(
             "/stats",
-            async (ITopicRepository repo) => Results.Ok(await repo.GetStatsAsync())
+            async (ITopicRepository repo, CancellationToken ct) =>
+                Results.Ok(await repo.GetStatsAsync(ct))
         );
 
         // GET single topic details (The Context)
         group.MapGet(
             "/{id}",
-            async (Guid id, ITopicRepository repo) =>
+            async (Guid id, ITopicRepository repo, CancellationToken ct) =>
             {
-                var topic = await repo.GetByIdWithNotesAsync(id);
+                var topic = await repo.GetByIdWithNotesAsync(id, ct);
                 if (topic is null)
                     return Results.NotFound();
 
-                var notes = topic
-                    .NoteTopics.Select(nc => new NoteContextDto(
-                        nc.NoteId,
-                        nc.Note.Content,
-                        nc.Note.SelectedText,
-                        nc.Note.CfiRange,
-                        nc.Note.BookId,
-                        nc.Note.Book?.Title ?? "Unknown book",
-                        nc.Note.CreatedAt,
-                        nc.Note.SourceAnchorKind,
-                        nc.Note.SourceAnchorValue,
-                        nc.Note.AnchorVerified,
-                        nc.Note.HighlightColour,
-                        nc.Note.Kind,
-                        nc.Note.PassageTitle,
-                        nc.Note.PassageEnd,
-                        nc.Note.IsPassage() ? PassageText.WordCount(nc.Note.SelectedText) : null,
-                        nc.Note.Book?.Author
-                    ) with
-                    {
-                        SelectedText = TextLigatures.Expand(nc.Note.IsPassage()
-                            ? PassageText.Opening(nc.Note.SelectedText)
-                            : nc.Note.SelectedText),
-                    })
+                var notes = topic.NoteTopics
+                    .Select(link => link.Note.ToContextDto())
                     .ToList();
 
                 return Results.Ok(new TopicDetailDto(topic.Id, topic.Topic, notes));
@@ -88,7 +68,8 @@ public static class TopicsEndpoints
         // GET topics that co-occur with this topic in notes
         group.MapGet(
             "/{id}/related",
-            async (Guid id, ITopicRepository repo) => Results.Ok(await repo.GetRelatedAsync(id))
+            async (Guid id, ITopicRepository repo, CancellationToken ct) =>
+                Results.Ok(await repo.GetRelatedAsync(id, ct))
         );
 
         // GET where a topic is used in writing (issue #1162): read-only, joined
@@ -105,21 +86,22 @@ public static class TopicsEndpoints
         // GET whole-brain topic co-occurrence graph
         group.MapGet(
             "/graph",
-            async (ITopicRepository repo) => Results.Ok(await repo.GetGraphAsync())
+            async (ITopicRepository repo, CancellationToken ct) =>
+                Results.Ok(await repo.GetGraphAsync(ct))
         );
 
         // UPDATE name, merging into an existing topic with the same name
         group.MapPut(
             "/{id}",
-            async (Guid id, UpdateTopicDto dto, ITopicRepository repo) =>
+            async (Guid id, UpdateTopicDto dto, ITopicRepository repo, CancellationToken ct) =>
             {
                 if (string.IsNullOrWhiteSpace(dto.Topic))
-                    return Results.BadRequest(new { error = "Topic name cannot be empty." });
+                    return ApiErrors.Error("Topic name cannot be empty.");
                 // The new name is written into the notes' [[ ]] references.
                 if (!TopicReferences.IsValidName(dto.Topic))
-                    return Results.BadRequest(new { error = TopicReferences.InvalidNameMessage });
+                    return ApiErrors.Error(TopicReferences.InvalidNameMessage);
 
-                var topic = await repo.RenameAsync(id, dto.Topic.Trim());
+                var topic = await repo.RenameAsync(id, dto.Topic.Trim(), ct);
                 return topic is null
                     ? Results.NotFound()
                     : Results.Ok(topic.ToDto());
@@ -129,13 +111,13 @@ public static class TopicsEndpoints
         // The reader's own words about a topic; an empty value clears them.
         group.MapPut(
             "/{id}/description",
-            async (Guid id, UpdateTopicDescriptionDto dto, ITopicRepository repo) =>
+            async (Guid id, UpdateTopicDescriptionDto dto, ITopicRepository repo, CancellationToken ct) =>
             {
                 // The length that counts is what is kept: the trimmed text.
                 if (TopicModel.NormalizeDescription(dto.Description) is { Length: > TopicModel.MaxDescriptionLength })
-                    return Results.BadRequest(new { error = $"A topic's description is at most {TopicModel.MaxDescriptionLength} characters." });
+                    return ApiErrors.Error($"A topic's description is at most {TopicModel.MaxDescriptionLength} characters.");
 
-                var topic = await repo.SetDescriptionAsync(id, dto.Description);
+                var topic = await repo.SetDescriptionAsync(id, dto.Description, ct);
                 return topic is null
                     ? Results.NotFound()
                     : Results.Ok(topic.ToDto());
@@ -145,12 +127,12 @@ public static class TopicsEndpoints
         // MERGE one topic into another
         group.MapPost(
             "/{id}/merge",
-            async (Guid id, MergeTopicDto dto, ITopicRepository repo) =>
+            async (Guid id, MergeTopicDto dto, ITopicRepository repo, CancellationToken ct) =>
             {
                 if (id == dto.TargetId)
-                    return Results.BadRequest(new { error = "A topic cannot be merged into itself." });
+                    return ApiErrors.Error("A topic cannot be merged into itself.");
 
-                var topic = await repo.MergeAsync(id, dto.TargetId);
+                var topic = await repo.MergeAsync(id, dto.TargetId, ct);
                 return topic is null
                     ? Results.NotFound()
                     : Results.Ok(topic.ToDto());
@@ -159,8 +141,8 @@ public static class TopicsEndpoints
 
         group.MapDelete(
             "/{id}",
-            async (Guid id, ITopicRepository repo) =>
-                await DeleteTopicAsync(id, repo)
+            async (Guid id, ITopicRepository repo, CancellationToken ct) =>
+                await DeleteTopicAsync(id, repo, ct)
         );
 
         // LINK named topics to many notes at once (the Brain's selection bar
@@ -183,15 +165,18 @@ public static class TopicsEndpoints
         result.Success
             ? Results.Ok(result.Value)
             : result.ErrorCode == NoteErrorCodes.NoteNotFound
-                ? Results.NotFound(new { error = result.ErrorMessage })
-                : Results.BadRequest(new { error = result.ErrorMessage });
+                ? ApiErrors.Error(result.ErrorMessage!, StatusCodes.Status404NotFound)
+                : ApiErrors.Error(result.ErrorMessage!);
 
     /// <summary>
     /// Deletes a topic and its note links, and turns its references in the
     /// notes' text into plain words, so it is not re-created on their next save.
     /// </summary>
-    private static async Task<IResult> DeleteTopicAsync(Guid id, ITopicRepository repo)
+    private static async Task<IResult> DeleteTopicAsync(
+        Guid id,
+        ITopicRepository repo,
+        CancellationToken ct)
     {
-        return await repo.DeleteAsync(id) ? Results.NoContent() : Results.NotFound();
+        return await repo.DeleteAsync(id, ct) ? Results.NoContent() : Results.NotFound();
     }
 }

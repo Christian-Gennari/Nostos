@@ -4,6 +4,7 @@ using Nostos.Backend.Providers.Contracts;
 using Nostos.Backend.Providers.Discovery;
 using Nostos.Shared.Dtos;
 using Nostos.Product.Composition;
+using Nostos.Product.Http;
 
 namespace Nostos.Backend.Endpoints;
 
@@ -54,7 +55,7 @@ public static class ProviderEndpoints
                     return Results.Ok(new ProviderDiscoverySearchResultDto([], false, []));
 
                 if (query.Length > 200)
-                    return Results.BadRequest(new { error = "Search text is limited to 200 characters." });
+                    return ApiErrors.Error("Search text is limited to 200 characters.");
 
                 ProviderMediaKind? mediaKind = null;
                 if (!string.IsNullOrWhiteSpace(kind))
@@ -65,7 +66,7 @@ public static class ProviderEndpoints
                     }
                     else
                     {
-                        return Results.BadRequest(new { error = "Invalid material kind." });
+                        return ApiErrors.Error("Invalid material kind.");
                     }
                 }
 
@@ -119,16 +120,16 @@ public static class ProviderEndpoints
                     return UnknownProvider(providerId);
 
                 if (provider.Search is null)
-                    return Results.Problem(
-                        statusCode: StatusCodes.Status422UnprocessableEntity,
-                        title: "provider_search_unsupported",
-                        detail: $"{provider.Provider.DisplayName} does not support searching.");
+                    return ApiErrors.Problem(
+                        StatusCodes.Status422UnprocessableEntity,
+                        "provider_search_unsupported",
+                        $"{provider.Provider.DisplayName} does not support searching.");
 
                 if (string.IsNullOrWhiteSpace(query) || query.Trim().Length < 2)
                     return Results.Ok(new ProviderSearchResultDto([], false, null));
 
                 if (query.Length > 200)
-                    return Results.BadRequest(new { error = "Search text is limited to 200 characters." });
+                    return ApiErrors.Error("Search text is limited to 200 characters.");
 
                 try
                 {
@@ -165,16 +166,16 @@ public static class ProviderEndpoints
                     return UnknownProvider(providerId);
 
                 if (provider.Catalog is null)
-                    return Results.Problem(
-                        statusCode: StatusCodes.Status422UnprocessableEntity,
-                        title: "provider_item_retrieval_unsupported",
-                        detail: $"{provider.Provider.DisplayName} cannot retrieve individual items.");
+                    return ApiErrors.Problem(
+                        StatusCodes.Status422UnprocessableEntity,
+                        "provider_item_retrieval_unsupported",
+                        $"{provider.Provider.DisplayName} cannot retrieve individual items.");
 
                 try
                 {
                     var item = await provider.Catalog.GetItemAsync(externalId, ct);
                     return item is null
-                        ? Results.NotFound(new { error = "provider_item_not_found" })
+                        ? ApiErrors.Error("provider_item_not_found", StatusCodes.Status404NotFound)
                         : Results.Ok(ToItemDto(item));
                 }
                 catch (ProviderException ex)
@@ -247,7 +248,7 @@ public static class ProviderEndpoints
                     return UnknownProvider(providerId);
 
                 if (string.IsNullOrWhiteSpace(dto.ExternalId))
-                    return Results.BadRequest(new { error = "An external item id is required." });
+                    return ApiErrors.Error("An external item id is required.");
 
                 try
                 {
@@ -263,10 +264,10 @@ public static class ProviderEndpoints
                 }
                 catch (InvalidOperationException)
                 {
-                    return Results.Problem(
-                        statusCode: StatusCodes.Status429TooManyRequests,
-                        title: "acquisition_queue_full",
-                        detail: "The acquisition queue is currently full.");
+                    return ApiErrors.Problem(
+                        StatusCodes.Status429TooManyRequests,
+                        "acquisition_queue_full",
+                        "The acquisition queue is currently full.");
                 }
             });
 
@@ -298,21 +299,21 @@ public static class ProviderEndpoints
     }
 
     internal static IResult UnknownProvider(string providerId) =>
-        Results.Problem(
-            statusCode: StatusCodes.Status404NotFound,
-            title: "provider_unknown",
-            detail: $"No content provider is registered as '{providerId}'.");
+        ApiErrors.Problem(
+            StatusCodes.Status404NotFound,
+            "provider_unknown",
+            $"No content provider is registered as '{providerId}'.");
 
-    private static IResult ProviderFailure(ProviderException ex) => Results.Problem(
-        statusCode: ex.Code switch
+    private static IResult ProviderFailure(ProviderException ex) => ApiErrors.Problem(
+        ex.Code switch
         {
             ProviderException.ItemNotFound => StatusCodes.Status404NotFound,
             ProviderException.AssetUnavailable => StatusCodes.Status404NotFound,
             ProviderException.Unavailable => StatusCodes.Status503ServiceUnavailable,
             _ => StatusCodes.Status502BadGateway,
         },
-        title: ex.Code,
-        detail: ex.Code switch
+        ex.Code,
+        ex.Code switch
         {
             ProviderException.ItemNotFound => "The provider item was not found.",
             ProviderException.AssetUnavailable => "The requested provider asset is unavailable.",

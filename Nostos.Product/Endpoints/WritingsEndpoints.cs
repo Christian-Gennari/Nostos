@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using Nostos.Backend.Data.Interfaces;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Mapping;
+using Nostos.Product.Http;
 using Nostos.Shared.Dtos;
 
 namespace Nostos.Backend.Endpoints;
@@ -20,18 +21,18 @@ public static class WritingsEndpoints
         // GET: Fetch the entire file list (FLAT)
         group.MapGet(
             "/",
-            async (IWritingRepository repo) =>
+            async (IWritingRepository repo, CancellationToken ct) =>
             {
-                return Results.Ok(await repo.GetListAsync());
+                return Results.Ok(await repo.GetListAsync(ct));
             }
         );
 
         // GET: Fetch a single document (with Content)
         group.MapGet(
             "/{id}",
-            async (Guid id, IWritingRepository repo) =>
+            async (Guid id, IWritingRepository repo, CancellationToken ct) =>
             {
-                var item = await repo.GetByIdAsync(id);
+                var item = await repo.GetByIdAsync(id, ct);
                 if (item is null)
                     return Results.NotFound();
 
@@ -42,11 +43,11 @@ public static class WritingsEndpoints
         // POST: Create new Folder or Document
         group.MapPost(
             "/",
-            async (CreateWritingDto dto, IWritingRepository repo) =>
+            async (CreateWritingDto dto, IWritingRepository repo, CancellationToken ct) =>
             {
                 if (!Enum.TryParse<WritingType>(dto.Type, true, out var type))
                 {
-                    return Results.BadRequest("Invalid type. Must be 'Folder' or 'Document'.");
+                    return ApiErrors.Message("Invalid type. Must be 'Folder' or 'Document'.");
                 }
 
                 var model = new WritingModel
@@ -56,7 +57,7 @@ public static class WritingsEndpoints
                     ParentId = dto.ParentId,
                 };
 
-                await repo.AddAsync(model);
+                await repo.AddAsync(model, ct);
 
                 return Results.Created($"/api/writings/{model.Id}", model.ToDto());
             }
@@ -69,7 +70,8 @@ public static class WritingsEndpoints
                 Guid id,
                 JsonElement body,
                 IWritingRepository repo,
-                IOptions<Microsoft.AspNetCore.Http.Json.JsonOptions> jsonOptions) =>
+                IOptions<Microsoft.AspNetCore.Http.Json.JsonOptions> jsonOptions,
+                CancellationToken ct) =>
             {
                 UpdateWritingDto? dto;
                 try
@@ -79,13 +81,13 @@ public static class WritingsEndpoints
                 }
                 catch (JsonException)
                 {
-                    return Results.BadRequest();
+                    return ApiErrors.EmptyBadRequest();
                 }
 
                 if (dto is null || body.ValueKind != JsonValueKind.Object)
-                    return Results.BadRequest();
+                    return ApiErrors.EmptyBadRequest();
 
-                var item = await repo.GetByIdAsync(id);
+                var item = await repo.GetByIdAsync(id, ct);
                 if (item is null)
                     return Results.NotFound();
 
@@ -104,7 +106,7 @@ public static class WritingsEndpoints
                     item.Content = dto.Content;
                 item.UpdatedAt = DateTime.UtcNow;
 
-                await repo.SaveContentAsync(item);
+                await repo.SaveContentAsync(item, ct);
 
                 return Results.Ok(item.ToContentDto());
             }
@@ -114,9 +116,9 @@ public static class WritingsEndpoints
         // PUT: Move (Drag & Drop)
         group.MapPut(
             "/{id}/move",
-            async (Guid id, MoveWritingDto dto, IWritingRepository repo) =>
+            async (Guid id, MoveWritingDto dto, IWritingRepository repo, CancellationToken ct) =>
             {
-                var item = await repo.GetByIdAsync(id);
+                var item = await repo.GetByIdAsync(id, ct);
                 if (item is null)
                     return Results.NotFound();
 
@@ -124,23 +126,23 @@ public static class WritingsEndpoints
                 if (dto.NewParentId.HasValue)
                 {
                     if (dto.NewParentId == id)
-                        return Results.BadRequest("Cannot move a folder into itself.");
+                        return ApiErrors.Message("Cannot move a folder into itself.");
 
                     var currentAncestorId = dto.NewParentId;
                     var visited = new HashSet<Guid>();
                     while (currentAncestorId != null)
                     {
                         if (!visited.Add(currentAncestorId.Value))
-                            return Results.BadRequest(
+                            return ApiErrors.Message(
                                 "Circular reference detected in folder hierarchy."
                             );
 
                         if (currentAncestorId == id)
-                            return Results.BadRequest(
+                            return ApiErrors.Message(
                                 "Cannot move a folder into its own descendant."
                             );
 
-                        currentAncestorId = await repo.GetParentIdAsync(currentAncestorId.Value);
+                        currentAncestorId = await repo.GetParentIdAsync(currentAncestorId.Value, ct);
                     }
                 }
                 // --- CYCLE DETECTION END ---
@@ -148,7 +150,7 @@ public static class WritingsEndpoints
                 item.ParentId = dto.NewParentId;
                 item.UpdatedAt = DateTime.UtcNow;
 
-                await repo.UpdateAsync(item);
+                await repo.UpdateAsync(item, ct);
 
                 return Results.Ok(item.ToDto());
             }
@@ -157,13 +159,13 @@ public static class WritingsEndpoints
         // DELETE
         group.MapDelete(
             "/{id}",
-            async (Guid id, IWritingRepository repo) =>
+            async (Guid id, IWritingRepository repo, CancellationToken ct) =>
             {
-                var item = await repo.GetByIdAsync(id);
+                var item = await repo.GetByIdAsync(id, ct);
                 if (item is null)
                     return Results.NotFound();
 
-                await repo.DeleteAsync(item);
+                await repo.DeleteAsync(item, ct);
 
                 return Results.NoContent();
             }
@@ -172,9 +174,9 @@ public static class WritingsEndpoints
         // GET: The writing's export page setup (issue #1164); 204 until one is saved.
         group.MapGet(
             "/{id}/page-setup",
-            async (Guid id, IWritingRepository repo) =>
+            async (Guid id, IWritingRepository repo, CancellationToken ct) =>
             {
-                var item = await repo.GetByIdAsync(id);
+                var item = await repo.GetByIdAsync(id, ct);
                 if (item is null)
                     return Results.NotFound();
 
@@ -187,19 +189,19 @@ public static class WritingsEndpoints
         // UpdatedAt stays as it is.
         group.MapPut(
             "/{id}/page-setup",
-            async (Guid id, WritingPageSetupDto dto, IWritingRepository repo) =>
+            async (Guid id, WritingPageSetupDto dto, IWritingRepository repo, CancellationToken ct) =>
             {
                 var error = WritingPageSetup.Validate(dto);
                 if (error is not null)
-                    return Results.BadRequest(error);
+                    return ApiErrors.Message(error);
 
-                var item = await repo.GetByIdAsync(id);
+                var item = await repo.GetByIdAsync(id, ct);
                 if (item is null)
                     return Results.NotFound();
 
                 var normalized = WritingPageSetup.Normalize(dto);
                 item.PageSetup = WritingPageSetup.Write(normalized);
-                await repo.UpdateAsync(item);
+                await repo.UpdateAsync(item, ct);
 
                 return Results.Ok(normalized);
             }
@@ -208,9 +210,9 @@ public static class WritingsEndpoints
         // GET: Fetch kept source notes for a writing document
         group.MapGet(
             "/{writingId}/notes",
-            async (Guid writingId, IWritingRepository repo) =>
+            async (Guid writingId, IWritingRepository repo, CancellationToken ct) =>
             {
-                var notes = await repo.GetKeptNotesAsync(writingId);
+                var notes = await repo.GetKeptNotesAsync(writingId, ct);
                 if (notes is null)
                     return Results.NotFound();
 
@@ -221,14 +223,14 @@ public static class WritingsEndpoints
         // POST: Keep a source note available for a writing document
         group.MapPost(
             "/{writingId}/notes",
-            async (Guid writingId, AddWritingSourceDto dto, IWritingRepository repo) =>
+            async (Guid writingId, AddWritingSourceDto dto, IWritingRepository repo, CancellationToken ct) =>
             {
-                var result = await repo.AddKeptNoteAsync(writingId, dto.NoteId);
+                var result = await repo.AddKeptNoteAsync(writingId, dto.NoteId, ct);
                 return result.Status switch
                 {
                     AddKeptNoteStatus.WritingNotFound => Results.NotFound(),
                     AddKeptNoteStatus.NoteNotFound => Results.NotFound(),
-                    AddKeptNoteStatus.WritingIsFolder => Results.BadRequest("Cannot keep notes on a folder."),
+                    AddKeptNoteStatus.WritingIsFolder => ApiErrors.Message("Cannot keep notes on a folder."),
                     AddKeptNoteStatus.AlreadyExists => Results.Ok(result.WritingNote!.ToDto()),
                     AddKeptNoteStatus.Success => Results.Created(
                         $"/api/writings/{writingId}/notes/{dto.NoteId}",
@@ -241,9 +243,9 @@ public static class WritingsEndpoints
         // DELETE: Remove a kept source note from a writing document
         group.MapDelete(
             "/{writingId}/notes/{noteId}",
-            async (Guid writingId, Guid noteId, IWritingRepository repo) =>
+            async (Guid writingId, Guid noteId, IWritingRepository repo, CancellationToken ct) =>
             {
-                var writingExists = await repo.RemoveKeptNoteAsync(writingId, noteId);
+                var writingExists = await repo.RemoveKeptNoteAsync(writingId, noteId, ct);
                 if (!writingExists)
                     return Results.NotFound();
 

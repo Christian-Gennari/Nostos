@@ -1,4 +1,5 @@
 using Nostos.Backend.Services.BookUpload;
+using Nostos.Product.Http;
 
 namespace Nostos.Backend.Endpoints;
 
@@ -9,9 +10,6 @@ public sealed record BookUploadCreateHttpRequest(
     string? ContentType,
     string? Sha256,
     string? ClientFingerprint = null);
-
-/// <summary>Stable, safe error body. Never carries exception text or paths.</summary>
-public sealed record BookUploadErrorResponse(string Error, string Message);
 
 public static class BookUploadHttpErrors
 {
@@ -38,9 +36,10 @@ public static class BookUploadHttpErrors
     public static IResult From(BookUploadException exception) => exception.Code switch
     {
         BookUploadException.InvalidFile =>
-            Results.Json(
-                new BookUploadErrorResponse(exception.Code, exception.Message),
-                statusCode: StatusCodes.Status400BadRequest),
+            ApiErrors.ErrorWithCode(
+                exception.Code,
+                exception.Message,
+                StatusCodes.Status400BadRequest),
         BookUploadException.NotFound or BookUploadException.BookNotFound =>
             Result(exception.Code, StatusCodes.Status404NotFound),
         BookUploadException.Expired => Result(exception.Code, StatusCodes.Status410Gone),
@@ -60,16 +59,19 @@ public static class BookUploadHttpErrors
         _ => Result(exception.Code, StatusCodes.Status409Conflict),
     };
 
+    /// <summary>
+    /// The upload contract's stable body: <c>{ "error": "code", "message": ... }</c>.
+    /// Never carries exception text or paths.
+    /// </summary>
     public static IResult Result(string code, int statusCode) =>
-        Results.Json(new BookUploadErrorResponse(code, MessageFor(code)), statusCode: statusCode);
+        ApiErrors.ErrorWithCode(code, MessageFor(code), statusCode);
 
     public static IResult InvalidRequest() =>
         Result(BookUploadException.InvalidRequest, StatusCodes.Status400BadRequest);
 
     public static IResult PartTooLarge() =>
-        Results.Json(
-            new BookUploadErrorResponse(
-                BookUploadException.InvalidRequest,
-                "The part request body exceeds the maximum accepted size."),
-            statusCode: StatusCodes.Status413PayloadTooLarge);
+        ApiErrors.ErrorWithCode(
+            BookUploadException.InvalidRequest,
+            "The part request body exceeds the maximum accepted size.",
+            StatusCodes.Status413PayloadTooLarge);
 }

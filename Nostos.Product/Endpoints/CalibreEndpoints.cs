@@ -46,24 +46,22 @@ public static class CalibreEndpoints
 
             if (!folderConfigured && !staged)
             {
-                return Results.Conflict(new
-                {
-                    code = "calibre_not_configured",
-                    message = uploads is not null
+                return ApiErrors.CodeMessage(
+                    "calibre_not_configured",
+                    uploads is not null
                         ? "No Calibre library is set up yet. Upload a zipped Calibre library to begin."
                         : "No Calibre library folder is configured on this server.",
-                });
+                    StatusCodes.Status409Conflict);
             }
 
             if (!folderAvailable && !staged)
             {
-                return Results.Conflict(new
-                {
-                    code = "calibre_library_unavailable",
-                    message = uploads is not null
+                return ApiErrors.CodeMessage(
+                    "calibre_library_unavailable",
+                    uploads is not null
                         ? "The Calibre folder is not readable. Upload a zipped Calibre library, or check the folder."
                         : "The Calibre library is not available. Check that its folder is mounted and holds metadata.db.",
-                });
+                    StatusCodes.Status409Conflict);
             }
 
             return await next(context);
@@ -118,20 +116,18 @@ public static class CalibreEndpoints
             var decisions = request?.Decisions ?? [];
             if (decisions.Count == 0)
             {
-                return Results.BadRequest(new
-                {
-                    code = "calibre_nothing_selected",
-                    message = "Choose at least one book and one format to import.",
-                });
+                return ApiErrors.CodeMessage(
+                    "calibre_nothing_selected",
+                    "Choose at least one book and one format to import.",
+                    StatusCodes.Status400BadRequest);
             }
 
             if (decisions.Count > MaxDecisions)
             {
-                return Results.BadRequest(new
-                {
-                    code = "calibre_too_many_books",
-                    message = $"At most {MaxDecisions} books can be imported at once.",
-                });
+                return ApiErrors.CodeMessage(
+                    "calibre_too_many_books",
+                    $"At most {MaxDecisions} books can be imported at once.",
+                    StatusCodes.Status400BadRequest);
             }
 
             var ownerKey = OwnerKey(http.RequestServices);
@@ -139,21 +135,18 @@ public static class CalibreEndpoints
             {
                 CalibreImportJob.StartResult.Started =>
                     Results.Accepted(Route + "/import", job.StateFor(ownerKey)),
-                CalibreImportJob.StartResult.AlreadyRunning => Results.Conflict(new
-                {
-                    code = "calibre_import_running",
-                    message = "An import is already running.",
-                }),
-                CalibreImportJob.StartResult.NothingSelected => Results.BadRequest(new
-                {
-                    code = "calibre_nothing_selected",
-                    message = "Choose at least one book and one format to import.",
-                }),
-                _ => Results.Conflict(new
-                {
-                    code = "calibre_library_unavailable",
-                    message = "The Calibre library is not available. Check that it is still readable.",
-                }),
+                CalibreImportJob.StartResult.AlreadyRunning => ApiErrors.CodeMessage(
+                    "calibre_import_running",
+                    "An import is already running.",
+                    StatusCodes.Status409Conflict),
+                CalibreImportJob.StartResult.NothingSelected => ApiErrors.CodeMessage(
+                    "calibre_nothing_selected",
+                    "Choose at least one book and one format to import.",
+                    StatusCodes.Status400BadRequest),
+                _ => ApiErrors.CodeMessage(
+                    "calibre_library_unavailable",
+                    "The Calibre library is not available. Check that it is still readable.",
+                    StatusCodes.Status409Conflict),
             };
         });
 

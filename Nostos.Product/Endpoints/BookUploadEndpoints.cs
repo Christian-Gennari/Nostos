@@ -105,7 +105,7 @@ public static class BookUploadEndpoints
                 int partIndex,
                 HttpRequest request,
                 BookUploadService service,
-                ILoggerFactory loggerFactory,
+                ILogger<BookUploadLog> logger,
                 CancellationToken ct) =>
             {
                 if (!ResumableChunkRequest.TryRead(request, out var chunk, out var sha256))
@@ -119,7 +119,6 @@ public static class BookUploadEndpoints
 
                 ResumableChunkRequest.LimitBodySize(request, BookUploadLimits.PartBytes);
 
-                var logger = loggerFactory.CreateLogger("Nostos.BookUpload");
                 var counting = new CountingRequestBodyStream(request.Body);
                 request.Body = counting;
 

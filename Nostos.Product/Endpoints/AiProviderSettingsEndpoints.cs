@@ -1,4 +1,5 @@
 using Nostos.Backend.Services.Ai;
+using Nostos.Product.Http;
 
 namespace Nostos.Backend.Endpoints;
 
@@ -88,9 +89,7 @@ public static class AiProviderSettingsEndpoints
         catch (AiProviderUpstreamException ex)
         {
             // 502 with the provider's own message: the shape the UI renders.
-            return Results.Json(
-                new { error = ex.Message },
-                statusCode: StatusCodes.Status502BadGateway);
+            return ApiErrors.Error(ex.Message, StatusCodes.Status502BadGateway);
         }
     }
 
@@ -111,11 +110,11 @@ public static class AiProviderSettingsEndpoints
     }
 
     private static IResult HostOwnedConfigurationFailure(string message) =>
-        Results.Problem(
-            statusCode: StatusCodes.Status403Forbidden,
-            title: "ai_provider_settings_owned_by_host",
-            detail: message);
+        ApiErrors.Problem(
+            StatusCodes.Status403Forbidden,
+            "ai_provider_settings_owned_by_host",
+            message);
 
     private static IResult ValidationFailure(string message) =>
-        Results.BadRequest(new { error = message });
+        ApiErrors.Error(message);
 }
