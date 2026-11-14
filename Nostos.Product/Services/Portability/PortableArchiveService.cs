@@ -23,12 +23,6 @@ public sealed class PortableArchiveService(
 {
     private const int CopyBufferSize = 128 * 1024;
 
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = false,
-    };
-
     private readonly NostosDbContext _db = db;
     private readonly IBookAssetStorage _assets = assets;
     private readonly IBookTrackStorage? _tracks = trackStorage;
@@ -206,7 +200,7 @@ public sealed class PortableArchiveService(
         await JsonSerializer.SerializeAsync(
             preflight,
             data,
-            JsonOptions,
+            PortableArchiveJson.Options,
             cancellationToken);
         return preflight.Complete();
     }
@@ -246,7 +240,7 @@ public sealed class PortableArchiveService(
                 await JsonSerializer.SerializeAsync(
                     hashing,
                     snapshot.Data,
-                    JsonOptions,
+                    PortableArchiveJson.Options,
                     cancellationToken);
                 (dataLength, dataSha256) = hashing.Complete();
                 PortableArchiveValidation.ValidateStreamedDataMatchesPreflight(
@@ -319,7 +313,7 @@ public sealed class PortableArchiveService(
                 await JsonSerializer.SerializeAsync(
                     bounded,
                     manifest,
-                    JsonOptions,
+                    PortableArchiveJson.Options,
                     cancellationToken);
             }
             catch
@@ -594,7 +588,7 @@ public sealed class PortableArchiveService(
         try
         {
             return await JsonSerializer
-                .DeserializeAsync<PortableArchiveManifest>(staged, JsonOptions, cancellationToken)
+                .DeserializeAsync<PortableArchiveManifest>(staged, PortableArchiveJson.Options, cancellationToken)
                 ?? throw new PortableArchiveException(
                     "malformed_manifest",
                     "Portable archive manifest is malformed.");
@@ -621,190 +615,15 @@ public sealed class PortableArchiveService(
         // never claim an earlier revision than the rows that were read.
         var snapshotAtUtc = _timeProvider.GetUtcNow().UtcDateTime;
 
-        var works = (await _db.Works
-            .AsNoTracking()
-            .OrderBy(x => x.Id)
-            .ToListAsync(ct))
-            .Select(x => new PortableWork(
-                x.Id,
-                x.Title,
-                x.Author,
-                x.CreatedAt,
-                x.Rating,
-                x.IsFavorite,
-                x.PersonalReview))
-            .ToList();
-
-        var books = (await _db.Books
-            .AsNoTracking()
-            .OrderBy(x => x.Id)
-            .ToListAsync(ct))
-            .Select(ToPortableBook)
-            .ToList();
-
-        var collections = (await _db.Collections
-            .AsNoTracking()
-            .OrderBy(x => x.Id)
-            .ToListAsync(ct))
-            .Select(x => new PortableCollection(
-                x.Id,
-                x.Name,
-                x.ParentId))
-            .ToList();
-
-        var bookCollections = (await _db.BookCollections
-            .AsNoTracking()
-            .OrderBy(x => x.BookId)
-            .ThenBy(x => x.CollectionId)
-            .ToListAsync(ct))
-            .Select(x => new PortableBookCollection(
-                x.BookId,
-                x.CollectionId,
-                x.AddedAt))
-            .ToList();
-
-        var notes = (await _db.Notes
-            .AsNoTracking()
-            .OrderBy(x => x.Id)
-            .ToListAsync(ct))
-            .Select(x => new PortableNote(
-                x.Id,
-                x.Content,
-                x.CfiRange,
-                x.SelectedText,
-                x.CreatedAt,
-                x.BookId,
-                x.RawContent,
-                x.CaptureSource,
-                x.ProcessingMode,
-                x.SourceAnchorKind,
-                x.SourceAnchorValue,
-                x.AnchorVerified,
-                x.HighlightColour,
-                x.Kind,
-                x.PassageTitle,
-                x.PassageEnd,
-                x.PassageHtml))
-            .ToList();
-
-        var topics = (await _db.Topics
-            .AsNoTracking()
-            .OrderBy(x => x.Id)
-            .ToListAsync(ct))
-            .Select(x => new PortableTopic(
-                x.Id,
-                x.Topic,
-                x.Description))
-            .ToList();
-
-        var noteTopics = (await _db.NoteTopics
-            .AsNoTracking()
-            .OrderBy(x => x.NoteId)
-            .ThenBy(x => x.TopicId)
-            .ToListAsync(ct))
-            .Select(x => new PortableNoteTopic(
-                x.NoteId,
-                x.TopicId))
-            .ToList();
-
-        var writings = (await _db.Writings
-            .AsNoTracking()
-            .OrderBy(x => x.Id)
-            .ToListAsync(ct))
-            .Select(x => new PortableWriting(
-                x.Id,
-                x.Name,
-                x.Type.ToString(),
-                x.Content,
-                x.ParentId,
-                x.CreatedAt,
-                x.UpdatedAt,
-                x.PageSetup))
-            .ToList();
-
-        var acquisitions = (await _db.BookAcquisitions
-            .AsNoTracking()
-            .OrderBy(x => x.Id)
-            .ToListAsync(ct))
-            .Select(x => new PortableBookAcquisition(
-                x.Id,
-                x.BookId,
-                x.ProviderId,
-                x.ProviderDisplayName,
-                x.ExternalId,
-                x.AssetId,
-                x.AssetFormat,
-                x.ImportedExtension,
-                x.SourceUrl,
-                x.RightsStatement,
-                x.AcquiredAt))
-            .ToList();
-
-        var writingNotes = (await _db.WritingNotes
-            .AsNoTracking()
-            .OrderBy(x => x.WritingId)
-            .ThenBy(x => x.NoteId)
-            .ToListAsync(ct))
-            .Select(x => new PortableWritingNote(
-                x.WritingId,
-                x.NoteId,
-                x.AddedAt))
-            .ToList();
-
-        var noteImportBookLinks = (await _db.NoteImportBookLinks
-            .AsNoTracking()
-            .OrderBy(x => x.Id)
-            .ToListAsync(ct))
-            .Select(x => new PortableNoteImportBookLink(
-                x.Id,
-                x.Source,
-                x.SourceKey,
-                x.BookId,
-                x.CreatedAtUtc))
-            .ToList();
-
-        var readingListEntries = (await _db.ReadingListEntries
-            .AsNoTracking()
-            .OrderBy(x => x.Id)
-            .ToListAsync(ct))
-            .Select(x => new PortableReadingListEntry(
-                x.Id,
-                x.Title,
-                x.Author,
-                x.Isbn,
-                x.PublishedDate,
-                x.Why,
-                x.RecommendedBy,
-                x.NextPosition,
-                x.CreatedAt))
-            .ToList();
-
-        var assistant = await _db.AssistantSettings
-            .AsNoTracking()
-            .SingleOrDefaultAsync(ct);
-
-        var data = new PortableLibraryData(
-            PortableArchiveFormat.DataVersion,
-            works,
-            books,
-            collections,
-            bookCollections,
-            notes,
-            topics,
-            noteTopics,
-            writings,
-            acquisitions,
-            assistant is null
-                ? null
-                : new PortableAssistantSettings(
-                    assistant.CaptureProcessingMode,
-                    assistant.UpdatedAtUtc),
-            writingNotes,
-            noteImportBookLinks,
-            readingListEntries);
+        // The projection is shared with the recovery source, so an export and a
+        // recovery payload can never describe the same library differently.
+        var data = await PortableLibrarySnapshot.ReadAsync(
+            _db,
+            ExportBookMedia,
+            ct);
 
         var media = new List<PortableSourceMedia>();
-        foreach (var book in books)
+        foreach (var book in data.Books)
         {
             if (book.HasBookFile)
             {
@@ -834,79 +653,20 @@ public sealed class PortableArchiveService(
         return new PortableExportSnapshot(
             snapshotAtUtc,
             data,
-            CountsFor(data),
+            PortableLibraryCounts.ComputeArchiveCounts(data),
             media);
     }
 
-    private static PortableBook ToPortableBook(BookModel book)
-    {
-        var type = book switch
-        {
-            PhysicalBookModel => "physical",
-            EBookModel => "ebook",
-            AudioBookModel => "audiobook",
-            _ => throw new PortableArchiveException(
-                "unsupported_book_type",
-                $"Book {book.Id} has an unsupported concrete type.")
-        };
-
-        var isbn = book switch
-        {
-            PhysicalBookModel physical => physical.Isbn,
-            EBookModel ebook => ebook.Isbn,
-            _ => null,
-        };
-        var pageCount = book switch
-        {
-            PhysicalBookModel physical => physical.PageCount,
-            EBookModel ebook => ebook.PageCount,
-            _ => null,
-        };
-        var audio = book as AudioBookModel;
-
-        return new PortableBook(
-            book.Id,
-            book.WorkId,
-            type,
-            book.Status.ToString(),
-            book.StatusMessage,
-            book.Title,
-            book.Author,
-            new PortableBookMetadata(
-                book.Metadata.Subtitle,
-                book.Metadata.Description,
-                book.Metadata.Editor,
-                book.Metadata.Translator,
-                book.Metadata.Publisher,
-                book.Metadata.PlaceOfPublication,
-                book.Metadata.PublishedDate,
-                book.Metadata.Language,
-                book.Metadata.Categories,
-                book.Metadata.Edition,
-                book.Metadata.Series,
-                book.Metadata.VolumeNumber),
-            new PortableReadingProgress(
-                book.Progress.LastLocation,
-                book.Progress.ProgressPercent,
-                book.Progress.Rating,
-                // The favourite is the book's and travels on its work.
-                false,
-                book.Progress.PersonalReview,
-                book.Progress.LastReadAt,
-                book.Progress.FinishedAt),
-            book.CreatedAt,
-            isbn,
-            pageCount,
-            audio?.Asin,
-            audio?.Duration,
-            audio?.Narrator,
-            book.FileDetails.ChaptersJson,
-            // A multi-track audiobook reports HasFile with no primary file; its
-            // media travels as tracks instead.
+    /// <summary>
+    /// What the archive records about an edition's stored media. A multi-track
+    /// audiobook reports HasFile with no primary file: its media travels as
+    /// tracks instead.
+    /// </summary>
+    private static PortableBookMedia ExportBookMedia(BookModel book) =>
+        new(
             book.FileDetails.HasFile && book.FileDetails.TracksJson is null,
             !string.IsNullOrWhiteSpace(book.FileDetails.CoverFileName),
             book.FileDetails.TracksJson);
-    }
 
     private async Task<IReadOnlyList<PinnedPortableSourceMedia>> PinSourceMediaAsync(
         PortableExportSnapshot snapshot,
@@ -943,10 +703,11 @@ public sealed class PortableArchiveService(
                     $"Book {source.BookId} references a {source.Kind} asset that could not be opened.");
             }
 
-            var hashed = await HashStreamAsync(
+            var hashed = await PortableArchiveHashing.HashStreamAsync(
                 opened.Content,
+                ct,
                 PortableArchiveLimits.MaxSingleEntryBytes,
-                ct);
+                "Portable media exceeds the expected size.");
 
             var after = await GetAssetInfoAsync(source.BookId, source.Kind, source.FileName, ct);
             if (after is null
@@ -1310,10 +1071,10 @@ public sealed class PortableArchiveService(
                 descriptor.Path,
                 opened is not null);
 
-            var hash = await HashStreamAsync(
+            var hash = await PortableArchiveHashing.HashStreamAsync(
                 opened!.Content,
-                descriptor.Length,
-                ct);
+                ct,
+                descriptor.Length);
             PortableArchiveValidation.ValidateStoredMediaHash(
                 descriptor.Path,
                 hash.Length,
@@ -1340,18 +1101,6 @@ public sealed class PortableArchiveService(
             }
         }
     }
-
-    private static PortableArchiveCounts CountsFor(PortableLibraryData data) =>
-        new(
-            data.Works.Count,
-            data.Books.Count,
-            data.Collections.Count,
-            data.BookCollections.Count,
-            data.Notes.Count,
-            data.Topics.Count,
-            data.NoteTopics.Count,
-            data.Writings.Count,
-            data.BookAcquisitions.Count);
 
     private static async Task<(long Length, string Sha256)> CopyAndHashAsync(
         Stream source,
@@ -1393,32 +1142,6 @@ public sealed class PortableArchiveService(
         }
     }
 
-    private static async Task<(long Length, string Sha256)> HashStreamAsync(
-        Stream source,
-        long maxBytes,
-        CancellationToken ct)
-    {
-        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        var buffer = new byte[CopyBufferSize];
-        long total = 0;
-
-        while (true)
-        {
-            var read = await source.ReadAsync(buffer.AsMemory(), ct);
-            if (read == 0)
-                break;
-
-            total = checked(total + read);
-            PortableArchiveValidation.ValidateExpectedMediaSize(total, maxBytes);
-
-            hash.AppendData(buffer, 0, read);
-        }
-
-        return (
-            total,
-            Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant());
-    }
-
     private static void TryDeleteDirectory(string path)
     {
         try
@@ -1432,136 +1155,4 @@ public sealed class PortableArchiveService(
             // the user's source library or destination durable storage.
         }
     }
-}
-
-/// <summary>
-/// Serializes relational JSON straight into a ZIP entry while counting and
-/// hashing the exact bytes that will be stored. Only asynchronous writes are
-/// forwarded; the archived entry never needs a temporary file. Exceeding
-/// <paramref name="maxBytes"/> fails the export before more than the limit is
-/// written.
-/// </summary>
-internal sealed class HashingWriteStream : Stream
-{
-    private readonly Stream _destination;
-    private readonly long _maxBytes;
-    private readonly string _limitCode;
-    private readonly string _limitMessage;
-    private readonly IncrementalHash _hash =
-        IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-    private long _length;
-    private bool _completed;
-    private bool _disposed;
-
-    public HashingWriteStream(
-        Stream destination,
-        long maxBytes,
-        string limitCode,
-        string limitMessage)
-    {
-        ArgumentNullException.ThrowIfNull(destination);
-        _destination = destination;
-        _maxBytes = maxBytes;
-        _limitCode = limitCode;
-        _limitMessage = limitMessage;
-    }
-
-    public override bool CanRead => false;
-    public override bool CanSeek => false;
-    public override bool CanWrite => !_disposed && !_completed;
-    public override long Length => _length;
-
-    public override long Position
-    {
-        get => throw new NotSupportedException();
-        set => throw new NotSupportedException();
-    }
-
-    public (long Length, string Sha256) Complete()
-    {
-        if (_completed)
-            throw new InvalidOperationException("The hashing stream is already complete.");
-        if (_disposed)
-            throw new ObjectDisposedException(nameof(HashingWriteStream));
-
-        _completed = true;
-        return (
-            _length,
-            Convert.ToHexString(_hash.GetHashAndReset()).ToLowerInvariant());
-    }
-
-    public override async ValueTask WriteAsync(
-        ReadOnlyMemory<byte> buffer,
-        CancellationToken cancellationToken = default)
-    {
-        Observe(buffer.Span);
-        await _destination.WriteAsync(buffer, cancellationToken).ConfigureAwait(false);
-    }
-
-    public override Task WriteAsync(
-        byte[] buffer,
-        int offset,
-        int count,
-        CancellationToken cancellationToken) =>
-        WriteAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
-
-    public override void Write(byte[] buffer, int offset, int count) =>
-        throw new NotSupportedException(
-            "Portable archive serialization must use asynchronous writes.");
-
-    public override void Write(ReadOnlySpan<byte> buffer) =>
-        throw new NotSupportedException(
-            "Portable archive serialization must use asynchronous writes.");
-
-    public override void WriteByte(byte value) =>
-        throw new NotSupportedException(
-            "Portable archive serialization must use asynchronous writes.");
-
-    public override Task FlushAsync(CancellationToken cancellationToken) =>
-        _destination.FlushAsync(cancellationToken);
-
-    public override void Flush() =>
-        throw new NotSupportedException(
-            "Portable archive serialization must use asynchronous writes.");
-
-    public override ValueTask DisposeAsync()
-    {
-        Dispose(disposing: true);
-        return ValueTask.CompletedTask;
-    }
-
-    protected override void Dispose(bool disposing)
-    {
-        if (_disposed)
-            return;
-
-        _disposed = true;
-        if (disposing)
-            _hash.Dispose();
-        base.Dispose(disposing);
-    }
-
-    private void Observe(ReadOnlySpan<byte> buffer)
-    {
-        if (_disposed)
-            throw new ObjectDisposedException(nameof(HashingWriteStream));
-        if (_completed)
-            throw new InvalidOperationException("The hashing stream is already complete.");
-
-        var next = checked(_length + buffer.Length);
-        if (next > _maxBytes)
-            throw new PortableArchiveException(_limitCode, _limitMessage);
-
-        _hash.AppendData(buffer);
-        _length = next;
-    }
-
-    public override int Read(byte[] buffer, int offset, int count) =>
-        throw new NotSupportedException();
-
-    public override long Seek(long offset, SeekOrigin origin) =>
-        throw new NotSupportedException();
-
-    public override void SetLength(long value) =>
-        throw new NotSupportedException();
 }

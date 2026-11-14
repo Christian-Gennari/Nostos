@@ -457,6 +457,27 @@ internal static class PortableLibraryCounts
             MediaEntries: mediaEntries,
             ReadingListEntries: data.ReadingListEntries?.Count ?? 0);
     }
+
+    /// <summary>
+    /// The manifest's counts, derived from the same validated payload. The
+    /// archive writer and the import reader must agree on this shape, so both
+    /// call this projection rather than each spelling the counts out.
+    /// </summary>
+    internal static PortableArchiveCounts ComputeArchiveCounts(PortableLibraryData data)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+
+        return new PortableArchiveCounts(
+            data.Works.Count,
+            data.Books.Count,
+            data.Collections.Count,
+            data.BookCollections.Count,
+            data.Notes.Count,
+            data.Topics.Count,
+            data.NoteTopics.Count,
+            data.Writings.Count,
+            data.BookAcquisitions.Count);
+    }
 }
 
 /// <summary>

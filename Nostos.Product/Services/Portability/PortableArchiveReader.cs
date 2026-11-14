@@ -21,12 +21,6 @@ namespace Nostos.Backend.Services.Portability;
 /// </remarks>
 internal sealed class PortableArchiveReader : IPortableImportPreparer
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = false,
-    };
-
     private readonly ILogger<PortableArchiveReader> _logger;
     private readonly TimeProvider _timeProvider;
 
@@ -176,7 +170,7 @@ internal sealed class PortableArchiveReader : IPortableImportPreparer
             manifestBytes,
             "malformed_manifest",
             "Portable archive manifest is malformed.",
-            JsonOptions);
+            PortableArchiveJson.Options);
 
         PortableArchiveValidation.ValidateManifest(manifest);
 
@@ -214,7 +208,9 @@ internal sealed class PortableArchiveReader : IPortableImportPreparer
 
         PortableArchiveValidation.ValidateDataVersionAgreement(manifest.DataVersion, data.Version);
         PortableArchiveValidation.ValidatePortableData(data);
-        PortableArchiveValidation.ValidateManifestCounts(CountsFor(data), manifest.Counts);
+        PortableArchiveValidation.ValidateManifestCounts(
+            PortableLibraryCounts.ComputeArchiveCounts(data),
+            manifest.Counts);
         PortableArchiveValidation.ValidateMediaManifest(manifest, data);
 
         // Local capacity admission (compatibility staging): after every manifest and
@@ -544,7 +540,7 @@ internal sealed class PortableArchiveReader : IPortableImportPreparer
         try
         {
             return await JsonSerializer
-                .DeserializeAsync<T>(source, JsonOptions, cancellationToken)
+                .DeserializeAsync<T>(source, PortableArchiveJson.Options, cancellationToken)
                 .ConfigureAwait(false)
                 ?? throw new PortableArchiveException(code, message);
         }
@@ -559,18 +555,6 @@ internal sealed class PortableArchiveReader : IPortableImportPreparer
             throw new PortableArchiveException(code, message, exception);
         }
     }
-
-    private static PortableArchiveCounts CountsFor(PortableLibraryData data) =>
-        new(
-            data.Works.Count,
-            data.Books.Count,
-            data.Collections.Count,
-            data.BookCollections.Count,
-            data.Notes.Count,
-            data.Topics.Count,
-            data.NoteTopics.Count,
-            data.Writings.Count,
-            data.BookAcquisitions.Count);
 
     private async Task DeleteStagingQuietlyAsync(
         IPortableImportStaging staging,

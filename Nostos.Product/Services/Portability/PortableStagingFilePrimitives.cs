@@ -142,7 +142,7 @@ internal static class PortableStagingSealing
 internal static class PortableStagingFilePrimitives
 {
     /// <summary>Bounded copy/hash buffer; no whole-file buffering is ever used.</summary>
-    internal const int StreamBufferBytes = 128 * 1024;
+    internal const int StreamBufferBytes = PortableArchiveHashing.StreamBufferBytes;
 
     internal const int StateBufferBytes = 64 * 1024;
 
@@ -157,33 +157,9 @@ internal static class PortableStagingFilePrimitives
             FileShare.Read,
             StreamBufferBytes,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
-        return await HashStreamAsync(stream, cancellationToken).ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// Hashes an already-opened readable stream with a bounded buffer. Callers that
-    /// open a staged file themselves are responsible for the resolver's post-open
-    /// path verification before hashing.
-    /// </summary>
-    internal static async Task<(long Length, string Sha256)> HashStreamAsync(
-        Stream stream,
-        CancellationToken cancellationToken)
-    {
-        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        var buffer = new byte[StreamBufferBytes];
-        long total = 0;
-
-        while (true)
-        {
-            var read = await stream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
-            if (read == 0)
-                break;
-
-            total = checked(total + read);
-            hash.AppendData(buffer, 0, read);
-        }
-
-        return (total, Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant());
+        return await PortableArchiveHashing
+            .HashStreamAsync(stream, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>True for a 64-character hexadecimal SHA-256 value.</summary>

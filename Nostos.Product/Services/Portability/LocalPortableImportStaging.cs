@@ -26,11 +26,6 @@ internal sealed class LocalPortableImportStaging
 {
     private const int StreamBufferBytes = 128 * 1024;
 
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = false,
-    };
-
     private readonly string _root;
     private readonly Func<string, long?> _availableBytesProbe;
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -215,7 +210,7 @@ internal sealed class LocalPortableImportStaging
 
                 await File.WriteAllTextAsync(
                         MetaPath(area, item.Reference),
-                        JsonSerializer.Serialize(item.Descriptor, JsonOptions),
+                        JsonSerializer.Serialize(item.Descriptor, PortableArchiveJson.StagingOptions),
                         cancellationToken)
                     .ConfigureAwait(false);
                 File.Move(item.State.TempPath, item.State.FinalPath);
@@ -395,7 +390,7 @@ internal sealed class LocalPortableImportStaging
             {
                 await File.WriteAllTextAsync(
                         preparedTempPath,
-                        JsonSerializer.Serialize(metadata, JsonOptions),
+                        JsonSerializer.Serialize(metadata, PortableArchiveJson.StagingOptions),
                         cancellationToken)
                     .ConfigureAwait(false);
                 File.Move(preparedTempPath, preparedPath, overwrite: true);
@@ -720,7 +715,7 @@ internal sealed class LocalPortableImportStaging
 
             var descriptor = JsonSerializer.Deserialize<PortableArchiveMediaEntry>(
                     File.ReadAllText(metaPath),
-                    JsonOptions)
+                    PortableArchiveJson.StagingOptions)
                 ?? throw new PortableStagingException(
                     PortableStagingException.IntegrityMismatchCode,
                     "Staged media metadata is malformed.");
@@ -814,7 +809,7 @@ internal sealed class LocalPortableImportStaging
             {
                 area.Prepared = JsonSerializer.Deserialize<PreparedPortableImportMetadata>(
                     File.ReadAllText(preparedPath),
-                    JsonOptions);
+                    PortableArchiveJson.StagingOptions);
             }
 
             area.Data = LoadPayload(directory, "data.bin");
