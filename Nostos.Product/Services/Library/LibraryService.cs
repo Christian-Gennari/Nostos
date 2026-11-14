@@ -1,3 +1,6 @@
+using Nostos.Backend.Data;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.EntityFrameworkCore;
 using Nostos.Shared.Dtos;
 using Nostos.Shared.Enums;
 
@@ -33,6 +36,42 @@ public sealed class LibraryService : ILibraryService, ILibraryChangesetService
     private readonly LibraryCollectionService _collections;
     private readonly LibraryChangesetService _changesets;
 
+    /// <summary>
+    /// Builds the whole collaborator graph over one context factory. Hosts that
+    /// construct the service by hand (Nostos-Cloud's tests, focused unit tests)
+    /// keep the constructor they had before the decomposition (#1611); the DI
+    /// container uses the collaborator constructor below.
+    /// </summary>
+    public LibraryService(IDbContextFactory<NostosDbContext> contexts, BookLookupService lookup)
+        : this(CreateGraph(contexts, lookup))
+    {
+    }
+
+    private LibraryService(
+        (LibraryReadService Reads, LibraryBookCommandService Books, LibraryProgressService Progress,
+            LibraryWorkService Works, LibraryCollectionService Collections, LibraryChangesetService Changesets) graph)
+        : this(graph.Reads, graph.Books, graph.Progress, graph.Works, graph.Collections, graph.Changesets)
+    {
+    }
+
+    private static (LibraryReadService, LibraryBookCommandService, LibraryProgressService,
+        LibraryWorkService, LibraryCollectionService, LibraryChangesetService) CreateGraph(
+        IDbContextFactory<NostosDbContext> contexts,
+        BookLookupService lookup)
+    {
+        var mutations = new LibraryMutationExecutor(contexts);
+        var books = new LibraryBookCommandService(contexts, mutations);
+        var collections = new LibraryCollectionService(mutations);
+        return (
+            new LibraryReadService(contexts, lookup),
+            books,
+            new LibraryProgressService(mutations),
+            new LibraryWorkService(mutations),
+            collections,
+            new LibraryChangesetService(mutations, books, collections));
+    }
+
+    [ActivatorUtilitiesConstructor]
     public LibraryService(
         LibraryReadService reads,
         LibraryBookCommandService books,
