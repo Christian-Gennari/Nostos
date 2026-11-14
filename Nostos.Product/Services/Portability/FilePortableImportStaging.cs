@@ -5,23 +5,6 @@ using Nostos.Backend.Services.Portability.Transfers;
 namespace Nostos.Backend.Services.Portability;
 
 /// <summary>
-/// Names one provider operation so interleaving tests can pause a specific
-/// transition before it takes its staging-area gate. Never used in production.
-/// </summary>
-internal enum FileStagingOperation
-{
-    OpenMediaWrite,
-    CompleteMedia,
-    OpenPayloadWrite,
-    CompletePayload,
-    Commit,
-    Read,
-    List,
-    Rebuild,
-    Delete,
-}
-
-/// <summary>
 /// The durable transition a crash simulation stops after. The seams sit exactly
 /// where a real process death would leave either the previous state or the next
 /// state, never a partially published item.
@@ -65,21 +48,20 @@ internal sealed class FilePortableImportStagingHooks
 {
     internal Action<FileStagingCrashPoint>? CrashAt { get; set; }
 
-    internal Func<FileStagingOperation, Task>? BeforeAreaGateAsync { get; set; }
+    internal Func<PortableStagingOperation, Task>? BeforeAreaGateAsync { get; set; }
 
     internal Action? BeforeStreamWrite { get; set; }
 
     /// <summary>
-    /// Runs inside <see cref="FilePortableImportStaging"/> after the new
-    /// <c>state.json.tmp</c> is flushed and before it replaces <c>state.json</c>.
-    /// Throwing models an I/O failure of the inventory replacement.
+    /// Runs inside the staging machine after the new <c>state.json.tmp</c> is flushed
+    /// and before it replaces <c>state.json</c>. Throwing models an I/O failure of the
+    /// inventory replacement.
     /// </summary>
     internal Action? BeforeInventoryReplace { get; set; }
 
     /// <summary>
-    /// Runs inside <see cref="FilePortableImportStaging.DeleteAsync"/> under the
-    /// area gate, immediately before the durable deletion marker is written.
-    /// Throwing models a failure to write the mark.
+    /// Runs under the area gate, immediately before the durable deletion marker is
+    /// written. Throwing models a failure to write the mark.
     /// </summary>
     internal Action? BeforeDeleteMark { get; set; }
 
@@ -127,62 +109,16 @@ internal sealed record FileStagingMediaRecord(
 /// for deleted areas and are bounded by the number of staging areas a process ever
 /// touches.
 /// </summary>
-internal sealed class FileStagingCoordinator
+internal sealed class FileStagingCoordinator : PortableStagingArea
 {
     internal FileStagingCoordinator(Guid stagingId, string directory)
+        : base(stagingId, directory, new PortableStagingGate())
     {
-        StagingId = stagingId;
-        Directory = directory;
     }
-
-    internal Guid StagingId { get; }
-
-    internal string Directory { get; }
-
-    internal SemaphoreSlim Gate { get; } = new(1, 1);
-
-    internal bool Deleted { get; set; }
 
     internal bool InventoryLoaded { get; set; }
 
     internal FileStagingInventory Inventory { get; set; } = new();
-
-    internal Dictionary<PortableStagingMediaIdentity, FileMediaItem> MediaByIdentity { get; } = [];
-
-    internal Dictionary<string, FileMediaItem> MediaByReference { get; } =
-        new(StringComparer.Ordinal);
-
-    internal Dictionary<PortableStagingWrite, FileMediaItem> MediaByHandle { get; } = [];
-
-    internal Dictionary<PortableStagingPayloadWrite, FilePayloadItem> PayloadByHandle { get; } = [];
-
-    internal FilePayloadItem? Data { get; set; }
-
-    internal FilePayloadItem? Manifest { get; set; }
-
-    internal PreparedPortableImportMetadata? Prepared { get; set; }
-}
-
-internal sealed class FileMediaItem
-{
-    public required PortableArchiveMediaEntry Descriptor { get; init; }
-
-    public required string Reference { get; init; }
-
-    public required PortableStagingWriteState State { get; init; }
-
-    public PortableStagingWrite? Handle { get; set; }
-}
-
-internal sealed class FilePayloadItem
-{
-    public required long Length { get; init; }
-
-    public required string Sha256 { get; init; }
-
-    public required PortableStagingWriteState State { get; init; }
-
-    public PortableStagingPayloadWrite? Handle { get; set; }
 }
 
 /// <summary>
@@ -220,6 +156,10 @@ internal sealed class FilePayloadItem
 /// fails with the typed not-found outcome rather than publishing a partial item.
 /// In-flight write handles are process-local, so after a process restart any
 /// scratch files from the previous process are invisible leftovers.</para>
+/// <para><b>One state machine.</b> The open/complete/commit/rebuild/delete
+/// transitions live in <see cref="PortableImportStagingBase"/> and are shared with
+/// the process-local provider; this type adds only the durable inventory,
+/// copy-on-write publication, deletion tombstone, and path defense.</para>
 /// </remarks>
 public sealed class FilePortableImportStaging : IPortableImportStaging
 {
@@ -247,12 +187,7 @@ public sealed class FilePortableImportStaging : IPortableImportStaging
     /// <summary>Inventory schema version written to every <c>state.json</c>.</summary>
     public const int CurrentInventoryVersion = 1;
 
-    private static readonly ConcurrentDictionary<string, FileStagingCoordinator> Coordinators =
-        new(StringComparer.Ordinal);
-
-    private readonly TransferPathResolver _resolver;
-    private readonly FilePortableImportStagingHooks? _hooks;
-    private readonly string _coordinatorScope;
+    private readonly FilePortableImportStagingCore _core;
 
     /// <summary>
     /// Creates a durable staging provider over the transfer root the resolver
@@ -275,6 +210,109 @@ public sealed class FilePortableImportStaging : IPortableImportStaging
         FilePortableImportStagingHooks? hooks,
         string coordinatorScope)
     {
+        _core = new FilePortableImportStagingCore(resolver, hooks, coordinatorScope);
+    }
+
+    public Task<PortableStagingId> CreateAsync(
+        CancellationToken cancellationToken = default) =>
+        _core.CreateAsync(cancellationToken);
+
+    public Task<PortableStagingWrite> OpenMediaWriteAsync(
+        PortableStagingId stagingId,
+        PortableArchiveMediaEntry descriptor,
+        CancellationToken cancellationToken = default) =>
+        _core.OpenMediaWriteAsync(stagingId, descriptor, cancellationToken);
+
+    public Task CompleteMediaAsync(
+        PortableStagingId stagingId,
+        PortableStagingWrite write,
+        CancellationToken cancellationToken = default) =>
+        _core.CompleteMediaAsync(stagingId, write, cancellationToken);
+
+    public Task<Stream> OpenMediaReadAsync(
+        PortableStagingId stagingId,
+        PortableStagedMediaReference reference,
+        CancellationToken cancellationToken = default) =>
+        _core.OpenMediaReadAsync(stagingId, reference, cancellationToken);
+
+    public Task<IReadOnlyList<PortablePreparedMedia>> ListMediaAsync(
+        PortableStagingId stagingId,
+        CancellationToken cancellationToken = default) =>
+        _core.ListMediaAsync(stagingId, cancellationToken);
+
+    public Task<PortableStagingPayloadWrite> OpenDataWriteAsync(
+        PortableStagingId stagingId,
+        PortableArchivePayload descriptor,
+        CancellationToken cancellationToken = default) =>
+        _core.OpenDataWriteAsync(stagingId, descriptor, cancellationToken);
+
+    public Task CompleteDataAsync(
+        PortableStagingId stagingId,
+        PortableStagingPayloadWrite write,
+        CancellationToken cancellationToken = default) =>
+        _core.CompleteDataAsync(stagingId, write, cancellationToken);
+
+    public Task<Stream> OpenDataReadAsync(
+        PortableStagingId stagingId,
+        CancellationToken cancellationToken = default) =>
+        _core.OpenDataReadAsync(stagingId, cancellationToken);
+
+    public Task<PortableStagingPayloadWrite> OpenManifestWriteAsync(
+        PortableStagingId stagingId,
+        PortableArchivePayload descriptor,
+        CancellationToken cancellationToken = default) =>
+        _core.OpenManifestWriteAsync(stagingId, descriptor, cancellationToken);
+
+    public Task CompleteManifestAsync(
+        PortableStagingId stagingId,
+        PortableStagingPayloadWrite write,
+        CancellationToken cancellationToken = default) =>
+        _core.CompleteManifestAsync(stagingId, write, cancellationToken);
+
+    public Task<Stream> OpenManifestReadAsync(
+        PortableStagingId stagingId,
+        CancellationToken cancellationToken = default) =>
+        _core.OpenManifestReadAsync(stagingId, cancellationToken);
+
+    public Task CommitPreparedImportAsync(
+        PortableStagingId stagingId,
+        PreparedPortableImportMetadata metadata,
+        CancellationToken cancellationToken = default) =>
+        _core.CommitPreparedImportAsync(stagingId, metadata, cancellationToken);
+
+    public Task<IPreparedPortableImport> RebuildPreparedImportAsync(
+        PortableStagingId stagingId,
+        CancellationToken cancellationToken = default) =>
+        _core.RebuildPreparedImportAsync(stagingId, cancellationToken);
+
+    public Task DeleteAsync(
+        PortableStagingId stagingId,
+        CancellationToken cancellationToken = default) =>
+        _core.DeleteAsync(stagingId, cancellationToken);
+
+    public ValueTask DisposeAsync() => _core.DisposeAsync();
+}
+
+/// <summary>
+/// The durable provider's persistence half of the shared staging state machine: the
+/// copy-on-write inventory, the atomic publication of verified items, the deletion
+/// tombstone, and every path that touches the transfer root through
+/// <see cref="TransferPathResolver"/>.
+/// </summary>
+internal sealed class FilePortableImportStagingCore : PortableImportStagingBase
+{
+    private static readonly ConcurrentDictionary<string, FileStagingCoordinator> Coordinators =
+        new(StringComparer.Ordinal);
+
+    private readonly TransferPathResolver _resolver;
+    private readonly FilePortableImportStagingHooks? _hooks;
+    private readonly string _coordinatorScope;
+
+    internal FilePortableImportStagingCore(
+        TransferPathResolver resolver,
+        FilePortableImportStagingHooks? hooks,
+        string coordinatorScope)
+    {
         ArgumentNullException.ThrowIfNull(resolver);
         ArgumentNullException.ThrowIfNull(coordinatorScope);
 
@@ -283,7 +321,17 @@ public sealed class FilePortableImportStaging : IPortableImportStaging
         _coordinatorScope = coordinatorScope;
     }
 
-    public async Task<PortableStagingId> CreateAsync(
+    protected override Func<PortableStagingOperation, Task>? BeforeAreaGate =>
+        _hooks?.BeforeAreaGateAsync;
+
+    protected override Action? BeforeStreamWrite => _hooks?.BeforeStreamWrite;
+
+    protected override bool FlushCompletedItemsToDisk => true;
+
+    protected override bool MustNotDiscardOnFailure(Exception exception) =>
+        exception is FileStagingSimulatedCrashException;
+
+    public override async Task<PortableStagingId> CreateAsync(
         CancellationToken cancellationToken = default)
     {
         for (var attempt = 0; attempt < 16; attempt++)
@@ -293,7 +341,7 @@ public sealed class FilePortableImportStaging : IPortableImportStaging
             if (area.Deleted || area.InventoryLoaded || Directory.Exists(area.Directory))
                 continue;
 
-            await area.Gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            using var lease = await area.Gate.EnterAsync(cancellationToken).ConfigureAwait(false);
             try
             {
                 if (Directory.Exists(area.Directory))
@@ -303,7 +351,7 @@ public sealed class FilePortableImportStaging : IPortableImportStaging
                 _resolver.EnsureDirectoryExists(MediaDirectoryPath(area));
                 var inventory = new FileStagingInventory
                 {
-                    Version = CurrentInventoryVersion,
+                    Version = FilePortableImportStaging.CurrentInventoryVersion,
                 };
                 await PersistInventoryAsync(area, inventory, crashPoint: null, cancellationToken)
                     .ConfigureAwait(false);
@@ -316,663 +364,20 @@ public sealed class FilePortableImportStaging : IPortableImportStaging
                 PortableStagingFilePrimitives.TryDeleteDirectory(area.Directory);
                 throw;
             }
-            finally
-            {
-                area.Gate.Release();
-            }
         }
 
         throw PortableStagingFilePrimitives.Conflict(
             "Could not allocate a fresh staging identifier.");
     }
 
-    public async Task<PortableStagingWrite> OpenMediaWriteAsync(
+    protected override async ValueTask<PortableStagingAreaLease> EnterAreaAsync(
         PortableStagingId stagingId,
-        PortableArchiveMediaEntry descriptor,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(descriptor);
-
-        var area = await EnterAreaAsync(stagingId, FileStagingOperation.OpenMediaWrite, cancellationToken)
-            .ConfigureAwait(false);
-        try
-        {
-            EnsureNotCommitted(area);
-
-            if (descriptor.Length < 0)
-            {
-                throw new ArgumentOutOfRangeException(
-                    nameof(descriptor),
-                    "The declared media length cannot be negative.");
-            }
-
-            if (descriptor.Length > PortableArchiveLimits.MaxSingleEntryBytes)
-            {
-                throw new PortableStagingException(
-                    PortableStagingException.LimitExceededCode,
-                    $"The declared media length exceeds the {PortableArchiveLimits.MaxSingleEntryBytes}-byte staging limit.");
-            }
-
-            var identity = new PortableStagingMediaIdentity(
-                descriptor.BookId,
-                descriptor.Kind,
-                descriptor.Path);
-            if (area.MediaByIdentity.ContainsKey(identity))
-            {
-                throw PortableStagingFilePrimitives.Conflict(
-                    "A write for this media item is already open or completed.");
-            }
-
-            _resolver.EnsureDirectoryExists(MediaDirectoryPath(area));
-            var reference = PortableStagingFilePrimitives.NewReference(
-                candidate => area.MediaByReference.ContainsKey(candidate));
-            var finalPath = MediaPath(area, reference);
-            var tempPath = finalPath + ".tmp." + Guid.NewGuid().ToString("N");
-            var state = PortableStagingWriteState.Open(
-                _resolver.CreateNewVerifiedFile(
-                    tempPath,
-                    PortableStagingFilePrimitives.StreamBufferBytes,
-                    FileOptions.Asynchronous | FileOptions.SequentialScan),
-                tempPath,
-                finalPath,
-                descriptor.Length);
-            var item = new FileMediaItem
-            {
-                Descriptor = descriptor,
-                Reference = reference,
-                State = state,
-            };
-            var write = new PortableStagingWrite(
-                new PortableStagedMediaReference(reference),
-                new PortableStagingWriteStream(
-                    area.Gate,
-                    state,
-                    () => area.Deleted,
-                    () => DiscardMedia(area, item),
-                    _hooks?.BeforeStreamWrite));
-            item.Handle = write;
-
-            area.MediaByIdentity.Add(identity, item);
-            area.MediaByReference.Add(reference, item);
-            area.MediaByHandle.Add(write, item);
-            return write;
-        }
-        finally
-        {
-            area.Gate.Release();
-        }
-    }
-
-    public async Task CompleteMediaAsync(
-        PortableStagingId stagingId,
-        PortableStagingWrite write,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(write);
-
-        var area = await EnterAreaAsync(stagingId, FileStagingOperation.CompleteMedia, cancellationToken)
-            .ConfigureAwait(false);
-        try
-        {
-            EnsureNotCommitted(area);
-
-            if (!area.MediaByHandle.TryGetValue(write, out var item))
-                throw PortableStagingFilePrimitives.NotFound("No media item matches the write handle.");
-
-            if (item.State.Status == PortableStagingItemStatus.Completed)
-                return;
-
-            if (item.State.Status != PortableStagingItemStatus.Writing)
-                throw PortableStagingFilePrimitives.NotFound("The media write is no longer completable.");
-
-            try
-            {
-                if (!await PortableStagingSealing.SealAsync(
-                        item.State,
-                        item.Descriptor.Length,
-                        item.Descriptor.Sha256,
-                        flushToDisk: true)
-                        .ConfigureAwait(false))
-                {
-                    throw PortableStagingFilePrimitives.IntegrityMismatch(
-                        "Staged media bytes do not match the descriptor bound when the write was opened.");
-                }
-
-                RunCrashPoint(FileStagingCrashPoint.AfterMediaSealedBeforeRename);
-                PublishVerifiedItem(item.State);
-                RunCrashPoint(FileStagingCrashPoint.AfterMediaRenamedBeforeInventory);
-
-                // Durable state is authoritative: persist a complete snapshot of the
-                // inventory with this item added, and install it in memory only after
-                // the replacement succeeded. A failed persist leaves the in-memory
-                // view exactly as it is on disk.
-                var updated = CloneInventory(area.Inventory);
-                updated.Media.RemoveAll(record =>
-                    string.Equals(record.Reference, item.Reference, StringComparison.Ordinal));
-                updated.Media.Add(new FileStagingMediaRecord(
-                    item.Reference,
-                    item.Descriptor));
-                await PersistInventoryAsync(area, updated, crashPoint: null, cancellationToken)
-                    .ConfigureAwait(false);
-                area.Inventory = updated;
-                item.State.Status = PortableStagingItemStatus.Completed;
-            }
-            catch (FileStagingSimulatedCrashException)
-            {
-                throw;
-            }
-            catch
-            {
-                DiscardMedia(area, item);
-                throw;
-            }
-        }
-        finally
-        {
-            area.Gate.Release();
-        }
-    }
-
-    public async Task<Stream> OpenMediaReadAsync(
-        PortableStagingId stagingId,
-        PortableStagedMediaReference reference,
-        CancellationToken cancellationToken = default)
-    {
-        var area = await EnterAreaAsync(stagingId, FileStagingOperation.Read, cancellationToken)
-            .ConfigureAwait(false);
-        try
-        {
-            var value = PortableStagingFilePrimitives.ValidateReference(reference.Value);
-            if (!area.MediaByReference.TryGetValue(value, out var item)
-                || item.State.Status != PortableStagingItemStatus.Completed)
-            {
-                throw PortableStagingFilePrimitives.NotFound(
-                    "No completed media item matches the reference.");
-            }
-
-            return OpenVerifiedRead(item.State.FinalPath, item.Descriptor.Length);
-        }
-        finally
-        {
-            area.Gate.Release();
-        }
-    }
-
-    public async Task<IReadOnlyList<PortablePreparedMedia>> ListMediaAsync(
-        PortableStagingId stagingId,
-        CancellationToken cancellationToken = default)
-    {
-        var area = await EnterAreaAsync(stagingId, FileStagingOperation.List, cancellationToken)
-            .ConfigureAwait(false);
-        try
-        {
-            return DescribeCompletedMedia(area);
-        }
-        finally
-        {
-            area.Gate.Release();
-        }
-    }
-
-    public Task<PortableStagingPayloadWrite> OpenDataWriteAsync(
-        PortableStagingId stagingId,
-        PortableArchivePayload descriptor,
-        CancellationToken cancellationToken = default) =>
-        OpenPayloadWriteAsync(stagingId, descriptor, manifest: false, cancellationToken);
-
-    public Task<PortableStagingPayloadWrite> OpenManifestWriteAsync(
-        PortableStagingId stagingId,
-        PortableArchivePayload descriptor,
-        CancellationToken cancellationToken = default) =>
-        OpenPayloadWriteAsync(stagingId, descriptor, manifest: true, cancellationToken);
-
-    public async Task CompleteDataAsync(
-        PortableStagingId stagingId,
-        PortableStagingPayloadWrite write,
-        CancellationToken cancellationToken = default) =>
-        await CompletePayloadAsync(stagingId, write, manifest: false, cancellationToken)
-            .ConfigureAwait(false);
-
-    public async Task CompleteManifestAsync(
-        PortableStagingId stagingId,
-        PortableStagingPayloadWrite write,
-        CancellationToken cancellationToken = default) =>
-        await CompletePayloadAsync(stagingId, write, manifest: true, cancellationToken)
-            .ConfigureAwait(false);
-
-    public async Task<Stream> OpenDataReadAsync(
-        PortableStagingId stagingId,
-        CancellationToken cancellationToken = default) =>
-        await OpenPayloadReadAsync(stagingId, manifest: false, cancellationToken)
-            .ConfigureAwait(false);
-
-    public async Task<Stream> OpenManifestReadAsync(
-        PortableStagingId stagingId,
-        CancellationToken cancellationToken = default) =>
-        await OpenPayloadReadAsync(stagingId, manifest: true, cancellationToken)
-            .ConfigureAwait(false);
-
-    public async Task CommitPreparedImportAsync(
-        PortableStagingId stagingId,
-        PreparedPortableImportMetadata metadata,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(metadata);
-        ArgumentNullException.ThrowIfNull(metadata.Counts);
-
-        var area = await EnterAreaAsync(stagingId, FileStagingOperation.Commit, cancellationToken)
-            .ConfigureAwait(false);
-        try
-        {
-            if (metadata.StagingId != stagingId)
-            {
-                throw PortableStagingFilePrimitives.Conflict(
-                    "The prepared descriptor belongs to a different staging area.");
-            }
-
-            if (area.Prepared is not null)
-            {
-                if (area.Prepared == metadata)
-                    return;
-
-                throw PortableStagingFilePrimitives.Conflict(
-                    "A different prepared descriptor is already committed.");
-            }
-
-            if (area.Data?.State.Status != PortableStagingItemStatus.Completed
-                || area.Manifest?.State.Status != PortableStagingItemStatus.Completed)
-            {
-                throw PortableStagingFilePrimitives.Conflict(
-                    "A prepared import requires a completed relational payload and manifest.");
-            }
-
-            if (area.MediaByIdentity.Values.Any(
-                    item => item.State.Status == PortableStagingItemStatus.Writing))
-            {
-                throw PortableStagingFilePrimitives.Conflict(
-                    "A prepared import cannot commit while a media write is still open.");
-            }
-
-            var media = DescribeCompletedMedia(area);
-            if (media.Count != metadata.MediaFiles)
-            {
-                throw PortableStagingFilePrimitives.Conflict(
-                    "The staged media count does not match the prepared descriptor.");
-            }
-
-            if (media.Sum(item => item.Descriptor.Length) != metadata.MediaBytes)
-            {
-                throw PortableStagingFilePrimitives.Conflict(
-                    "The staged media bytes do not match the prepared descriptor.");
-            }
-
-            if (metadata.Counts.MediaEntries != metadata.MediaFiles)
-            {
-                throw PortableStagingFilePrimitives.Conflict(
-                    "The prepared counts media entries do not match the media file count.");
-            }
-
-            var (dataBytes, dataSha256) = await HashVerifiedStagedFileAsync(
-                    area.Data.State.FinalPath,
-                    area.Data.Length,
-                    cancellationToken)
-                .ConfigureAwait(false);
-            if (dataBytes != metadata.DataBytes
-                || !PortableArchiveValidation.FixedHashEquals(dataSha256, metadata.DataSha256))
-            {
-                throw PortableStagingFilePrimitives.Conflict(
-                    "The staged relational payload does not match the prepared descriptor.");
-            }
-
-            // The committed descriptor is written last and atomically: the new
-            // state.json only appears after every staged byte was verified, and a
-            // failure or crash before the swap leaves the area uncommitted. The
-            // in-memory inventory is replaced only after the durable write succeeds.
-            var updated = CloneInventory(area.Inventory);
-            updated.Prepared = metadata;
-            await PersistInventoryAsync(
-                    area,
-                    updated,
-                    FileStagingCrashPoint.BeforeCommitMarkerReplace,
-                    cancellationToken)
-                .ConfigureAwait(false);
-            area.Inventory = updated;
-            area.Prepared = metadata;
-        }
-        finally
-        {
-            area.Gate.Release();
-        }
-    }
-
-    /// <summary>
-    /// Reconstructs the committed prepared import from durable staged state and the
-    /// staging id alone, as required after a process restart.
-    /// </summary>
-    /// <remarks>
-    /// Reconstruction verifies the relational payload against the committed
-    /// SHA-256 and verifies every media file's exact length, but it does not
-    /// re-hash media contents. Activation (#681) MUST re-hash every staged media
-    /// file against its <see cref="PortableArchiveMediaEntry.Sha256"/> before
-    /// mutating the live library.
-    /// </remarks>
-    public async Task<IPreparedPortableImport> RebuildPreparedImportAsync(
-        PortableStagingId stagingId,
-        CancellationToken cancellationToken = default)
-    {
-        var area = await EnterAreaAsync(stagingId, FileStagingOperation.Rebuild, cancellationToken)
-            .ConfigureAwait(false);
-        try
-        {
-            var prepared = area.Prepared
-                ?? throw PortableStagingFilePrimitives.NotFound(
-                    "No prepared descriptor has been committed.");
-
-            var media = new List<PortablePreparedMedia>(area.Inventory.Media.Count);
-            foreach (var record in area.Inventory.Media)
-            {
-                if (!TransferPathResolver.IsValidOpaqueToken(record.Reference))
-                {
-                    throw PortableStagingFilePrimitives.IntegrityMismatch(
-                        "The committed media inventory contains an invalid reference.");
-                }
-
-                var path = MediaPath(area, record.Reference);
-                _resolver.VerifyPathWithinRoot(path);
-                var info = new FileInfo(path);
-                if (!info.Exists || info.Length != record.Descriptor.Length)
-                {
-                    throw PortableStagingFilePrimitives.IntegrityMismatch(
-                        "Staged media no longer matches the committed prepared descriptor.");
-                }
-
-                media.Add(new PortablePreparedMedia(
-                    record.Descriptor,
-                    new PortableStagedMediaReference(record.Reference)));
-            }
-
-            media.Sort(CompareMedia);
-
-            if (media.Count != prepared.MediaFiles
-                || media.Sum(item => item.Descriptor.Length) != prepared.MediaBytes)
-            {
-                throw PortableStagingFilePrimitives.IntegrityMismatch(
-                    "Staged media no longer matches the committed prepared descriptor.");
-            }
-
-            if (area.Data?.State.Status != PortableStagingItemStatus.Completed)
-            {
-                throw PortableStagingFilePrimitives.IntegrityMismatch(
-                    "The staged relational payload no longer matches the committed prepared descriptor.");
-            }
-
-            var (dataBytes, dataSha256) = await HashVerifiedStagedFileAsync(
-                    area.Data.State.FinalPath,
-                    area.Data.Length,
-                    cancellationToken)
-                .ConfigureAwait(false);
-            if (dataBytes != prepared.DataBytes
-                || !PortableArchiveValidation.FixedHashEquals(dataSha256, prepared.DataSha256))
-            {
-                throw PortableStagingFilePrimitives.IntegrityMismatch(
-                    "The staged relational payload no longer matches the committed prepared descriptor.");
-            }
-
-            return new PortablePreparedImport(prepared, media);
-        }
-        finally
-        {
-            area.Gate.Release();
-        }
-    }
-
-    public async Task DeleteAsync(
-        PortableStagingId stagingId,
-        CancellationToken cancellationToken = default)
-    {
-        if (stagingId.Value == Guid.Empty)
-            return;
-
-        var area = GetCoordinator(stagingId.Value);
-        var beforeGate = _hooks?.BeforeAreaGateAsync;
-        if (beforeGate is not null)
-        {
-            await beforeGate(FileStagingOperation.Delete).ConfigureAwait(false);
-        }
-
-        await area.Gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            if (!area.Deleted && Directory.Exists(area.Directory))
-            {
-                // Durable first: write the deletion tombstone atomically, then mark
-                // the process-local coordinator and discard in-flight writes. From
-                // the moment the marker exists, every operation and every fresh
-                // instance treats the staging id as not found, even if physical
-                // cleanup fails. A failed marker write leaves the area untouched.
-                if (!File.Exists(DeletedMarkerPath(area)))
-                {
-                    _hooks?.BeforeDeleteMark?.Invoke();
-                    await WriteDeletedMarkerAsync(area, cancellationToken)
-                        .ConfigureAwait(false);
-                }
-            }
-
-            area.Deleted = true;
-            DeactivateAll(area);
-        }
-        finally
-        {
-            area.Gate.Release();
-        }
-
-        // Best-effort physical cleanup: the durable marker already made the id
-        // deleted, and a leftover tombstoned directory is harmless and sweepable.
-        CleanupDeletedArea(area);
-    }
-
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
-
-    private async Task<PortableStagingPayloadWrite> OpenPayloadWriteAsync(
-        PortableStagingId stagingId,
-        PortableArchivePayload descriptor,
-        bool manifest,
-        CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(descriptor);
-
-        var area = await EnterAreaAsync(stagingId, FileStagingOperation.OpenPayloadWrite, cancellationToken)
-            .ConfigureAwait(false);
-        try
-        {
-            EnsureNotCommitted(area);
-
-            if (descriptor.Length < 0)
-            {
-                throw new ArgumentOutOfRangeException(
-                    nameof(descriptor),
-                    "The declared payload length cannot be negative.");
-            }
-
-            var hardLimit = manifest
-                ? PortableArchiveLimits.MaxManifestBytes
-                : PortableArchiveLimits.MaxDataBytes;
-            if (descriptor.Length > hardLimit)
-            {
-                throw new PortableStagingException(
-                    PortableStagingException.LimitExceededCode,
-                    $"The declared payload length exceeds the {hardLimit}-byte staging limit.");
-            }
-
-            if (manifest ? area.Manifest is not null : area.Data is not null)
-            {
-                throw PortableStagingFilePrimitives.Conflict(
-                    "A write for this payload is already open or completed.");
-            }
-
-            string finalPath;
-            if (manifest)
-            {
-                finalPath = ManifestPath(area);
-            }
-            else
-            {
-                _resolver.EnsureDirectoryExists(DataDirectoryPath(area));
-                finalPath = DataPath(area);
-            }
-
-            var tempPath = finalPath + ".tmp." + Guid.NewGuid().ToString("N");
-            var state = PortableStagingWriteState.Open(
-                _resolver.CreateNewVerifiedFile(
-                    tempPath,
-                    PortableStagingFilePrimitives.StreamBufferBytes,
-                    FileOptions.Asynchronous | FileOptions.SequentialScan),
-                tempPath,
-                finalPath,
-                descriptor.Length);
-            var item = new FilePayloadItem
-            {
-                Length = descriptor.Length,
-                Sha256 = descriptor.Sha256,
-                State = state,
-            };
-            var write = new PortableStagingPayloadWrite(
-                new PortableStagingWriteStream(
-                    area.Gate,
-                    state,
-                    () => area.Deleted,
-                    () => DiscardPayload(area, item, manifest),
-                    _hooks?.BeforeStreamWrite));
-            item.Handle = write;
-
-            if (manifest)
-                area.Manifest = item;
-            else
-                area.Data = item;
-
-            area.PayloadByHandle.Add(write, item);
-            return write;
-        }
-        finally
-        {
-            area.Gate.Release();
-        }
-    }
-
-    private async Task CompletePayloadAsync(
-        PortableStagingId stagingId,
-        PortableStagingPayloadWrite write,
-        bool manifest,
-        CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(write);
-
-        var area = await EnterAreaAsync(stagingId, FileStagingOperation.CompletePayload, cancellationToken)
-            .ConfigureAwait(false);
-        try
-        {
-            EnsureNotCommitted(area);
-
-            var item = manifest ? area.Manifest : area.Data;
-            if (item is null
-                || !area.PayloadByHandle.TryGetValue(write, out var bound)
-                || !ReferenceEquals(bound, item))
-            {
-                throw PortableStagingFilePrimitives.NotFound("No payload matches the write handle.");
-            }
-
-            if (item.State.Status == PortableStagingItemStatus.Completed)
-                return;
-
-            if (item.State.Status != PortableStagingItemStatus.Writing)
-                throw PortableStagingFilePrimitives.NotFound("The payload write is no longer completable.");
-
-            try
-            {
-                if (!await PortableStagingSealing.SealAsync(
-                        item.State,
-                        item.Length,
-                        item.Sha256,
-                        flushToDisk: true)
-                        .ConfigureAwait(false))
-                {
-                    throw PortableStagingFilePrimitives.IntegrityMismatch(
-                        "Staged payload bytes do not match the descriptor bound when the write was opened.");
-                }
-
-                RunCrashPoint(FileStagingCrashPoint.AfterPayloadSealedBeforeRename);
-                PublishVerifiedItem(item.State);
-                RunCrashPoint(FileStagingCrashPoint.AfterPayloadRenamedBeforeInventory);
-
-                // Persist a snapshot with this payload record and install it in
-                // memory only after the durable replacement succeeded, so a failed
-                // persist can never leave the runtime inventory ahead of disk.
-                var updated = CloneInventory(area.Inventory);
-                var record = new FileStagingPayloadRecord(item.Length, item.Sha256);
-                if (manifest)
-                {
-                    updated.Manifest = record;
-                }
-                else
-                {
-                    updated.Data = record;
-                }
-
-                await PersistInventoryAsync(area, updated, crashPoint: null, cancellationToken)
-                    .ConfigureAwait(false);
-                area.Inventory = updated;
-                item.State.Status = PortableStagingItemStatus.Completed;
-            }
-            catch (FileStagingSimulatedCrashException)
-            {
-                throw;
-            }
-            catch
-            {
-                DiscardPayload(area, item, manifest);
-                throw;
-            }
-        }
-        finally
-        {
-            area.Gate.Release();
-        }
-    }
-
-    private async Task<Stream> OpenPayloadReadAsync(
-        PortableStagingId stagingId,
-        bool manifest,
-        CancellationToken cancellationToken)
-    {
-        var area = await EnterAreaAsync(stagingId, FileStagingOperation.Read, cancellationToken)
-            .ConfigureAwait(false);
-        try
-        {
-            var item = manifest ? area.Manifest : area.Data;
-            if (item?.State.Status != PortableStagingItemStatus.Completed)
-                throw PortableStagingFilePrimitives.NotFound("No completed payload is available.");
-
-            return OpenVerifiedRead(item.State.FinalPath, item.Length);
-        }
-        finally
-        {
-            area.Gate.Release();
-        }
-    }
-
-    private async Task<FileStagingCoordinator> EnterAreaAsync(
-        PortableStagingId stagingId,
-        FileStagingOperation operation,
+        PortableStagingOperation operation,
         CancellationToken cancellationToken)
     {
         var area = GetCoordinator(stagingId.Value);
-        var beforeGate = _hooks?.BeforeAreaGateAsync;
-        if (beforeGate is not null)
-        {
-            await beforeGate(operation).ConfigureAwait(false);
-        }
-
-        await area.Gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        var lease = await EnterGateAsync(area.Gate, operation, cancellationToken)
+            .ConfigureAwait(false);
         try
         {
             if (area.Deleted
@@ -983,14 +388,247 @@ public sealed class FilePortableImportStaging : IPortableImportStaging
             }
 
             await LoadInventoryAsync(area, cancellationToken).ConfigureAwait(false);
-            return area;
+            return new PortableStagingAreaLease(area, lease);
         }
         catch
         {
-            area.Gate.Release();
+            lease.Dispose();
             throw;
         }
     }
+
+    protected override async ValueTask<PortableStagingAreaLease> EnterAreaForDeleteAsync(
+        PortableStagingId stagingId,
+        PortableStagingOperation operation,
+        CancellationToken cancellationToken)
+    {
+        var area = GetCoordinator(stagingId.Value);
+        var lease = await EnterGateAsync(area.Gate, operation, cancellationToken)
+            .ConfigureAwait(false);
+        return new PortableStagingAreaLease(area, lease);
+    }
+
+    protected override FileStream CreateScratchFile(string finalPath, out string tempPath)
+    {
+        tempPath = finalPath + ".tmp." + Guid.NewGuid().ToString("N");
+        return _resolver.CreateNewVerifiedFile(
+            tempPath,
+            PortableStagingFilePrimitives.StreamBufferBytes,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
+    }
+
+    protected override string MediaPath(PortableStagingArea area, string reference) =>
+        _resolver.GetStagingMediaPath(area.StagingId, reference);
+
+    protected override string PayloadPath(PortableStagingArea area, bool manifest)
+    {
+        if (manifest)
+            return ManifestPath(area);
+
+        _resolver.EnsureDirectoryExists(DataDirectoryPath(area));
+        return DataPath(area);
+    }
+
+    protected override void EnsureMediaDirectory(PortableStagingArea area) =>
+        _resolver.EnsureDirectoryExists(MediaDirectoryPath(area));
+
+    protected override async ValueTask PublishMediaAsync(
+        PortableStagingArea area,
+        PortableStagingMediaItem item,
+        CancellationToken cancellationToken)
+    {
+        var coordinator = AsCoordinator(area);
+
+        RunCrashPoint(FileStagingCrashPoint.AfterMediaSealedBeforeRename);
+        PublishVerifiedItem(item.State);
+        RunCrashPoint(FileStagingCrashPoint.AfterMediaRenamedBeforeInventory);
+
+        // Durable state is authoritative: persist a complete snapshot of the
+        // inventory with this item added, and install it in memory only after the
+        // replacement succeeded. A failed persist leaves the in-memory view exactly
+        // as it is on disk.
+        var updated = CloneInventory(coordinator.Inventory);
+        updated.Media.RemoveAll(record =>
+            string.Equals(record.Reference, item.Reference, StringComparison.Ordinal));
+        updated.Media.Add(new FileStagingMediaRecord(item.Reference, item.Descriptor));
+        await PersistInventoryAsync(coordinator, updated, crashPoint: null, cancellationToken)
+            .ConfigureAwait(false);
+        coordinator.Inventory = updated;
+    }
+
+    protected override async ValueTask PublishPayloadAsync(
+        PortableStagingArea area,
+        PortableStagingPayloadItem item,
+        bool manifest,
+        CancellationToken cancellationToken)
+    {
+        var coordinator = AsCoordinator(area);
+
+        RunCrashPoint(FileStagingCrashPoint.AfterPayloadSealedBeforeRename);
+        PublishVerifiedItem(item.State);
+        RunCrashPoint(FileStagingCrashPoint.AfterPayloadRenamedBeforeInventory);
+
+        // Persist a snapshot with this payload record and install it in memory only
+        // after the durable replacement succeeded, so a failed persist can never
+        // leave the runtime inventory ahead of disk.
+        var updated = CloneInventory(coordinator.Inventory);
+        var record = new FileStagingPayloadRecord(item.Length, item.Sha256);
+        if (manifest)
+        {
+            updated.Manifest = record;
+        }
+        else
+        {
+            updated.Data = record;
+        }
+
+        await PersistInventoryAsync(coordinator, updated, crashPoint: null, cancellationToken)
+            .ConfigureAwait(false);
+        coordinator.Inventory = updated;
+    }
+
+    protected override async ValueTask PublishPreparedAsync(
+        PortableStagingArea area,
+        PreparedPortableImportMetadata metadata,
+        CancellationToken cancellationToken)
+    {
+        var coordinator = AsCoordinator(area);
+
+        // The committed descriptor is written last and atomically: the new
+        // state.json only appears after every staged byte was verified, and a
+        // failure or crash before the swap leaves the area uncommitted. The
+        // in-memory inventory is replaced only after the durable write succeeds.
+        var updated = CloneInventory(coordinator.Inventory);
+        updated.Prepared = metadata;
+        await PersistInventoryAsync(
+                coordinator,
+                updated,
+                FileStagingCrashPoint.BeforeCommitMarkerReplace,
+                cancellationToken)
+            .ConfigureAwait(false);
+        coordinator.Inventory = updated;
+    }
+
+    protected override IReadOnlyList<PortablePreparedMedia> DescribeCompletedMedia(
+        PortableStagingArea area) =>
+        area.MediaByReference.Values
+            .Where(item => item.State.Status == PortableStagingItemStatus.Completed
+                && File.Exists(item.State.FinalPath))
+            .Select(item => new PortablePreparedMedia(
+                item.Descriptor,
+                new PortableStagedMediaReference(item.Reference)))
+            .ToArray();
+
+    protected override ValueTask<IReadOnlyList<PortablePreparedMedia>>
+        DescribeCompletedMediaForRebuildAsync(
+            PortableStagingArea area,
+            CancellationToken cancellationToken)
+    {
+        var coordinator = AsCoordinator(area);
+        var media = new List<PortablePreparedMedia>(coordinator.Inventory.Media.Count);
+        foreach (var record in coordinator.Inventory.Media)
+        {
+            if (!TransferPathResolver.IsValidOpaqueToken(record.Reference))
+            {
+                throw PortableStagingFilePrimitives.IntegrityMismatch(
+                    "The committed media inventory contains an invalid reference.");
+            }
+
+            var path = MediaPath(area, record.Reference);
+            _resolver.VerifyPathWithinRoot(path);
+            var info = new FileInfo(path);
+            if (!info.Exists || info.Length != record.Descriptor.Length)
+            {
+                throw PortableStagingFilePrimitives.IntegrityMismatch(
+                    "Staged media no longer matches the committed prepared descriptor.");
+            }
+
+            media.Add(new PortablePreparedMedia(
+                record.Descriptor,
+                new PortableStagedMediaReference(record.Reference)));
+        }
+
+        return ValueTask.FromResult<IReadOnlyList<PortablePreparedMedia>>(media);
+    }
+
+    protected override async ValueTask<(long Length, string Sha256)> HashCompletedPayloadAsync(
+        PortableStagingArea area,
+        PortableStagingPayloadItem item,
+        CancellationToken cancellationToken) =>
+        await HashVerifiedStagedFileAsync(item.State.FinalPath, item.Length, cancellationToken)
+            .ConfigureAwait(false);
+
+    protected override Stream OpenCompletedMediaRead(
+        PortableStagingArea area,
+        string reference)
+    {
+        if (!area.MediaByReference.TryGetValue(reference, out var item)
+            || item.State.Status != PortableStagingItemStatus.Completed)
+        {
+            throw PortableStagingFilePrimitives.NotFound(
+                "No completed media item matches the reference.");
+        }
+
+        return OpenVerifiedRead(item.State.FinalPath, item.Descriptor.Length);
+    }
+
+    protected override Stream OpenCompletedPayloadRead(
+        PortableStagingArea area,
+        PortableStagingPayloadItem item,
+        bool manifest) =>
+        OpenVerifiedRead(item.State.FinalPath, item.Length);
+
+    protected override async ValueTask MarkDeletedAsync(
+        PortableStagingArea area,
+        CancellationToken cancellationToken)
+    {
+        var coordinator = AsCoordinator(area);
+        if (area.Deleted || !Directory.Exists(area.Directory))
+            return;
+
+        // Durable first: write the deletion tombstone atomically. From the moment
+        // the marker exists, every operation and every fresh instance treats the
+        // staging id as not found, even if physical cleanup fails. A failed marker
+        // write leaves the area untouched.
+        if (File.Exists(DeletedMarkerPath(coordinator)))
+            return;
+
+        _hooks?.BeforeDeleteMark?.Invoke();
+        await WriteDeletedMarkerAsync(coordinator, cancellationToken).ConfigureAwait(false);
+    }
+
+    protected override void CleanupDeletedArea(PortableStagingArea area)
+    {
+        var cleanup = _hooks?.CleanupTombstone;
+        if (cleanup is not null)
+        {
+            try
+            {
+                cleanup(area.Directory);
+            }
+            catch
+            {
+                // Test seam for a physical cleanup failure after the durable mark.
+            }
+
+            return;
+        }
+
+        PortableStagingFilePrimitives.TryDeleteDirectory(area.Directory);
+    }
+
+    protected override void OnAreaDeactivated(PortableStagingArea area)
+    {
+        var coordinator = AsCoordinator(area);
+        coordinator.Inventory = new FileStagingInventory
+        {
+            Version = FilePortableImportStaging.CurrentInventoryVersion,
+        };
+        coordinator.InventoryLoaded = true;
+    }
+
+    private static FileStagingCoordinator AsCoordinator(PortableStagingArea area) =>
+        (FileStagingCoordinator)area;
 
     private FileStagingCoordinator GetCoordinator(Guid stagingId)
     {
@@ -1056,7 +694,7 @@ public sealed class FilePortableImportStaging : IPortableImportStaging
             _resolver.VerifyPathWithinRoot(path);
             if (File.Exists(path))
             {
-                area.Data = new FilePayloadItem
+                area.Data = new PortableStagingPayloadItem
                 {
                     Length = data.Length,
                     Sha256 = data.Sha256,
@@ -1073,7 +711,7 @@ public sealed class FilePortableImportStaging : IPortableImportStaging
             _resolver.VerifyPathWithinRoot(path);
             if (File.Exists(path))
             {
-                area.Manifest = new FilePayloadItem
+                area.Manifest = new PortableStagingPayloadItem
                 {
                     Length = manifest.Length,
                     Sha256 = manifest.Sha256,
@@ -1091,7 +729,7 @@ public sealed class FilePortableImportStaging : IPortableImportStaging
             if (!File.Exists(path))
                 continue;
 
-            var item = new FileMediaItem
+            var item = new PortableStagingMediaItem
             {
                 Descriptor = record.Descriptor,
                 Reference = record.Reference,
@@ -1213,122 +851,6 @@ public sealed class FilePortableImportStaging : IPortableImportStaging
             .ConfigureAwait(false);
     }
 
-    private static IReadOnlyList<PortablePreparedMedia> DescribeCompletedMedia(
-        FileStagingCoordinator area)
-    {
-        var media = area.MediaByReference.Values
-            .Where(item => item.State.Status == PortableStagingItemStatus.Completed
-                && File.Exists(item.State.FinalPath))
-            .Select(item => new PortablePreparedMedia(
-                item.Descriptor,
-                new PortableStagedMediaReference(item.Reference)))
-            .ToList();
-        media.Sort(CompareMedia);
-        return media;
-    }
-
-    private static int CompareMedia(PortablePreparedMedia left, PortablePreparedMedia right)
-    {
-        var byBook = left.Descriptor.BookId.CompareTo(right.Descriptor.BookId);
-        if (byBook != 0)
-            return byBook;
-
-        var byKind = string.Compare(left.Descriptor.Kind, right.Descriptor.Kind, StringComparison.Ordinal);
-        if (byKind != 0)
-            return byKind;
-
-        return string.Compare(left.Descriptor.Path, right.Descriptor.Path, StringComparison.Ordinal);
-    }
-
-    private static void DiscardMedia(FileStagingCoordinator area, FileMediaItem item)
-    {
-        if (item.State.Status == PortableStagingItemStatus.Discarded)
-            return;
-
-        item.State.Status = PortableStagingItemStatus.Discarded;
-        item.State.DisposeWriter();
-        PortableStagingFilePrimitives.TryDeleteFile(item.State.TempPath);
-        PortableStagingFilePrimitives.TryDeleteFile(item.State.FinalPath);
-        area.MediaByIdentity.Remove(new PortableStagingMediaIdentity(
-            item.Descriptor.BookId,
-            item.Descriptor.Kind,
-            item.Descriptor.Path));
-        area.MediaByReference.Remove(item.Reference);
-        if (item.Handle is not null)
-            area.MediaByHandle.Remove(item.Handle);
-    }
-
-    private static void DiscardPayload(
-        FileStagingCoordinator area,
-        FilePayloadItem item,
-        bool manifest)
-    {
-        if (item.State.Status == PortableStagingItemStatus.Discarded)
-            return;
-
-        item.State.Status = PortableStagingItemStatus.Discarded;
-        item.State.DisposeWriter();
-        PortableStagingFilePrimitives.TryDeleteFile(item.State.TempPath);
-        PortableStagingFilePrimitives.TryDeleteFile(item.State.FinalPath);
-
-        if (manifest)
-        {
-            if (ReferenceEquals(area.Manifest, item))
-                area.Manifest = null;
-        }
-        else if (ReferenceEquals(area.Data, item))
-        {
-            area.Data = null;
-        }
-
-        if (item.Handle is not null)
-            area.PayloadByHandle.Remove(item.Handle);
-    }
-
-    private static void DeactivateAll(FileStagingCoordinator area)
-    {
-        foreach (var item in area.MediaByReference.Values.ToArray())
-        {
-            item.State.Status = PortableStagingItemStatus.Discarded;
-            item.State.DisposeWriter();
-        }
-
-        if (area.Data is not null)
-        {
-            area.Data.State.Status = PortableStagingItemStatus.Discarded;
-            area.Data.State.DisposeWriter();
-        }
-
-        if (area.Manifest is not null)
-        {
-            area.Manifest.State.Status = PortableStagingItemStatus.Discarded;
-            area.Manifest.State.DisposeWriter();
-        }
-
-        area.MediaByIdentity.Clear();
-        area.MediaByReference.Clear();
-        area.MediaByHandle.Clear();
-        area.PayloadByHandle.Clear();
-        area.Data = null;
-        area.Manifest = null;
-        area.Prepared = null;
-        area.Inventory = new FileStagingInventory
-        {
-            Version = CurrentInventoryVersion,
-        };
-        area.InventoryLoaded = true;
-    }
-
-    private static void EnsureNotCommitted(FileStagingCoordinator area)
-    {
-        if (area.Prepared is not null)
-        {
-            throw new PortableStagingException(
-                PortableStagingException.AlreadyCommittedCode,
-                "The staging area has already been committed and accepts no further writes.");
-        }
-    }
-
     /// <summary>
     /// Copies the inventory so mutations are persisted as a complete snapshot and
     /// installed in memory only after the durable replacement succeeded.
@@ -1349,7 +871,7 @@ public sealed class FilePortableImportStaging : IPortableImportStaging
     /// </summary>
     private static void ValidateInventory(FileStagingInventory inventory, Guid stagingId)
     {
-        if (inventory.Version != CurrentInventoryVersion)
+        if (inventory.Version != FilePortableImportStaging.CurrentInventoryVersion)
         {
             throw PortableStagingFilePrimitives.IntegrityMismatch(
                 $"The staging state file schema version '{inventory.Version}' is not supported.");
@@ -1463,55 +985,27 @@ public sealed class FilePortableImportStaging : IPortableImportStaging
         }
     }
 
-    /// <summary>
-    /// Best-effort removal of a durably deleted area. Failure is harmless: the
-    /// canonical id is already hidden by the marker, and a later cleanup sweep can
-    /// remove the leftover directory.
-    /// </summary>
-    private void CleanupDeletedArea(FileStagingCoordinator area)
-    {
-        var cleanup = _hooks?.CleanupTombstone;
-        if (cleanup is not null)
-        {
-            try
-            {
-                cleanup(area.Directory);
-            }
-            catch
-            {
-                // Test seam for a physical cleanup failure after the durable mark.
-            }
-
-            return;
-        }
-
-        PortableStagingFilePrimitives.TryDeleteDirectory(area.Directory);
-    }
-
     private void RunCrashPoint(FileStagingCrashPoint point) =>
         _hooks?.CrashAt?.Invoke(point);
 
     private string DeletedMarkerPath(FileStagingCoordinator area) =>
-        Path.Combine(area.Directory, DeletedMarkerFileName);
+        Path.Combine(area.Directory, FilePortableImportStaging.DeletedMarkerFileName);
 
     private string StatePath(FileStagingCoordinator area) =>
-        Path.Combine(area.Directory, StateFileName);
+        Path.Combine(area.Directory, FilePortableImportStaging.StateFileName);
 
     private string StateTempPath(FileStagingCoordinator area) =>
-        Path.Combine(area.Directory, StateTempFileName);
+        Path.Combine(area.Directory, FilePortableImportStaging.StateTempFileName);
 
-    private string MediaDirectoryPath(FileStagingCoordinator area) =>
+    private string MediaDirectoryPath(PortableStagingArea area) =>
         _resolver.GetStagingMediaDirectory(area.StagingId);
 
-    private string MediaPath(FileStagingCoordinator area, string reference) =>
-        _resolver.GetStagingMediaPath(area.StagingId, reference);
+    private string DataDirectoryPath(PortableStagingArea area) =>
+        Path.Combine(area.Directory, FilePortableImportStaging.DataDirectoryName);
 
-    private string DataDirectoryPath(FileStagingCoordinator area) =>
-        Path.Combine(area.Directory, DataDirectoryName);
+    private string DataPath(PortableStagingArea area) =>
+        Path.Combine(DataDirectoryPath(area), FilePortableImportStaging.DataFileName);
 
-    private string DataPath(FileStagingCoordinator area) =>
-        Path.Combine(DataDirectoryPath(area), DataFileName);
-
-    private string ManifestPath(FileStagingCoordinator area) =>
-        Path.Combine(area.Directory, ManifestFileName);
+    private string ManifestPath(PortableStagingArea area) =>
+        Path.Combine(area.Directory, FilePortableImportStaging.ManifestFileName);
 }

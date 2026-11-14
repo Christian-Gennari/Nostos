@@ -34,7 +34,7 @@ public sealed class PortableStagingGateTests : IDisposable
     public async Task Delete_wins_when_completion_pauses_before_the_gate(
         StagingProvider provider)
     {
-        var gate = new PausableGate(FileStagingOperation.CompleteMedia);
+        var gate = new PausableGate(PortableStagingOperation.CompleteMedia);
         await using var staging = CreateStaging(provider, gate);
         var id = await staging.CreateAsync();
         var content = new byte[] { 1, 2, 3 };
@@ -73,7 +73,7 @@ public sealed class PortableStagingGateTests : IDisposable
     public async Task Completion_wins_when_delete_pauses_before_the_gate(
         StagingProvider provider)
     {
-        var gate = new PausableGate(FileStagingOperation.Delete);
+        var gate = new PausableGate(PortableStagingOperation.Delete);
         await using var staging = CreateStaging(provider, gate);
         var id = await staging.CreateAsync();
         var content = new byte[] { 4, 5, 6 };
@@ -101,7 +101,7 @@ public sealed class PortableStagingGateTests : IDisposable
     public async Task A_queued_operation_does_not_hold_the_gate_for_the_one_ahead_of_it(
         StagingProvider provider)
     {
-        var gate = new PausableGate(FileStagingOperation.CompleteMedia);
+        var gate = new PausableGate(PortableStagingOperation.CompleteMedia);
         await using var staging = CreateStaging(provider, gate);
         var id = await staging.CreateAsync();
         var content = new byte[] { 7, 7 };
@@ -171,7 +171,7 @@ public sealed class PortableStagingGateTests : IDisposable
     public async Task A_cancelled_wait_is_refused_and_leaves_the_previous_state(
         StagingProvider provider)
     {
-        var gate = new PausableGate(FileStagingOperation.CompleteMedia);
+        var gate = new PausableGate(PortableStagingOperation.CompleteMedia);
         await using var staging = CreateStaging(provider, gate);
         var id = await staging.CreateAsync();
         var content = new byte[] { 9, 9, 9 };
@@ -194,6 +194,59 @@ public sealed class PortableStagingGateTests : IDisposable
         await staging.CompleteMediaAsync(id, write);
         await write.DisposeAsync();
         (await staging.ListMediaAsync(id)).Should().ContainSingle();
+    }
+
+    /// <summary>
+    /// The write stream's async path waits on the same gate as the transitions, so a
+    /// write queued behind a completion is cancelled as a cancellation — not as a
+    /// staging refusal — and publishes nothing. The durable provider can hold the gate
+    /// from inside a real transition through its inventory seam; the process-local one
+    /// has no in-gate seam, which is why this runs on the durable provider only.
+    /// </summary>
+    [Fact]
+    public async Task An_async_write_cancelled_behind_the_gate_publishes_nothing()
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var hooks = new FilePortableImportStagingHooks();
+        await using var staging = new FilePortableImportStaging(
+            new TransferPathResolver(Path.Combine(_root, "file-gated")),
+            hooks,
+            coordinatorScope: string.Empty);
+
+        var id = await staging.CreateAsync();
+        var content = new byte[] { 1, 2, 3 };
+        var write = await staging.OpenMediaWriteAsync(id, MediaDescriptor(content));
+        await write.Stream.WriteAsync(content);
+
+        hooks.BeforeInventoryReplace = () =>
+        {
+            entered.TrySetResult();
+            release.Task.GetAwaiter().GetResult();
+        };
+
+        var completion = Task.Run(() => staging.CompleteMediaAsync(id, write));
+        await entered.Task.WaitAsync(OperationTimeout);
+
+        using var cancelled = new CancellationTokenSource();
+        var blocked = Task.Run(async () =>
+            await write.Stream.WriteAsync(new byte[] { 9 }, cancelled.Token));
+        await cancelled.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => blocked.WaitAsync(OperationTimeout));
+
+        release.TrySetResult();
+        await completion.WaitAsync(OperationTimeout);
+
+        (await staging.ListMediaAsync(id)).Should().ContainSingle();
+        await using var read = await staging.OpenMediaReadAsync(id, write.Reference);
+        using var copy = new MemoryStream();
+        await read.CopyToAsync(copy);
+        copy.ToArray().Should().Equal(content);
+
+        hooks.BeforeInventoryReplace = null;
+        await write.DisposeAsync();
     }
 
     public void Dispose()
@@ -245,10 +298,10 @@ public sealed class PortableStagingGateTests : IDisposable
     /// </summary>
     private sealed class PausableGate
     {
-        private readonly FileStagingOperation _operation;
+        private readonly PortableStagingOperation _operation;
         private int _paused;
 
-        internal PausableGate(FileStagingOperation operation) => _operation = operation;
+        internal PausableGate(PortableStagingOperation operation) => _operation = operation;
 
         internal TaskCompletionSource Entered { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -256,7 +309,7 @@ public sealed class PortableStagingGateTests : IDisposable
         internal TaskCompletionSource Release { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        internal async Task BeforeGateAsync(FileStagingOperation operation)
+        internal async Task BeforeGateAsync(PortableStagingOperation operation)
         {
             if (operation != _operation || Interlocked.Exchange(ref _paused, 1) != 0)
                 return;

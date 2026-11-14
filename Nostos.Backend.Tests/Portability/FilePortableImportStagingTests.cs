@@ -411,7 +411,7 @@ public sealed class FilePortableImportStagingTests : IDisposable
         {
             BeforeAreaGateAsync = async operation =>
             {
-                if (operation == FileStagingOperation.CompleteMedia)
+                if (operation == PortableStagingOperation.CompleteMedia)
                 {
                     entered.TrySetResult();
                     await release.Task;
@@ -460,7 +460,7 @@ public sealed class FilePortableImportStagingTests : IDisposable
         {
             BeforeAreaGateAsync = async operation =>
             {
-                if (operation == FileStagingOperation.Delete)
+                if (operation == PortableStagingOperation.Delete)
                 {
                     entered.TrySetResult();
                     await release.Task;

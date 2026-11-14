@@ -9,14 +9,15 @@ namespace Nostos.Backend.Services.Portability;
 /// </summary>
 internal sealed class LocalPortableImportStagingHooks
 {
-    internal Func<FileStagingOperation, Task>? BeforeAreaGateAsync { get; set; }
+    internal Func<PortableStagingOperation, Task>? BeforeAreaGateAsync { get; set; }
 }
 
 /// <summary>
 /// Process-local file staging for the immediate compatibility import
 /// (<c>POST /api/portability/import</c>). Every staged byte lives under a
 /// caller-owned disposable scratch root; disposing the provider releases no files and
-/// only <see cref="DeleteAsync"/> (or deleting the root) removes staged bytes.
+/// only <see cref="IPortableImportStaging.DeleteAsync"/> (or deleting the root) removes
+/// staged bytes.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -30,16 +31,21 @@ internal sealed class LocalPortableImportStagingHooks
 /// restart-survivable migration job (plan 9.10 and 9.23). The caller owns deleting
 /// the scratch root, including after a failure.
 /// </para>
+/// <para>
+/// The open/complete/commit/rebuild/delete state machine is shared with the durable
+/// provider through <see cref="PortableImportStagingBase"/>; this type supplies only
+/// its persistence differences: one scratch root, no inventory file (completed media
+/// are discovered from their descriptor sidecars), no fsync, no deletion tombstone.
+/// </para>
 /// </remarks>
-internal sealed class LocalPortableImportStaging
-    : IPortableImportStaging
+internal sealed class LocalPortableImportStaging : PortableImportStagingBase
 {
     private const int StreamBufferBytes = 128 * 1024;
 
     private readonly string _root;
     private readonly Func<string, long?> _availableBytesProbe;
     private readonly LocalPortableImportStagingHooks? _hooks;
-    private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly PortableStagingGate _gate = new();
     private readonly Dictionary<Guid, LocalArea> _areas = [];
     private readonly HashSet<Guid> _deleted = [];
 
@@ -111,570 +117,177 @@ internal sealed class LocalPortableImportStaging
         }
     }
 
-    public async Task<PortableStagingId> CreateAsync(
+    protected override Func<PortableStagingOperation, Task>? BeforeAreaGate =>
+        _hooks?.BeforeAreaGateAsync;
+
+    protected override bool FlushCompletedItemsToDisk => false;
+
+    public override async Task<PortableStagingId> CreateAsync(
         CancellationToken cancellationToken = default)
     {
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            var id = Guid.NewGuid();
-            var area = LocalArea.Create(id, _root);
-            _areas.Add(id, area);
-            return new PortableStagingId(id);
-        }
-        finally
-        {
-            _gate.Release();
-        }
+        using var lease = await _gate.EnterAsync(cancellationToken).ConfigureAwait(false);
+        var id = Guid.NewGuid();
+        var area = LocalArea.Create(id, _root, _gate);
+        _areas.Add(id, area);
+        return new PortableStagingId(id);
     }
 
-    public async Task<PortableStagingWrite> OpenMediaWriteAsync(
+    protected override async ValueTask<PortableStagingAreaLease> EnterAreaAsync(
         PortableStagingId stagingId,
-        PortableArchiveMediaEntry descriptor,
-        CancellationToken cancellationToken = default)
+        PortableStagingOperation operation,
+        CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(descriptor);
-        await EnterGateAsync(FileStagingOperation.OpenMediaWrite, cancellationToken)
+        var lease = await EnterGateAsync(_gate, operation, cancellationToken)
             .ConfigureAwait(false);
         try
         {
-            var area = GetExistingArea(stagingId);
-            EnsureAcceptsWrites(area);
-
-            if (descriptor.Length < 0)
-            {
-                throw new ArgumentOutOfRangeException(
-                    nameof(descriptor),
-                    "The declared media length cannot be negative.");
-            }
-
-            if (descriptor.Length > PortableArchiveLimits.MaxSingleEntryBytes)
-            {
-                throw new PortableStagingException(
-                    PortableStagingException.LimitExceededCode,
-                    $"The declared media length exceeds the {PortableArchiveLimits.MaxSingleEntryBytes}-byte staging limit.");
-            }
-
-            var identity = new PortableStagingMediaIdentity(descriptor.BookId, descriptor.Kind, descriptor.Path);
-            if (area.MediaByIdentity.ContainsKey(identity))
-            {
-                throw new PortableStagingException(
-                    PortableStagingException.ConflictCode,
-                    "A write for this media item is already open or completed.");
-            }
-
-            var reference = PortableStagingFilePrimitives.NewReference(
-                candidate => area.MediaByReference.ContainsKey(candidate));
-            var finalPath = Path.Combine(area.MediaDirectory, reference + ".bin");
-            var tempPath = finalPath + ".tmp";
-            var state = PortableStagingWriteState.Open(
-                OpenLocalWriteStream(tempPath),
-                tempPath,
-                finalPath,
-                descriptor.Length);
-            var item = new LocalMediaItem
-            {
-                Descriptor = descriptor,
-                Reference = reference,
-                State = state,
-            };
-            var write = new PortableStagingWrite(
-                new PortableStagedMediaReference(reference),
-                new PortableStagingWriteStream(
-                    _gate,
-                    state,
-                    () => area.Deleted,
-                    () => DiscardMedia(area, item)));
-            item.Handle = write;
-
-            area.MediaByIdentity.Add(identity, item);
-            area.MediaByReference.Add(reference, item);
-            area.MediaByHandle.Add(write, item);
-            return write;
+            return new PortableStagingAreaLease(GetExistingArea(stagingId), lease);
         }
-        finally
+        catch
         {
-            _gate.Release();
+            lease.Dispose();
+            throw;
         }
     }
 
-    public async Task CompleteMediaAsync(
+    protected override async ValueTask<PortableStagingAreaLease> EnterAreaForDeleteAsync(
         PortableStagingId stagingId,
-        PortableStagingWrite write,
-        CancellationToken cancellationToken = default)
+        PortableStagingOperation operation,
+        CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(write);
-        await EnterGateAsync(FileStagingOperation.CompleteMedia, cancellationToken)
+        var lease = await EnterGateAsync(_gate, operation, cancellationToken)
             .ConfigureAwait(false);
-        try
-        {
-            var area = GetExistingArea(stagingId);
-            EnsureNotCommitted(area);
 
-            if (!area.MediaByHandle.TryGetValue(write, out var item))
-                throw PortableStagingFilePrimitives.NotFound("No media item matches the write handle.");
-
-            if (item.State.Status == PortableStagingItemStatus.Completed)
-                return;
-
-            if (item.State.Status != PortableStagingItemStatus.Writing)
-                throw PortableStagingFilePrimitives.NotFound("The media write is no longer completable.");
-
-            try
-            {
-                if (!await PortableStagingSealing.SealAsync(
-                        item.State,
-                        item.Descriptor.Length,
-                        item.Descriptor.Sha256,
-                        flushToDisk: false)
-                        .ConfigureAwait(false))
-                {
-                    throw new PortableStagingException(
-                        PortableStagingException.IntegrityMismatchCode,
-                        "Staged media bytes do not match the descriptor bound when the write was opened.");
-                }
-
-                await File.WriteAllTextAsync(
-                        MetaPath(area, item.Reference),
-                        JsonSerializer.Serialize(item.Descriptor, PortableArchiveJson.StagingOptions),
-                        cancellationToken)
-                    .ConfigureAwait(false);
-                File.Move(item.State.TempPath, item.State.FinalPath);
-                item.State.Status = PortableStagingItemStatus.Completed;
-            }
-            catch
-            {
-                DiscardMedia(area, item);
-                throw;
-            }
-        }
-        finally
-        {
-            _gate.Release();
-        }
+        // Delete is idempotent, so an area this instance never touched resolves to an
+        // empty area over the same directory: the tree still goes away and the id is
+        // still marked deleted.
+        var area = _areas.TryGetValue(stagingId.Value, out var existing)
+            ? existing
+            : LocalArea.Detached(stagingId.Value, _root, _gate);
+        return new PortableStagingAreaLease(area, lease);
     }
 
-    public async Task<Stream> OpenMediaReadAsync(
-        PortableStagingId stagingId,
-        PortableStagedMediaReference reference,
-        CancellationToken cancellationToken = default)
+    protected override FileStream CreateScratchFile(string finalPath, out string tempPath)
     {
-        await EnterGateAsync(FileStagingOperation.Read, cancellationToken).ConfigureAwait(false);
-        try
-        {
-            var area = GetExistingArea(stagingId);
-            var value = PortableStagingFilePrimitives.ValidateReference(reference.Value);
-            var finalPath = Path.Combine(area.MediaDirectory, value + ".bin");
-            if (!File.Exists(finalPath))
-                throw PortableStagingFilePrimitives.NotFound("No completed media item matches the reference.");
-
-            return OpenRead(finalPath);
-        }
-        finally
-        {
-            _gate.Release();
-        }
+        tempPath = finalPath + ".tmp";
+        return new FileStream(
+            tempPath,
+            FileMode.Create,
+            FileAccess.Write,
+            FileShare.None,
+            StreamBufferBytes,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
     }
 
-    public async Task<IReadOnlyList<PortablePreparedMedia>> ListMediaAsync(
-        PortableStagingId stagingId,
-        CancellationToken cancellationToken = default)
+    protected override string MediaPath(PortableStagingArea area, string reference) =>
+        Path.Combine(AsLocal(area).MediaDirectory, reference + ".bin");
+
+    protected override string PayloadPath(PortableStagingArea area, bool manifest) =>
+        Path.Combine(area.Directory, manifest ? "manifest.bin" : "data.bin");
+
+    /// <summary>The area's media directory is created with the area itself.</summary>
+    protected override void EnsureMediaDirectory(PortableStagingArea area)
     {
-        await EnterGateAsync(FileStagingOperation.List, cancellationToken).ConfigureAwait(false);
-        try
-        {
-            return DescribeCompletedMedia(GetExistingArea(stagingId));
-        }
-        finally
-        {
-            _gate.Release();
-        }
     }
 
-    public Task<PortableStagingPayloadWrite> OpenDataWriteAsync(
-        PortableStagingId stagingId,
-        PortableArchivePayload descriptor,
-        CancellationToken cancellationToken = default) =>
-        OpenPayloadWriteAsync(stagingId, descriptor, manifest: false, cancellationToken);
+    protected override async ValueTask PublishMediaAsync(
+        PortableStagingArea area,
+        PortableStagingMediaItem item,
+        CancellationToken cancellationToken)
+    {
+        var local = AsLocal(area);
 
-    public Task<PortableStagingPayloadWrite> OpenManifestWriteAsync(
-        PortableStagingId stagingId,
-        PortableArchivePayload descriptor,
-        CancellationToken cancellationToken = default) =>
-        OpenPayloadWriteAsync(stagingId, descriptor, manifest: true, cancellationToken);
-
-    public async Task CompleteDataAsync(
-        PortableStagingId stagingId,
-        PortableStagingPayloadWrite write,
-        CancellationToken cancellationToken = default) =>
-        await CompletePayloadAsync(stagingId, write, manifest: false, cancellationToken)
+        // The descriptor sidecar is what a later instance discovers, so it is written
+        // before the bytes are published: a crash between the two leaves a descriptor
+        // without bytes, which discovery skips, never bytes without a descriptor.
+        await File.WriteAllTextAsync(
+                MetaPath(local, item.Reference),
+                JsonSerializer.Serialize(item.Descriptor, PortableArchiveJson.StagingOptions),
+                cancellationToken)
             .ConfigureAwait(false);
+        File.Move(item.State.TempPath, item.State.FinalPath);
+    }
 
-    public async Task CompleteManifestAsync(
-        PortableStagingId stagingId,
-        PortableStagingPayloadWrite write,
-        CancellationToken cancellationToken = default) =>
-        await CompletePayloadAsync(stagingId, write, manifest: true, cancellationToken)
-            .ConfigureAwait(false);
+    protected override ValueTask PublishPayloadAsync(
+        PortableStagingArea area,
+        PortableStagingPayloadItem item,
+        bool manifest,
+        CancellationToken cancellationToken)
+    {
+        File.Move(item.State.TempPath, item.State.FinalPath);
+        return ValueTask.CompletedTask;
+    }
 
-    public async Task<Stream> OpenDataReadAsync(
-        PortableStagingId stagingId,
-        CancellationToken cancellationToken = default) =>
-        await OpenPayloadReadAsync(stagingId, manifest: false, cancellationToken)
-            .ConfigureAwait(false);
-
-    public async Task<Stream> OpenManifestReadAsync(
-        PortableStagingId stagingId,
-        CancellationToken cancellationToken = default) =>
-        await OpenPayloadReadAsync(stagingId, manifest: true, cancellationToken)
-            .ConfigureAwait(false);
-
-    public async Task CommitPreparedImportAsync(
-        PortableStagingId stagingId,
+    protected override async ValueTask PublishPreparedAsync(
+        PortableStagingArea area,
         PreparedPortableImportMetadata metadata,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(metadata);
-        ArgumentNullException.ThrowIfNull(metadata.Counts);
-        await EnterGateAsync(FileStagingOperation.Commit, cancellationToken).ConfigureAwait(false);
+        var preparedPath = PreparedPath(area);
+        var preparedTempPath = preparedPath + ".tmp";
         try
         {
-            var area = GetExistingArea(stagingId);
-
-            if (metadata.StagingId != stagingId)
-            {
-                throw new PortableStagingException(
-                    PortableStagingException.ConflictCode,
-                    "The prepared descriptor belongs to a different staging area.");
-            }
-
-            if (area.Prepared is not null)
-            {
-                if (area.Prepared == metadata)
-                    return;
-
-                throw new PortableStagingException(
-                    PortableStagingException.ConflictCode,
-                    "A different prepared descriptor is already committed.");
-            }
-
-            if (area.Data?.State.Status != PortableStagingItemStatus.Completed
-                || area.Manifest?.State.Status != PortableStagingItemStatus.Completed)
-            {
-                throw new PortableStagingException(
-                    PortableStagingException.ConflictCode,
-                    "A prepared import requires a completed relational payload and manifest.");
-            }
-
-            if (area.MediaByIdentity.Values.Any(item => item.State.Status == PortableStagingItemStatus.Writing))
-            {
-                throw new PortableStagingException(
-                    PortableStagingException.ConflictCode,
-                    "A prepared import cannot commit while a media write is still open.");
-            }
-
-            var media = DescribeCompletedMedia(area);
-            if (media.Count != metadata.MediaFiles)
-            {
-                throw new PortableStagingException(
-                    PortableStagingException.ConflictCode,
-                    "The staged media count does not match the prepared descriptor.");
-            }
-
-            if (media.Sum(item => item.Descriptor.Length) != metadata.MediaBytes)
-            {
-                throw new PortableStagingException(
-                    PortableStagingException.ConflictCode,
-                    "The staged media bytes do not match the prepared descriptor.");
-            }
-
-            if (metadata.Counts.MediaEntries != metadata.MediaFiles)
-            {
-                throw new PortableStagingException(
-                    PortableStagingException.ConflictCode,
-                    "The prepared counts media entries do not match the media file count.");
-            }
-
-            var (dataBytes, dataSha256) = await PortableStagingFilePrimitives.HashFileAsync(
-                    area.Data.State.FinalPath,
+            await File.WriteAllTextAsync(
+                    preparedTempPath,
+                    JsonSerializer.Serialize(metadata, PortableArchiveJson.StagingOptions),
                     cancellationToken)
                 .ConfigureAwait(false);
-            if (dataBytes != metadata.DataBytes
-                || !PortableArchiveValidation.FixedHashEquals(dataSha256, metadata.DataSha256))
-            {
-                throw new PortableStagingException(
-                    PortableStagingException.ConflictCode,
-                    "The staged relational payload does not match the prepared descriptor.");
-            }
-
-            // Publish the committed descriptor durably before the instance treats the
-            // area as committed, so a failed or cancelled descriptor write leaves the
-            // previous (uncommitted) visible state.
-            var preparedPath = PreparedPath(area);
-            var preparedTempPath = preparedPath + ".tmp";
-            try
-            {
-                await File.WriteAllTextAsync(
-                        preparedTempPath,
-                        JsonSerializer.Serialize(metadata, PortableArchiveJson.StagingOptions),
-                        cancellationToken)
-                    .ConfigureAwait(false);
-                File.Move(preparedTempPath, preparedPath, overwrite: true);
-            }
-            catch
-            {
-                PortableStagingFilePrimitives.TryDeleteFile(preparedTempPath);
-                throw;
-            }
-
-            area.Prepared = metadata;
+            File.Move(preparedTempPath, preparedPath, overwrite: true);
         }
-        finally
+        catch
         {
-            _gate.Release();
+            PortableStagingFilePrimitives.TryDeleteFile(preparedTempPath);
+            throw;
         }
     }
 
-    public async Task<IPreparedPortableImport> RebuildPreparedImportAsync(
-        PortableStagingId stagingId,
-        CancellationToken cancellationToken = default)
-    {
-        await EnterGateAsync(FileStagingOperation.Rebuild, cancellationToken).ConfigureAwait(false);
-        try
-        {
-            var area = GetExistingArea(stagingId);
-            var prepared = area.Prepared
-                ?? throw PortableStagingFilePrimitives.NotFound("No prepared descriptor has been committed.");
+    protected override IReadOnlyList<PortablePreparedMedia> DescribeCompletedMedia(
+        PortableStagingArea area) =>
+        ReadCompletedMedia(AsLocal(area));
 
-            var media = DescribeCompletedMedia(area);
-            if (media.Count != prepared.MediaFiles
-                || media.Sum(item => item.Descriptor.Length) != prepared.MediaBytes)
-            {
-                throw new PortableStagingException(
-                    PortableStagingException.IntegrityMismatchCode,
-                    "Staged media no longer matches the committed prepared descriptor.");
-            }
+    protected override ValueTask<IReadOnlyList<PortablePreparedMedia>>
+        DescribeCompletedMediaForRebuildAsync(
+            PortableStagingArea area,
+            CancellationToken cancellationToken) =>
+        ValueTask.FromResult(DescribeCompletedMedia(area));
 
-            if (area.Data?.State.Status != PortableStagingItemStatus.Completed)
-            {
-                throw new PortableStagingException(
-                    PortableStagingException.IntegrityMismatchCode,
-                    "The staged relational payload no longer matches the committed prepared descriptor.");
-            }
-
-            var (dataBytes, dataSha256) = await PortableStagingFilePrimitives.HashFileAsync(
-                    area.Data.State.FinalPath,
-                    cancellationToken)
-                .ConfigureAwait(false);
-            if (dataBytes != prepared.DataBytes
-                || !PortableArchiveValidation.FixedHashEquals(dataSha256, prepared.DataSha256))
-            {
-                throw new PortableStagingException(
-                    PortableStagingException.IntegrityMismatchCode,
-                    "The staged relational payload no longer matches the committed prepared descriptor.");
-            }
-
-            return new PortablePreparedImport(prepared, media);
-        }
-        finally
-        {
-            _gate.Release();
-        }
-    }
-
-    public async Task DeleteAsync(
-        PortableStagingId stagingId,
-        CancellationToken cancellationToken = default)
-    {
-        await EnterGateAsync(FileStagingOperation.Delete, cancellationToken).ConfigureAwait(false);
-        try
-        {
-            if (stagingId.Value == Guid.Empty)
-                return;
-
-            if (_areas.TryGetValue(stagingId.Value, out var area))
-            {
-                area.Deleted = true;
-                area.DeactivateOpenWrites();
-                _areas.Remove(stagingId.Value);
-            }
-
-            _deleted.Add(stagingId.Value);
-            PortableStagingFilePrimitives.TryDeleteDirectory(AreaDirectory(stagingId));
-        }
-        finally
-        {
-            _gate.Release();
-        }
-    }
-
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
-
-    /// <summary>
-    /// Takes the staging gate for one operation. A test hook runs first, outside the
-    /// gate, so a test can pause a specific transition and prove the ordering of two
-    /// concurrent operations; production instances have no hook.
-    /// </summary>
-    private async Task EnterGateAsync(
-        FileStagingOperation operation,
-        CancellationToken cancellationToken)
-    {
-        var beforeGate = _hooks?.BeforeAreaGateAsync;
-        if (beforeGate is not null)
-            await beforeGate(operation).ConfigureAwait(false);
-
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    private async Task<PortableStagingPayloadWrite> OpenPayloadWriteAsync(
-        PortableStagingId stagingId,
-        PortableArchivePayload descriptor,
-        bool manifest,
-        CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(descriptor);
-        await EnterGateAsync(FileStagingOperation.OpenPayloadWrite, cancellationToken)
+    protected override async ValueTask<(long Length, string Sha256)> HashCompletedPayloadAsync(
+        PortableStagingArea area,
+        PortableStagingPayloadItem item,
+        CancellationToken cancellationToken) =>
+        await PortableStagingFilePrimitives
+            .HashFileAsync(item.State.FinalPath, cancellationToken)
             .ConfigureAwait(false);
-        try
-        {
-            var area = GetExistingArea(stagingId);
-            EnsureAcceptsWrites(area);
 
-            if (descriptor.Length < 0)
-            {
-                throw new ArgumentOutOfRangeException(
-                    nameof(descriptor),
-                    "The declared payload length cannot be negative.");
-            }
-
-            var hardLimit = manifest
-                ? PortableArchiveLimits.MaxManifestBytes
-                : PortableArchiveLimits.MaxDataBytes;
-            if (descriptor.Length > hardLimit)
-            {
-                throw new PortableStagingException(
-                    PortableStagingException.LimitExceededCode,
-                    $"The declared payload length exceeds the {hardLimit}-byte staging limit.");
-            }
-
-            if (manifest ? area.Manifest is not null : area.Data is not null)
-            {
-                throw new PortableStagingException(
-                    PortableStagingException.ConflictCode,
-                    "A write for this payload is already open or completed.");
-            }
-
-            var finalPath = Path.Combine(area.Directory, manifest ? "manifest.bin" : "data.bin");
-            var tempPath = finalPath + ".tmp";
-            var state = PortableStagingWriteState.Open(
-                OpenLocalWriteStream(tempPath),
-                tempPath,
-                finalPath,
-                descriptor.Length);
-            var item = new LocalPayloadItem
-            {
-                Descriptor = descriptor,
-                State = state,
-            };
-            var write = new PortableStagingPayloadWrite(
-                new PortableStagingWriteStream(
-                    _gate,
-                    state,
-                    () => area.Deleted,
-                    () => DiscardPayload(area, item, manifest)));
-            item.Handle = write;
-
-            if (manifest)
-                area.Manifest = item;
-            else
-                area.Data = item;
-
-            area.PayloadByHandle.Add(write, item);
-            return write;
-        }
-        finally
-        {
-            _gate.Release();
-        }
-    }
-
-    private async Task CompletePayloadAsync(
-        PortableStagingId stagingId,
-        PortableStagingPayloadWrite write,
-        bool manifest,
-        CancellationToken cancellationToken)
+    protected override Stream OpenCompletedMediaRead(
+        PortableStagingArea area,
+        string reference)
     {
-        ArgumentNullException.ThrowIfNull(write);
-        await EnterGateAsync(FileStagingOperation.CompletePayload, cancellationToken)
-            .ConfigureAwait(false);
-        try
-        {
-            var area = GetExistingArea(stagingId);
-            EnsureNotCommitted(area);
+        var finalPath = Path.Combine(AsLocal(area).MediaDirectory, reference + ".bin");
+        if (!File.Exists(finalPath))
+            throw PortableStagingFilePrimitives.NotFound("No completed media item matches the reference.");
 
-            var item = manifest ? area.Manifest : area.Data;
-            if (item is null
-                || !area.PayloadByHandle.TryGetValue(write, out var bound)
-                || !ReferenceEquals(bound, item))
-            {
-                throw PortableStagingFilePrimitives.NotFound("No payload matches the write handle.");
-            }
-
-            if (item.State.Status == PortableStagingItemStatus.Completed)
-                return;
-
-            if (item.State.Status != PortableStagingItemStatus.Writing)
-                throw PortableStagingFilePrimitives.NotFound("The payload write is no longer completable.");
-
-            try
-            {
-                if (!await PortableStagingSealing.SealAsync(
-                        item.State,
-                        item.Descriptor.Length,
-                        item.Descriptor.Sha256,
-                        flushToDisk: false)
-                        .ConfigureAwait(false))
-                {
-                    throw new PortableStagingException(
-                        PortableStagingException.IntegrityMismatchCode,
-                        "Staged payload bytes do not match the descriptor bound when the write was opened.");
-                }
-
-                File.Move(item.State.TempPath, item.State.FinalPath);
-                item.State.Status = PortableStagingItemStatus.Completed;
-            }
-            catch
-            {
-                DiscardPayload(area, item, manifest);
-                throw;
-            }
-        }
-        finally
-        {
-            _gate.Release();
-        }
+        return OpenRead(finalPath);
     }
 
-    private async Task<Stream> OpenPayloadReadAsync(
-        PortableStagingId stagingId,
-        bool manifest,
-        CancellationToken cancellationToken)
+    protected override Stream OpenCompletedPayloadRead(
+        PortableStagingArea area,
+        PortableStagingPayloadItem item,
+        bool manifest) =>
+        OpenRead(item.State.FinalPath);
+
+    protected override void OnMediaDiscarded(
+        PortableStagingArea area,
+        PortableStagingMediaItem item) =>
+        PortableStagingFilePrimitives.TryDeleteFile(MetaPath(AsLocal(area), item.Reference));
+
+    protected override void OnAreaDeactivated(PortableStagingArea area)
     {
-        await EnterGateAsync(FileStagingOperation.Read, cancellationToken).ConfigureAwait(false);
-        try
-        {
-            var area = GetExistingArea(stagingId);
-            var item = manifest ? area.Manifest : area.Data;
-            if (item?.State.Status != PortableStagingItemStatus.Completed)
-                throw PortableStagingFilePrimitives.NotFound("No completed payload is available.");
-
-            return OpenRead(item.State.FinalPath);
-        }
-        finally
-        {
-            _gate.Release();
-        }
+        _areas.Remove(area.StagingId);
+        _deleted.Add(area.StagingId);
     }
+
+    private static LocalArea AsLocal(PortableStagingArea area) => (LocalArea)area;
 
     private LocalArea GetExistingArea(PortableStagingId stagingId)
     {
@@ -688,64 +301,17 @@ internal sealed class LocalPortableImportStaging
         if (!Directory.Exists(directory))
             throw PortableStagingFilePrimitives.NotFound("Unknown staging area.");
 
-        area = LocalArea.Load(stagingId.Value, directory);
+        area = LocalArea.Load(stagingId.Value, directory, _gate);
         _areas.Add(stagingId.Value, area);
         return area;
     }
 
-    private static void EnsureAcceptsWrites(LocalArea area)
-    {
-        EnsureNotCommitted(area);
-    }
-
-    private static void EnsureNotCommitted(LocalArea area)
-    {
-        if (area.Prepared is not null)
-        {
-            throw new PortableStagingException(
-                PortableStagingException.AlreadyCommittedCode,
-                "The staging area has already been committed and accepts no further writes.");
-        }
-    }
-
-    private static void DiscardMedia(LocalArea area, LocalMediaItem item)
-    {
-        if (item.State.Status == PortableStagingItemStatus.Discarded)
-            return;
-
-        item.State.Status = PortableStagingItemStatus.Discarded;
-        item.State.DisposeWriter();
-        PortableStagingFilePrimitives.TryDeleteFile(item.State.TempPath);
-        PortableStagingFilePrimitives.TryDeleteFile(item.State.FinalPath);
-        PortableStagingFilePrimitives.TryDeleteFile(MetaPath(area, item.Reference));
-        area.MediaByIdentity.Remove(new PortableStagingMediaIdentity(
-            item.Descriptor.BookId,
-            item.Descriptor.Kind,
-            item.Descriptor.Path));
-        area.MediaByReference.Remove(item.Reference);
-        if (item.Handle is not null)
-            area.MediaByHandle.Remove(item.Handle);
-    }
-
-    private static void DiscardPayload(LocalArea area, LocalPayloadItem item, bool manifest)
-    {
-        if (item.State.Status == PortableStagingItemStatus.Discarded)
-            return;
-
-        item.State.Status = PortableStagingItemStatus.Discarded;
-        item.State.DisposeWriter();
-        PortableStagingFilePrimitives.TryDeleteFile(item.State.TempPath);
-        PortableStagingFilePrimitives.TryDeleteFile(item.State.FinalPath);
-        if (manifest)
-            area.Manifest = null;
-        else
-            area.Data = null;
-
-        if (item.Handle is not null)
-            area.PayloadByHandle.Remove(item.Handle);
-    }
-
-    private static IReadOnlyList<PortablePreparedMedia> DescribeCompletedMedia(LocalArea area)
+    /// <summary>
+    /// Discovers the completed media of the area from its descriptor sidecars. A
+    /// descriptor without its bytes is a crash leftover and is skipped; a malformed
+    /// descriptor is a typed integrity failure rather than a silent omission.
+    /// </summary>
+    private static IReadOnlyList<PortablePreparedMedia> ReadCompletedMedia(LocalArea area)
     {
         if (!Directory.Exists(area.MediaDirectory))
             return [];
@@ -769,11 +335,7 @@ internal sealed class LocalPortableImportStaging
                 new PortableStagedMediaReference(reference)));
         }
 
-        return media
-            .OrderBy(item => item.Descriptor.BookId)
-            .ThenBy(item => item.Descriptor.Kind, StringComparer.Ordinal)
-            .ThenBy(item => item.Descriptor.Path, StringComparer.Ordinal)
-            .ToArray();
+        return media;
     }
 
     private string AreaDirectory(PortableStagingId stagingId) =>
@@ -801,7 +363,7 @@ internal sealed class LocalPortableImportStaging
     private static string MetaPath(LocalArea area, string reference) =>
         Path.Combine(area.MediaDirectory, reference + ".json");
 
-    private static string PreparedPath(LocalArea area) =>
+    private static string PreparedPath(PortableStagingArea area) =>
         Path.Combine(area.Directory, "prepared.json");
 
     private static FileStream OpenRead(string path) =>
@@ -813,40 +375,32 @@ internal sealed class LocalPortableImportStaging
             StreamBufferBytes,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
 
-    private sealed class LocalArea
+    private sealed class LocalArea : PortableStagingArea
     {
-        public required Guid Id { get; init; }
-
-        public required string Directory { get; init; }
-
-        public string MediaDirectory => Path.Combine(Directory, "media");
-
-        public bool Deleted { get; set; }
-
-        public Dictionary<PortableStagingMediaIdentity, LocalMediaItem> MediaByIdentity { get; } = [];
-
-        public Dictionary<string, LocalMediaItem> MediaByReference { get; } = new(StringComparer.Ordinal);
-
-        public Dictionary<PortableStagingWrite, LocalMediaItem> MediaByHandle { get; } = [];
-
-        public Dictionary<PortableStagingPayloadWrite, LocalPayloadItem> PayloadByHandle { get; } = [];
-
-        public LocalPayloadItem? Data { get; set; }
-
-        public LocalPayloadItem? Manifest { get; set; }
-
-        public PreparedPortableImportMetadata? Prepared { get; set; }
-
-        public static LocalArea Create(Guid id, string root)
+        internal LocalArea(Guid id, string directory, PortableStagingGate gate)
+            : base(id, directory, gate)
         {
-            var directory = Path.Combine(root, id.ToString("N"));
-            System.IO.Directory.CreateDirectory(Path.Combine(directory, "media"));
-            return new LocalArea { Id = id, Directory = directory };
         }
 
-        public static LocalArea Load(Guid id, string directory)
+        internal string MediaDirectory => Path.Combine(Directory, "media");
+
+        internal static LocalArea Create(Guid id, string root, PortableStagingGate gate)
         {
-            var area = new LocalArea { Id = id, Directory = directory };
+            var area = Detached(id, root, gate);
+            System.IO.Directory.CreateDirectory(area.MediaDirectory);
+            return area;
+        }
+
+        /// <summary>
+        /// The directory an id maps to without touching the filesystem: used by
+        /// creation and by an idempotent delete of an area this instance never knew.
+        /// </summary>
+        internal static LocalArea Detached(Guid id, string root, PortableStagingGate gate) =>
+            new(id, Path.Combine(root, id.ToString("N")), gate);
+
+        internal static LocalArea Load(Guid id, string directory, PortableStagingGate gate)
+        {
+            var area = new LocalArea(id, directory, gate);
 
             var preparedPath = Path.Combine(directory, "prepared.json");
             if (File.Exists(preparedPath))
@@ -861,77 +415,19 @@ internal sealed class LocalPortableImportStaging
             return area;
         }
 
-        public void DeactivateOpenWrites()
-        {
-            foreach (var item in MediaByIdentity.Values.ToArray())
-            {
-                item.State.Status = PortableStagingItemStatus.Discarded;
-                item.State.DisposeWriter();
-            }
-
-            if (Data is not null)
-            {
-                Data.State.Status = PortableStagingItemStatus.Discarded;
-                Data.State.DisposeWriter();
-            }
-
-            if (Manifest is not null)
-            {
-                Manifest.State.Status = PortableStagingItemStatus.Discarded;
-                Manifest.State.DisposeWriter();
-            }
-
-            MediaByIdentity.Clear();
-            MediaByReference.Clear();
-            MediaByHandle.Clear();
-            PayloadByHandle.Clear();
-            Data = null;
-            Manifest = null;
-        }
-
-        private static LocalPayloadItem? LoadPayload(string directory, string fileName)
+        private static PortableStagingPayloadItem? LoadPayload(string directory, string fileName)
         {
             var path = Path.Combine(directory, fileName);
             if (!File.Exists(path))
                 return null;
 
-            return new LocalPayloadItem
+            var length = new FileInfo(path).Length;
+            return new PortableStagingPayloadItem
             {
-                Descriptor = new PortableArchivePayload(
-                    fileName,
-                    new FileInfo(path).Length,
-                    string.Empty),
-                State = PortableStagingWriteState.Completed(path, new FileInfo(path).Length),
+                Length = length,
+                Sha256 = string.Empty,
+                State = PortableStagingWriteState.Completed(path, length),
             };
         }
     }
-
-    private sealed class LocalMediaItem
-    {
-        public required PortableArchiveMediaEntry Descriptor { get; init; }
-
-        public required string Reference { get; init; }
-
-        public required PortableStagingWriteState State { get; init; }
-
-        public PortableStagingWrite? Handle { get; set; }
-    }
-
-    private sealed class LocalPayloadItem
-    {
-        public required PortableArchivePayload Descriptor { get; init; }
-
-        public required PortableStagingWriteState State { get; init; }
-
-        public PortableStagingPayloadWrite? Handle { get; set; }
-    }
-
-    private static FileStream OpenLocalWriteStream(string tempPath) =>
-        new(
-            tempPath,
-            FileMode.Create,
-            FileAccess.Write,
-            FileShare.None,
-            StreamBufferBytes,
-            FileOptions.Asynchronous | FileOptions.SequentialScan);
 }
