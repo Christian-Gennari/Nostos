@@ -22,6 +22,7 @@ using Nostos.Backend.Services.Portability.Transfers;
 using Nostos.Product.BookText;
 using Nostos.Product.Composition;
 using Nostos.Product.Services.Ai;
+using Nostos.Product.Storage;
 using Nostos.Shared.Dtos;
 using Xunit;
 
@@ -65,6 +66,7 @@ public sealed class SelfHostedCompositionTests : IDisposable
         resolved.BooksRoot.Should().Be(Path.GetFullPath(Path.Combine(_root, "data", "books")));
         resolved.TransferRoot.Should().Be(Path.GetFullPath(Path.Combine(_root, "data", "transfers")));
         resolved.CalibreUploadRoot.Should().Be(Path.GetFullPath(Path.Combine(_root, "data", "transfers", "calibre-uploads")));
+        resolved.ScratchRoot.Should().Be(Path.GetFullPath(Path.Combine(_root, "data", "tmp", "scratch")));
 
         var unsafeConfig = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
@@ -144,6 +146,21 @@ public sealed class SelfHostedCompositionTests : IDisposable
         paths.BooksRoot.Should().Be(Path.GetFullPath(booksRoot));
         paths.TransferRoot.Should().Be(Path.GetFullPath(transferRoot));
         paths.CalibreUploadRoot.Should().Be(Path.GetFullPath(calibreUploadRoot));
+
+        // Product scratch (issue #1596): a sibling of the books root on the
+        // library volume, never the container's /tmp.
+        var scratch = sp.GetRequiredService<IProductScratchStorage>();
+        scratch.Root.Should().Be(paths.ScratchRoot);
+        scratch.Root.Should().Be(Path.GetFullPath(Path.Combine(paths.BooksRoot, "..", "tmp", "scratch")));
+        scratch.Root.Should().StartWith(Path.GetFullPath(_root));
+        scratch.Root.Should().NotBe(Path.GetFullPath(Path.GetTempPath()));
+
+        // The portable import spool and the legacy scratch sweep share that
+        // root, so cleanup can only ever see product scratch.
+        sp.GetRequiredService<IPortableArchiveService>().Should()
+            .BeOfType<PortableArchiveService>()
+            .Which.ScratchRoot.Should().Be(scratch.Root);
+        sp.GetRequiredService<MigrationLegacyScratchSweep>().ScratchRoot.Should().Be(scratch.Root);
 
         var marker = sp.GetRequiredService<LibraryMaintenanceMarker>();
         marker.MarkerPath.Should().Be(Path.Combine(Path.GetDirectoryName(paths.DatabasePath)!, ".nostos-activation", "maintenance.json"));

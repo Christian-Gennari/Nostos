@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nostos.Backend.Configuration;
 using Nostos.Backend.Data;
 using Nostos.Backend.Endpoints;
@@ -7,6 +8,7 @@ using Nostos.Backend.Providers.Discovery;
 using Nostos.Backend.Services.Library;
 using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Migration;
+using Nostos.Product.Storage;
 
 namespace Nostos.Product.Composition;
 
@@ -122,6 +124,12 @@ public static class NostosProductComposition
     /// <see cref="IPortableLibraryVerifier"/>.
     /// </para>
     /// <para>
+    /// Product scratch placement is a replaceable seam too: the product
+    /// registers <see cref="IProductScratchStorage"/> at the process temp path
+    /// with <c>TryAdd</c>, and a host that knows where its durable volume is
+    /// registers its own before this method and it wins.
+    /// </para>
+    /// <para>
     /// Discovery is a replaceable seam too. The product registers the live
     /// provider fan-out (<see cref="ProviderDiscoveryService"/>) as the default
     /// <see cref="IProviderDiscovery"/> with <c>TryAdd</c>, so SelfHosted keeps
@@ -143,6 +151,13 @@ public static class NostosProductComposition
         IConfiguration configuration)
     {
         var descriptor = services.AddNostosProductOptions(configuration);
+
+        // Where the product stages whole publications, archives and provider
+        // snapshots (issue #1596). The process temp path is the fallback for a
+        // host that has not said where its durable volume is; a host that has
+        // (SelfHosted, from its storage paths) registers its own before this
+        // method, or replaces this registration after it, and wins.
+        services.TryAddSingleton<IProductScratchStorage>(ProductScratchStorage.TempPath);
 
         services.AddNostosProductHttpClients();
         services.AddNostosBookTextServices();

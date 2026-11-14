@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Nostos.Product.Storage;
 
 namespace Nostos.Backend.Services.Portability.Migration;
 
@@ -8,16 +9,17 @@ namespace Nostos.Backend.Services.Portability.Migration;
 /// already holds maintenance admission and disposes its scope before releasing
 /// it, so this hook inherits the same gate without a second admission.
 ///
-/// <para>The scratch root is the process temp path, matching
-/// <c>PortableArchiveService.ScratchRoot</c> on a real host. Tests inject an
-/// isolated root through <see cref="ScratchRoot"/>.</para>
+/// <para>The scratch root is the host's product scratch root (issue #1596),
+/// matching <c>PortableArchiveService.ScratchRoot</c> on a real host. Tests
+/// inject an isolated root through <see cref="ScratchRoot"/>.</para>
 /// </summary>
 public sealed class MigrationLegacyScratchSweep(
     LegacyPortabilityScratchCleanup cleanup,
-    ILogger<MigrationLegacyScratchSweep> logger)
+    ILogger<MigrationLegacyScratchSweep> logger,
+    IProductScratchStorage? scratchStorage = null)
 {
     /// <summary>The root the legacy import path spools into; overridable for tests.</summary>
-    public string ScratchRoot { get; set; } = Path.GetTempPath();
+    public string ScratchRoot { get; set; } = scratchStorage?.Root ?? ProductScratchStorage.TempPath.Root;
 
     public void Sweep(DateTimeOffset nowUtc, CancellationToken ct)
     {

@@ -4,7 +4,9 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Nostos.Backend.Services;
 using Nostos.Backend.Services.Library;
 using Nostos.Backend.Tests.Portability;
+using Nostos.Backend.Tests.Support;
 using Nostos.Product.BookText;
+using Nostos.Product.Storage;
 using Nostos.Shared.Dtos;
 using Nostos.Shared.Enums;
 using Xunit;
@@ -168,6 +170,97 @@ public sealed class BookTextPipelineComponentTests
         artifacts.DeletedBooks.Should().BeEmpty();
         index.ReplacedChunks.Should().NotBeEmpty();
         index.Failures.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Ingestion_engine_stages_the_source_on_the_host_scratch_root_and_deletes_it()
+    {
+        var bookId = Guid.NewGuid();
+        var storage = new FakeBookStorage(
+            "sample.epub",
+            Encoding.UTF8.GetBytes("Valid synthetic publication payload for ingestion testing."));
+        var artifacts = new FakeArtifactStorage();
+        var index = new FakeBookTextIndex { ReplaceReadyResult = true };
+        var extractor = new StubExtractor(
+            BookTextSourceFormat.Epub,
+            new BookTextExtractedDocument(
+                BookTextSourceFormat.Epub,
+                [
+                    new BookTextArtifactBlock(
+                        0,
+                        "This is a sufficiently long extracted paragraph for indexing and artifact persistence.",
+                        ["Chapter One"],
+                        [new BookTextSourceSegment(0, 84, new EpubBookTextSourceLocator(0, "ch1.xhtml", null, 0, 84))]),
+                ]));
+        var scratch = new RecordingProductScratchStorage(
+            Path.Combine(Path.GetTempPath(), $"nostos-engine-scratch-{Guid.NewGuid():N}"));
+
+        try
+        {
+            var engine = new BookTextIngestionEngine(
+                storage,
+                artifacts,
+                index,
+                [extractor],
+                new BookTextOptions(),
+                NullLogger<BookTextIngestionEngine>.Instance,
+                scratch);
+
+            await engine.ProcessAsync(new BookTextIngestionWork(bookId, "sample.epub", BookTextSourceFormat.Epub, 1));
+
+            // The source is copied out of storage once, on the host's scratch
+            // root, keeping the publication's extension for the extractor.
+            scratch.Files.Should().ContainSingle()
+                .Which.Should().StartWith(scratch.Root).And.EndWith(".epub");
+            scratch.Leftovers().Should().BeEmpty("the staged source is deleted once it is indexed");
+        }
+        finally
+        {
+            if (Directory.Exists(scratch.Root))
+                Directory.Delete(scratch.Root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task Ingestion_engine_deletes_its_staged_source_when_extraction_is_unsupported()
+    {
+        var bookId = Guid.NewGuid();
+        var storage = new FakeBookStorage(
+            "sample.epub",
+            Encoding.UTF8.GetBytes("source bytes"));
+        var artifacts = new FakeArtifactStorage();
+        var index = new FakeBookTextIndex();
+        var extractor = new StubExtractor(
+            BookTextSourceFormat.Epub,
+            new BookTextExtractedDocument(
+                BookTextSourceFormat.Epub,
+                [new BookTextArtifactBlock(0, "short", [], [])]));
+        var scratch = new RecordingProductScratchStorage(
+            Path.Combine(Path.GetTempPath(), $"nostos-engine-scratch-{Guid.NewGuid():N}"));
+
+        try
+        {
+            var engine = new BookTextIngestionEngine(
+                storage,
+                artifacts,
+                index,
+                [extractor],
+                new BookTextOptions(),
+                NullLogger<BookTextIngestionEngine>.Instance,
+                scratch);
+
+            await engine.ProcessAsync(new BookTextIngestionWork(bookId, "sample.epub", BookTextSourceFormat.Epub, 1));
+
+            index.Failures.Should().ContainSingle()
+                .Which.Should().Be((bookId, "book_text_no_extractable_text", true, 1));
+            scratch.Files.Should().ContainSingle();
+            scratch.Leftovers().Should().BeEmpty("a rejected publication still deletes its staged source");
+        }
+        finally
+        {
+            if (Directory.Exists(scratch.Root))
+                Directory.Delete(scratch.Root, recursive: true);
+        }
     }
 
     [Fact]

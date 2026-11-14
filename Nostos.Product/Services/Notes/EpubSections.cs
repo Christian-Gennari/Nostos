@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Xml.Linq;
 using HtmlAgilityPack;
+using Nostos.Product.Storage;
 
 namespace Nostos.Backend.Services.Notes;
 
@@ -35,7 +36,11 @@ public static class EpubSections
     }
 
     /// <summary>The titles of the book's stored EPUB; empty when it has none or it cannot be read.</summary>
-    public static async Task<IReadOnlyList<string?>> ReadAsync(IBookAssetStorage storage, Guid bookId, CancellationToken ct = default)
+    public static async Task<IReadOnlyList<string?>> ReadAsync(
+        IBookAssetStorage storage,
+        Guid bookId,
+        CancellationToken ct = default,
+        IProductScratchStorage? scratchStorage = null)
     {
         await using var stored = await storage.OpenBookFileAsync(bookId, ct: ct);
         if (stored is null || !string.Equals(Path.GetExtension(stored.Info.FileName), ".epub", StringComparison.OrdinalIgnoreCase))
@@ -44,8 +49,11 @@ public static class EpubSections
         if (stored.Content.CanSeek)
             return Titles(stored.Content);
 
-        // Object storage streams forward only; a zip needs to seek.
-        var temp = Path.Combine(Path.GetTempPath(), $"nostos-epub-{Guid.NewGuid():N}.tmp");
+        // Object storage streams forward only; a zip needs to seek. The copy is
+        // staged on the host's scratch root, not the process temp path
+        // (issue #1596), and deletes itself when it closes.
+        var scratch = scratchStorage ?? ProductScratchStorage.TempPath;
+        var temp = scratch.CreateFilePath("nostos-epub", ".tmp");
         await using var copy = new FileStream(
             temp, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 81920,
             FileOptions.Asynchronous | FileOptions.DeleteOnClose);

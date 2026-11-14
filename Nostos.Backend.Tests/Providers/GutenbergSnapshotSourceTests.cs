@@ -12,6 +12,7 @@ using Nostos.Backend.Providers;
 using Nostos.Backend.Providers.Contracts;
 using Nostos.Backend.Providers.Gutenberg;
 using Nostos.Backend.Tests.Support;
+using Nostos.Product.Storage;
 using Xunit;
 
 namespace Nostos.Backend.Tests.Providers;
@@ -153,7 +154,8 @@ public sealed class GutenbergSnapshotSourceTests
     private static (GutenbergProvider Provider, StubHttpMessageHandler Handler) CreateProvider(
         GutenbergSnapshotLimits? limits = null,
         GutenbergSnapshotDownloadOptions? downloadOptions = null,
-        ILogger<GutenbergProvider>? logger = null)
+        ILogger<GutenbergProvider>? logger = null,
+        IProductScratchStorage? scratch = null)
     {
         var handler = new StubHttpMessageHandler();
         var factory = new StubHttpClientFactory(handler);
@@ -163,7 +165,12 @@ public sealed class GutenbergSnapshotSourceTests
             MaxRetryDelay = TimeSpan.Zero,
             RetryJitterRatio = 0,
         };
-        return (new GutenbergProvider(factory, logger ?? NullLogger<GutenbergProvider>.Instance, limits, downloadOptions), handler);
+        return (new GutenbergProvider(
+            factory,
+            logger ?? NullLogger<GutenbergProvider>.Instance,
+            limits,
+            downloadOptions,
+            scratch), handler);
     }
 
     private static byte[] BuildZipArchive(params (string Name, byte[] Content)[] entries)
@@ -445,6 +452,38 @@ public sealed class GutenbergSnapshotSourceTests
 
         var error = await act.Should().ThrowAsync<ProviderException>();
         error.Which.Code.Should().Be(ProviderException.Unavailable);
+    }
+
+    [Fact]
+    public async Task Read_stages_the_snapshot_on_the_host_scratch_root_and_deletes_it()
+    {
+        var archive = BuildSnapshotArchive(("cache/epub/1342/pg1342.rdf", PrideRdf));
+        var scratch = new RecordingProductScratchStorage(
+            Path.Combine(Path.GetTempPath(), $"nostos-gutenberg-scratch-{Guid.NewGuid():N}"));
+        var before = TempSnapshotFiles();
+
+        try
+        {
+            var (provider, handler) = CreateProvider(scratch: scratch);
+            handler.Register(SnapshotPath, _ => ArchiveResponse(archive, LastModified));
+
+            var snapshot = await provider.ReadAsync(new ProviderSnapshotRequest(), CancellationToken.None);
+            var items = await DrainAsync(snapshot.Items);
+
+            items.Select(item => item.ExternalId).Should().Equal("1342");
+            // The 177 MB daily archive is staged on the host's scratch root, not
+            // the container's /tmp (issue #1596), and removed when enumeration
+            // ends.
+            scratch.Files.Should().ContainSingle()
+                .Which.Should().StartWith(scratch.Root).And.EndWith(".zip");
+            scratch.Leftovers().Should().BeEmpty();
+            TempSnapshotFiles().Should().BeEquivalentTo(before);
+        }
+        finally
+        {
+            if (Directory.Exists(scratch.Root))
+                Directory.Delete(scratch.Root, recursive: true);
+        }
     }
 
     [Fact]

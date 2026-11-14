@@ -16,6 +16,16 @@ public sealed record SelfHostedStoragePaths(
     string TransferRoot,
     string CalibreUploadRoot)
 {
+    /// <summary>
+    /// Product scratch staging: whole publications copied out of asset storage
+    /// for text extraction or passage anchoring, provider catalogue snapshots,
+    /// portable import spools (issue #1596). Beside acquisition staging on the
+    /// books volume — <c>Storage/tmp/scratch</c> with the default books root —
+    /// never the container's <c>/tmp</c>, which on Linux is frequently a
+    /// RAM-backed tmpfs that a large publication can exhaust.
+    /// </summary>
+    public string ScratchRoot => Path.GetFullPath(Path.Combine(BooksRoot, "..", "tmp", "scratch"));
+
     public static SelfHostedStoragePaths Resolve(IConfiguration configuration, string contentRootPath)
     {
         ArgumentNullException.ThrowIfNull(configuration);

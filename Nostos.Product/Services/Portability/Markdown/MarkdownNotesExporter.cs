@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Data;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Services.Notes;
+using Nostos.Product.Storage;
 
 namespace Nostos.Backend.Services.Portability.Markdown;
 
@@ -28,15 +29,22 @@ public interface IMarkdownNotesExporter
     Task<Stream> ExportAsync(bool includeWritings, CancellationToken cancellationToken = default);
 }
 
-public sealed class MarkdownNotesExporter(NostosDbContext db, IBookAssetStorage storage) : IMarkdownNotesExporter
+public sealed class MarkdownNotesExporter(
+    NostosDbContext db,
+    IBookAssetStorage storage,
+    IProductScratchStorage? scratchStorage = null) : IMarkdownNotesExporter
 {
     public const string RootFolder = "Nostos notes";
 
     private static readonly UTF8Encoding Utf8 = new(encoderShouldEmitUTF8Identifier: false);
 
+    // A host that names no scratch root (Nostos-Cloud today) keeps the process
+    // temp path this export used before the seam existed (issue #1596).
+    private readonly IProductScratchStorage _scratch = scratchStorage ?? ProductScratchStorage.TempPath;
+
     public async Task<Stream> ExportAsync(bool includeWritings, CancellationToken cancellationToken = default)
     {
-        var path = Path.Combine(Path.GetTempPath(), $"nostos-notes-{Guid.NewGuid():N}.zip");
+        var path = _scratch.CreateFilePath("nostos-notes", ".zip");
         var file = new FileStream(
             path, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None, 81920,
             FileOptions.Asynchronous | FileOptions.DeleteOnClose);
@@ -126,7 +134,7 @@ public sealed class MarkdownNotesExporter(NostosDbContext db, IBookAssetStorage 
             IReadOnlyList<string?>? sections = null;
             if (isEpub && notes.Count > 0)
             {
-                try { sections = await EpubSections.ReadAsync(storage, book.Id, ct); }
+                try { sections = await EpubSections.ReadAsync(storage, book.Id, ct, _scratch); }
                 catch (Exception ex) when (ex is not OperationCanceledException) { sections = null; }
             }
 

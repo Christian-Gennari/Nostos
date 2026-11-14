@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nostos.Backend.Configuration;
 using Nostos.Backend.Data;
 using Nostos.Backend.Health;
@@ -11,6 +12,7 @@ using Nostos.Backend.Services.ExternalMedia;
 using Nostos.Backend.Services.Library.Imports;
 using Nostos.Backend.Services.Portability.Transfers;
 using Nostos.Product.BookText;
+using Nostos.Product.Storage;
 
 namespace Nostos.Backend.Composition;
 
@@ -63,6 +65,15 @@ public static class SelfHostedPathsAndStorageComposition
     {
         var paths = SelfHostedStoragePaths.Resolve(configuration, contentRootPath);
         services.AddSingleton(paths);
+
+        // Product scratch (full publications, portable archives, catalogue
+        // snapshots) belongs on the volume that holds the library, not the
+        // container's /tmp: /tmp is frequently a RAM-backed tmpfs, and a 512 MiB
+        // source staged there can OOM-kill the process (issue #1596). Replaces
+        // the product's process-temp default whatever the registration order.
+        services.Replace(
+            ServiceDescriptor.Singleton<IProductScratchStorage>(
+                new ProductScratchStorage(paths.ScratchRoot)));
 
         services.AddOptions<BackupSettings>()
             .BindConfiguration("BackupSettings");

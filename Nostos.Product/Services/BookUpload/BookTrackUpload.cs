@@ -4,6 +4,7 @@ using Nostos.Backend.Data.Interfaces;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Providers.Acquisition.Media;
 using Nostos.Backend.Services.ExternalMedia;
+using Nostos.Product.Storage;
 using Nostos.Shared.Enums;
 
 namespace Nostos.Backend.Services.BookUpload;
@@ -26,8 +27,13 @@ public sealed class BookTrackUpload(
     IBookRepository repo,
     IBookAssetStorage assets,
     IAudioDurationProbe durationProbe,
-    IBookTrackStorage? trackStorage = null)
+    IBookTrackStorage? trackStorage = null,
+    IProductScratchStorage? scratchStorage = null)
 {
+    // A host that names no scratch root (Nostos-Cloud today) keeps the process
+    // temp path this upload used before the seam existed (issue #1596).
+    private readonly IProductScratchStorage _scratch = scratchStorage ?? ProductScratchStorage.TempPath;
+
     public async Task<BookTrackUploadResult> CommitAsync(
         BookModel book,
         IReadOnlyList<IFormFile> files,
@@ -51,8 +57,7 @@ public sealed class BookTrackUpload(
                 return new("Several files can only be audio files (MP3, M4A or M4B).");
         }
 
-        var staging = Path.Combine(Path.GetTempPath(), $"nostos-tracks-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(staging);
+        var staging = _scratch.CreateDirectory("nostos-tracks");
         try
         {
             var measured = new List<(string Path, BookTrack Track)>(ordered.Count);

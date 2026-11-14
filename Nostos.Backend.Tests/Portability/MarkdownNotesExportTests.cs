@@ -5,6 +5,7 @@ using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Nostos.Backend.Data;
 using Nostos.Backend.Data.Models;
+using Nostos.Backend.Services;
 using Nostos.Backend.Services.Notes;
 using Nostos.Backend.Services.Portability.Markdown;
 using Nostos.Backend.Services.Writings;
@@ -107,32 +108,71 @@ public sealed class MarkdownNotesExportTests
     [Fact]
     public void Chapter_titles_come_from_the_nav_document_and_carry_over_unnamed_sections()
     {
-        using var epub = new MemoryStream();
-        using (var zip = new System.IO.Compression.ZipArchive(epub, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
-        {
-            void Add(string path, string text)
-            {
-                using var writer = new StreamWriter(zip.CreateEntry(path).Open());
-                writer.Write(text);
-            }
-
-            Add("META-INF/container.xml",
-                "<container xmlns=\"urn:oasis:names:tc:opendocument:xmlns:container\"><rootfiles><rootfile full-path=\"OEBPS/content.opf\"/></rootfiles></container>");
-            Add("OEBPS/content.opf",
-                "<package xmlns=\"http://www.idpf.org/2007/opf\"><manifest>"
-                + "<item id=\"nav\" href=\"nav.xhtml\" properties=\"nav\" media-type=\"application/xhtml+xml\"/>"
-                + "<item id=\"c0\" href=\"cover.xhtml\" media-type=\"application/xhtml+xml\"/>"
-                + "<item id=\"c1\" href=\"text/one.xhtml\" media-type=\"application/xhtml+xml\"/>"
-                + "<item id=\"c2\" href=\"text/two.xhtml\" media-type=\"application/xhtml+xml\"/>"
-                + "<item id=\"c3\" href=\"text/three.xhtml\" media-type=\"application/xhtml+xml\"/>"
-                + "</manifest><spine><itemref idref=\"c0\"/><itemref idref=\"c1\"/><itemref idref=\"c2\"/><itemref idref=\"c3\"/></spine></package>");
-            Add("OEBPS/nav.xhtml",
-                "<html xmlns:epub=\"http://www.idpf.org/2007/ops\"><body><nav epub:type=\"toc\"><ol>"
-                + "<li><a href=\"text/one.xhtml\">Part  One</a></li>"
-                + "<li><a href=\"text/three.xhtml#s2\">The Storm</a></li></ol></nav></body></html>");
-        }
+        using var epub = new MemoryStream(EpubWithNav());
 
         EpubSections.Titles(epub).Should().Equal(null, "Part One", "Part One", "The Storm");
+    }
+
+    [Fact]
+    public async Task Sections_of_a_forward_only_reader_are_staged_on_the_host_scratch_root_and_deleted()
+    {
+        var scratch = new RecordingProductScratchStorage(
+            Path.Combine(Path.GetTempPath(), $"nostos-sections-scratch-{Guid.NewGuid():N}"));
+
+        try
+        {
+            // Object storage streams forward only, so the EPUB is copied out
+            // once; the copy lives on the host's scratch root (issue #1596) and
+            // deletes itself when it closes.
+            var titles = await EpubSections.ReadAsync(
+                new ForwardOnlyStorage(EpubWithNav()),
+                Guid.NewGuid(),
+                CancellationToken.None,
+                scratch);
+
+            titles.Should().Equal(null, "Part One", "Part One", "The Storm");
+            scratch.Files.Should().ContainSingle()
+                .Which.Should().StartWith(scratch.Root).And.EndWith(".tmp");
+            scratch.Leftovers().Should().BeEmpty();
+        }
+        finally
+        {
+            if (Directory.Exists(scratch.Root))
+                Directory.Delete(scratch.Root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task The_notes_archive_is_built_on_the_host_scratch_root_and_deletes_itself()
+    {
+        await using var library = await LocalPortableTestLibrary.CreateAsync();
+        var scratch = new RecordingProductScratchStorage(
+            Path.Combine(Path.GetTempPath(), $"nostos-notes-scratch-{Guid.NewGuid():N}"));
+
+        try
+        {
+            var exporter = new MarkdownNotesExporter(library.Db, library.Storage, scratch);
+
+            var stream = await exporter.ExportAsync(includeWritings: false);
+            try
+            {
+                stream.Length.Should().BeGreaterThan(0);
+                scratch.Files.Should().ContainSingle()
+                    .Which.Should().StartWith(scratch.Root).And.EndWith(".zip");
+                Directory.Exists(scratch.Root).Should().BeTrue();
+            }
+            finally
+            {
+                await stream.DisposeAsync();
+            }
+
+            scratch.Leftovers().Should().BeEmpty("closing the download deletes the archive");
+        }
+        finally
+        {
+            if (Directory.Exists(scratch.Root))
+                Directory.Delete(scratch.Root, recursive: true);
+        }
     }
 
     [Fact]
@@ -418,4 +458,81 @@ public sealed class MarkdownNotesExportTests
         new(Guid.NewGuid(), string.Empty, cfiRange, null,
             created ?? new DateTime(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc),
             passage ? "passage" : "note", kind, value, verified, passage ? "Title" : null, end, []);
+
+    /// <summary>An EPUB whose table of contents names sections one and three.</summary>
+    private static byte[] EpubWithNav()
+    {
+        using var epub = new MemoryStream();
+        using (var zip = new ZipArchive(epub, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            void Add(string path, string text)
+            {
+                using var writer = new StreamWriter(zip.CreateEntry(path).Open());
+                writer.Write(text);
+            }
+
+            Add("META-INF/container.xml",
+                "<container xmlns=\"urn:oasis:names:tc:opendocument:xmlns:container\"><rootfiles><rootfile full-path=\"OEBPS/content.opf\"/></rootfiles></container>");
+            Add("OEBPS/content.opf",
+                "<package xmlns=\"http://www.idpf.org/2007/opf\"><manifest>"
+                + "<item id=\"nav\" href=\"nav.xhtml\" properties=\"nav\" media-type=\"application/xhtml+xml\"/>"
+                + "<item id=\"c0\" href=\"cover.xhtml\" media-type=\"application/xhtml+xml\"/>"
+                + "<item id=\"c1\" href=\"text/one.xhtml\" media-type=\"application/xhtml+xml\"/>"
+                + "<item id=\"c2\" href=\"text/two.xhtml\" media-type=\"application/xhtml+xml\"/>"
+                + "<item id=\"c3\" href=\"text/three.xhtml\" media-type=\"application/xhtml+xml\"/>"
+                + "</manifest><spine><itemref idref=\"c0\"/><itemref idref=\"c1\"/><itemref idref=\"c2\"/><itemref idref=\"c3\"/></spine></package>");
+            Add("OEBPS/nav.xhtml",
+                "<html xmlns:epub=\"http://www.idpf.org/2007/ops\"><body><nav epub:type=\"toc\"><ol>"
+                + "<li><a href=\"text/one.xhtml\">Part  One</a></li>"
+                + "<li><a href=\"text/three.xhtml#s2\">The Storm</a></li></ol></nav></body></html>");
+        }
+
+        return epub.ToArray();
+    }
+
+    /// <summary>The stored EPUB as an object-storage adapter serves it: forward only.</summary>
+    private sealed class ForwardOnlyStorage(byte[] epub) : DelegatingBookAssetStorage
+    {
+        public override Task<StoredAssetRead?> OpenBookFileAsync(
+            Guid bookId,
+            StorageByteRange? range = null,
+            CancellationToken ct = default) =>
+            Task.FromResult<StoredAssetRead?>(new StoredAssetRead(
+                new StoredAssetInfo("book.epub", "application/epub+zip", epub.Length, "etag", DateTimeOffset.UnixEpoch),
+                new ForwardOnlyStream(epub)));
+    }
+
+    private sealed class ForwardOnlyStream(byte[] content) : Stream
+    {
+        private int _position;
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => content.Length;
+
+        public override long Position
+        {
+            get => _position;
+            set => throw new NotSupportedException();
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            var read = Math.Min(count, content.Length - _position);
+            content.AsSpan(_position, read).CopyTo(buffer.AsSpan(offset));
+            _position += read;
+            return read;
+        }
+
+        public override void Flush()
+        {
+        }
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
 }

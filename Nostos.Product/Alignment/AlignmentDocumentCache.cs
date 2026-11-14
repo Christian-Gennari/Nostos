@@ -1,5 +1,6 @@
 using Nostos.Backend.Services;
 using Nostos.Product.BookText;
+using Nostos.Product.Storage;
 
 namespace Nostos.Product.Alignment;
 
@@ -30,13 +31,18 @@ public interface IAlignmentDocumentProvider
 /// The storage read itself supplies the revision used for the cache key.
 /// </summary>
 public sealed class AlignmentDocumentCache(
-    AlignmentOptions options) : IAlignmentDocumentProvider
+    AlignmentOptions options,
+    IProductScratchStorage? scratchStorage = null) : IAlignmentDocumentProvider
 {
     private const int Capacity = 4;
 
     private readonly SemaphoreSlim gate = new(1, 1);
     private readonly Dictionary<string, CacheEntry> entries = [];
     private readonly LinkedList<string> order = [];
+
+    // A host that names no scratch root (Nostos-Cloud today) keeps the process
+    // temp path this cache used before the seam existed.
+    private readonly IProductScratchStorage _scratch = scratchStorage ?? ProductScratchStorage.TempPath;
 
     private long totalCharacters;
 
@@ -126,9 +132,7 @@ public sealed class AlignmentDocumentCache(
                     "The text extractor format is unsupported."),
             };
 
-            var tempPath = Path.Combine(
-                Path.GetTempPath(),
-                $"nostos-alignment-{Guid.NewGuid():N}{extension}");
+            var tempPath = _scratch.CreateFilePath("nostos-alignment", extension);
 
             BookTextExtractedDocument document;
             IReadOnlyDictionary<int, IReadOnlyList<BookTextRange>>? readingAids = null;

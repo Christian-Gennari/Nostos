@@ -4,6 +4,7 @@ using System.Text;
 using System.Xml;
 using System.Xml.Linq;
 using Nostos.Backend.Services;
+using Nostos.Product.Storage;
 
 namespace Nostos.Product.BookText;
 
@@ -24,8 +25,12 @@ public interface IBookPassageAnchors
     Task<BookPassageEnds?> AnchorAsync(BookTextResolvedQuote quote, CancellationToken ct = default);
 }
 
-public sealed class BookPassageAnchors(IBookAssetStorage storage) : IBookPassageAnchors
+public sealed class BookPassageAnchors(
+    IBookAssetStorage storage,
+    IProductScratchStorage? scratchStorage = null) : IBookPassageAnchors
 {
+    private readonly IProductScratchStorage _scratch = scratchStorage ?? ProductScratchStorage.TempPath;
+
     public async Task<BookPassageEnds?> AnchorAsync(BookTextResolvedQuote quote, CancellationToken ct = default)
     {
         switch (quote.StartAt?.Locator, quote.EndAt?.Locator)
@@ -58,8 +63,9 @@ public sealed class BookPassageAnchors(IBookAssetStorage storage) : IBookPassage
         if (read is null)
             return null;
 
-        // A ZIP needs to seek; the stored file may be a network stream.
-        var temp = Path.Combine(Path.GetTempPath(), $"nostos-passage-{Guid.NewGuid():N}.epub");
+        // A ZIP needs to seek; the stored file may be a network stream. Staged
+        // on the host's scratch root, not the process temp path (issue #1596).
+        var temp = _scratch.CreateFilePath("nostos-passage", ".epub");
         try
         {
             await using (var staged = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, 128 * 1024, FileOptions.Asynchronous))

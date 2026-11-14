@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Text;
 using FluentAssertions;
 using Nostos.Backend.Services;
+using Nostos.Backend.Tests.Support;
 using Nostos.Product.Alignment;
 using Nostos.Product.BookText;
 using Xunit;
@@ -32,6 +33,34 @@ public sealed class AlignmentDocumentCacheTests
         ReferenceEquals(first.Document, second.Document).Should().BeTrue();
 
         extractor.CallCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Publication_is_staged_on_the_host_scratch_root_and_deleted_after_extraction()
+    {
+        var scratch = new RecordingProductScratchStorage(
+            Path.Combine(Path.GetTempPath(), $"nostos-alignment-scratch-{Guid.NewGuid():N}"));
+
+        try
+        {
+            var storage = CreateStorage(
+                ("revision-a", Encoding.UTF8.GetBytes("epub-a")));
+            var extractor = new FakeExtractor("Some extracted text.");
+
+            var cache = new AlignmentDocumentCache(
+                new AlignmentOptions(), scratch);
+
+            await cache.GetAsync(BookId, storage, extractor);
+
+            scratch.Files.Should().ContainSingle()
+                .Which.Should().StartWith(scratch.Root).And.EndWith(".epub");
+            scratch.Leftovers().Should().BeEmpty("the staged publication is deleted after extraction");
+        }
+        finally
+        {
+            if (Directory.Exists(scratch.Root))
+                Directory.Delete(scratch.Root, recursive: true);
+        }
     }
 
     [Fact]
