@@ -11,6 +11,7 @@ import {
 import { Note, noteHasText } from '../../core/dtos/note.dtos';
 import type { ThemeMode as Theme } from '../../core/services/theme.service';
 import { EpubTextMarks, TextMark, sectionOf, textMarksSupported } from './epub-text-marks';
+import { commitNote } from '../shared/note-save';
 import {
   HighlightHit,
   RectLike,
@@ -608,6 +609,10 @@ export class EpubAnnotationManager {
    * highlight and its temporary annotation are retained so the shell can keep
    * the confirmation bar open — the user never loses a difficult selection to
    * a transient request failure.
+   *
+   * The order — draw, send, settle or roll back — is the shared commit
+   * (issue #1610). The passage is already painted here and is deliberately kept
+   * on failure, so nothing is drawn or rolled back.
    */
   commitHighlight(content = '', pen?: HighlightColour, topics: readonly string[] = []): Promise<boolean> {
     const pending = this.pendingHighlight;
@@ -626,47 +631,45 @@ export class EpubAnnotationManager {
     // The pen in hand when Save was pressed is the one stored and drawn, even
     // if the reader picks another while the request is in flight.
     const colour = pen ?? this.highlightColour;
+    const noted = !!content.trim() || topics.length > 0;
 
     this.committing = true;
-    return new Promise<boolean>((resolve) => {
-      this.notesService
-        .create(this.bookId, {
+    return commitNote<PendingEpubHighlight>({
+      pending: () => snapshot,
+      request: (mark) =>
+        this.notesService.create(this.bookId, {
           // Empty for a plain highlight; the typed text for "Add note" (#650).
           content,
-          cfiRange: snapshot.cfiRange,
-          selectedText: snapshot.selectedText,
+          cfiRange: mark.cfiRange,
+          selectedText: mark.selectedText,
           highlightColour: colour,
           ...(topics.length ? { topics: [...topics] } : {}),
-        })
-        .subscribe({
-          next: (created) => {
-            // Persisted: swap the temporary annotation for the permanent one,
-            // then report success so the shell closes the bar.
-            this.committing = false;
-            this.addPersistedHighlight(snapshot.cfiRange, colour, !!content.trim() || topics.length > 0);
-            this.removeAnnotation(snapshot.temporaryAnnotation);
-            this.textMarks?.remove(snapshot.temporaryMark);
-            // A touch selection is still live; left in place it would be
-            // offered again at the next touch.
-            snapshot.contents.window.getSelection()?.removeAllRanges();
-            this.pendingHighlight = null;
-            this.lastCapturedKey = null;
-            this.highlights.update((current) => [...current, snapshot.cfiRange]);
-            this.onNoteCreated?.(created);
-            resolve(true);
-          },
-          error: () => {
-            this.committing = false;
-            // Failed: keep the pending highlight and its visual feedback.
-            if (this.pendingHighlight?.cfiRange !== snapshot.cfiRange) {
-              this.pendingHighlight = null;
-              this.lastCapturedKey = null;
-            }
-            this.onCommitFailed?.();
-            resolve(false);
-          },
-        });
-    });
+        }),
+      // Persisted: swap the temporary annotation for the permanent one, then
+      // report success so the shell closes the bar.
+      settle: (mark, created) => {
+        this.committing = false;
+        this.addPersistedHighlight(mark.cfiRange, colour, noted);
+        this.removeAnnotation(mark.temporaryAnnotation);
+        this.textMarks?.remove(mark.temporaryMark);
+        // A touch selection is still live; left in place it would be offered
+        // again at the next touch.
+        mark.contents.window.getSelection()?.removeAllRanges();
+        this.pendingHighlight = null;
+        this.lastCapturedKey = null;
+        this.highlights.update((current) => [...current, mark.cfiRange]);
+        this.onNoteCreated?.(created);
+      },
+      // Failed: keep the pending highlight and its visual feedback.
+      onFailed: (mark) => {
+        this.committing = false;
+        if (this.pendingHighlight?.cfiRange !== mark.cfiRange) {
+          this.pendingHighlight = null;
+          this.lastCapturedKey = null;
+        }
+        this.onCommitFailed?.();
+      },
+    }).then((outcome) => outcome === 'saved');
   }
 
   /** The selection on offer, if any, as its location and text (issue #1014). */

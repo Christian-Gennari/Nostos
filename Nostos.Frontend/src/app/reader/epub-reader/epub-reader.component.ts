@@ -15,21 +15,13 @@ import {
   ChangeDetectionStrategy,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { HttpErrorResponse } from '@angular/common/http';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '../../ui/button/button.component';
 import { LoadingIndicatorComponent } from '../../ui/loading-indicator/loading-indicator.component';
 import { EmptyStateComponent } from '../../ui/empty-state/empty-state.component';
 import ePub, { Book, Rendition, Contents } from 'epubjs';
-import { EMPTY, Subject, firstValueFrom } from 'rxjs';
-import {
-  catchError,
-  debounceTime,
-  distinctUntilChanged,
-  filter,
-  switchMap,
-  takeUntil,
-} from 'rxjs/operators';
+import { EMPTY, Subject } from 'rxjs';
+import { debounceTime, takeUntil } from 'rxjs/operators';
 
 import { EpubAnnotationManager } from './epub-annotation-manager';
 import { EpubContentsInteractionController } from './epub-contents-interaction';
@@ -44,7 +36,8 @@ import { NotesService } from '../../core/services/notes.service';
 import { BooksService } from '../../core/services/books.service';
 import { ThemeService } from '../../core/services/theme.service';
 import { Book as BookDto } from '../../core/dtos/book.dtos';
-import { readUnlocatedNoteIds, rememberUnlocatedNoteId } from '../passage/note-locating';
+import { NoteLocationCoordinator, newNotesSince } from '../shared/note-location-coordinator';
+import { ReaderProgressReporter } from '../shared/reader-progress-reporter';
 import {
   ImportedNoteLocation,
   Note,
@@ -181,6 +174,14 @@ interface LocatedPassage {
   certain: boolean;
 }
 
+/** One place to save: the CFI, and what it is worth and belongs to. */
+interface EpubProgressReport {
+  generation: number;
+  bookId: string;
+  location: string;
+  percentage: number;
+}
+
 /** How long a busy page may hold off looking a note's words up. */
 const LOCATE_IDLE_TIMEOUT_MS = 2000;
 
@@ -290,12 +291,41 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   private resizeObserver: ResizeObserver | null = null;
   private resizeAfterFirstPage = false;
 
-  private readonly progressUpdater$ = new Subject<{
-    generation: number;
-    bookId: string;
-    location: string;
-    percentage: number;
-  }>();
+  /**
+   * The debounced progress save (issue #1610). The shared reporter owns the
+   * cadence — a second after the last page turn, and never a repeat — while
+   * this reader owns when a position may be written and what it means.
+   */
+  private readonly progressReporter = new ReaderProgressReporter<EpubProgressReport>({
+    destroyRef: this.destroyRef,
+    // The write barrier: the opening section is laid out before the saved
+    // position is applied, and writing it is what used to reset the reader's
+    // place (issue #225 §1.2). See unlockProgress().
+    isReady: () => this.progressUnlocked,
+    isSamePosition: (previous, current) =>
+      previous.generation === current.generation &&
+      previous.bookId === current.bookId &&
+      previous.location === current.location &&
+      previous.percentage === current.percentage,
+    // A newer position cancels a write still in flight: only the page the
+    // reader is on now is worth saving.
+    concurrency: 'switch',
+    write: (report) => {
+      if (
+        this.destroyed ||
+        !this.progressUnlocked ||
+        report.generation !== this.bookLoadGeneration ||
+        report.bookId !== this.bookId()
+      ) {
+        return EMPTY;
+      }
+      return this.booksService
+        .updateProgress(report.bookId, report.location, report.percentage)
+        .pipe(takeUntil(this.bookTeardown$));
+    },
+    onWriteError: (error) => console.warn('Could not save reading progress:', error),
+  });
+
   /**
    * Whether this open has reported a position yet. A reader who has only opened
    * the book has not moved it: the layout and locations settling later must
@@ -460,9 +490,8 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
       const notes = this.notes();
       if (!notes || !this.pageShown()) return;
       untracked(() => {
-        const arrived = notes.filter((note) => !this.notesSeen.has(note.id));
+        const arrived = newNotesSince(this.notesSeen, notes);
         if (arrived.length === 0) return;
-        arrived.forEach((note) => this.notesSeen.add(note.id));
         this.annotationManager?.restoreHighlights(arrived);
         this.locating = this.locating.then(() => this.locateNotes(arrived));
       });
@@ -523,41 +552,6 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
       this.resizeSubject$.next();
     });
     this.resizeObserver.observe(this.elementRef.nativeElement);
-
-    // Backend Progress Sync (Debounced). The filter is the write barrier: see
-    // progressUnlocked / unlockProgress().
-    this.progressUpdater$
-      .pipe(
-        filter(() => this.progressUnlocked),
-        debounceTime(1000),
-        distinctUntilChanged(
-          (prev, curr) =>
-            prev.generation === curr.generation &&
-            prev.bookId === curr.bookId &&
-            prev.location === curr.location &&
-            prev.percentage === curr.percentage,
-        ),
-        takeUntil(this.destroy$),
-        switchMap((data) => {
-          if (
-            this.destroyed ||
-            !this.progressUnlocked ||
-            data.generation !== this.bookLoadGeneration ||
-            data.bookId !== this.bookId()
-          ) {
-            return EMPTY;
-          }
-          return this.booksService.updateProgress(data.bookId, data.location, data.percentage).pipe(
-            takeUntil(this.bookTeardown$),
-            catchError((err) => {
-              console.warn('Could not save reading progress:', err);
-              return EMPTY;
-            }),
-          );
-        }),
-        takeUntilDestroyed(this.destroyRef),
-      )
-      .subscribe();
   }
 
   // --- IReader Methods ---
@@ -723,47 +717,50 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
   private async locateNotes(notes: Note[]): Promise<void> {
     const book = this.epubBook;
     const generation = this.bookLoadGeneration;
-    const notFound = readUnlocatedNoteIds();
-    const lookups = notes.flatMap((note) => {
-      if (note.cfiRange?.trim()) return [];
-      if (!isImportedAnchor(note.sourceAnchorKind) && !isAskNostosQuote(note)) return [];
-      const location = importedNoteLocation(note);
-      // Looking a passage up reads the whole book. A note that was not found
-      // once (a page bookmark, a highlight from another edition) is not
-      // searched for on every opening; its own jump still looks.
-      return location?.text && !notFound.has(note.id) ? [{ note, location }] : [];
+    const current = () =>
+      !this.destroyed && this.epubBook === book && generation === this.bookLoadGeneration;
+    const locations = new NoteLocationCoordinator({
+      isCurrent: current,
+      notes: () => this.notes(),
+      setLocation: (noteId, location) =>
+        this.notesService
+          .setLocation(noteId, location)
+          .pipe(takeUntil(this.bookTeardown$), takeUntilDestroyed(this.destroyRef)),
+      onLocated: (saved) => {
+        this.annotationManager?.restoreHighlights([saved]);
+        this.noteLocated.emit(saved);
+      },
+      what: 'a note in the book',
     });
+
+    const lookups = locations
+      .candidates(notes, (note) => {
+        if (note.cfiRange?.trim()) return false;
+        if (!isImportedAnchor(note.sourceAnchorKind) && !isAskNostosQuote(note)) return false;
+        // Looking a passage up reads the whole book; a note with no words of
+        // its own has nothing to look for.
+        return !!importedNoteLocation(note)?.text;
+      })
+      .flatMap((note) => {
+        const location = importedNoteLocation(note);
+        return location ? [{ note, location }] : [];
+      });
     if (lookups.length === 0) return;
 
     await browserIdle();
-    if (this.destroyed || this.epubBook !== book || generation !== this.bookLoadGeneration) return;
+    if (!current()) return;
     for (const { note, location } of lookups) {
-      if (this.destroyed || this.epubBook !== book || generation !== this.bookLoadGeneration) return;
+      if (!current()) return;
       try {
         const located = await this.locatePassage(location);
-        if (this.destroyed || this.epubBook !== book || generation !== this.bookLoadGeneration) return;
+        if (!current()) return;
         if (!located?.certain || !located.isRange) {
-          rememberUnlocatedNoteId(note.id);
+          locations.rememberMissing(note.id);
           continue;
         }
-
-        const saved = await firstValueFrom(
-          this.notesService
-            .setLocation(note.id, located.cfi)
-            .pipe(takeUntil(this.bookTeardown$), takeUntilDestroyed(this.destroyRef)),
-        );
-        if (this.destroyed || this.epubBook !== book || generation !== this.bookLoadGeneration) return;
-        // Deleted while it was being looked up: nothing to draw.
-        if (!saved.cfiRange || !this.notes()?.some((held) => held.id === note.id)) continue;
-        this.annotationManager?.restoreHighlights([saved]);
-        this.noteLocated.emit(saved);
+        if ((await locations.save(note, located.cfi)) === 'stale') return;
       } catch (error) {
-        if (this.destroyed || this.epubBook !== book || generation !== this.bookLoadGeneration) return;
-        // The server refused this note for good; asking again would repeat the
-        // whole-book read at every opening.
-        if (error instanceof HttpErrorResponse && error.status === 400) {
-          rememberUnlocatedNoteId(note.id);
-        }
+        if (!current()) return;
         console.warn('Could not locate a note in the book:', error);
       }
     }
@@ -1311,7 +1308,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     if (this.groundedNavigator.isProtectingProgress()) return;
 
     if (this.progressUnlocked) this.positionReported = true;
-    this.progressUpdater$.next({
+    this.progressReporter.report({
       generation: this.bookLoadGeneration,
       bookId: this.bookId(),
       location: cfi,
@@ -1562,7 +1559,7 @@ export class EpubReader implements OnInit, OnDestroy, IReader {
     this.typographyController.destroy();
     this.resizeObserver?.disconnect();
     this.resizeSubject$.complete();
-    this.progressUpdater$.complete();
+    this.progressReporter.dispose();
     this.contentsInteraction.destroy();
     this.searchController.reset();
     this.annotationManager?.destroy();

@@ -372,7 +372,7 @@ describe('PdfReader theme-following surround and page inversion (#259)', () => {
       { label: 'Introduction', target: 1, children: [] },
       { label: 'Division One', target: 11, children: [{ label: '§1', target: 21, children: [] }] },
     ]);
-    const sent = vi.spyOn(reader.progressUpdater$, 'next');
+    const sent = vi.spyOn(reader.progressReporter, 'report');
 
     reader.updateProgressState(15);
 
