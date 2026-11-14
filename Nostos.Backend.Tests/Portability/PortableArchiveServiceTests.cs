@@ -14,6 +14,7 @@ using Nostos.Product.BookText;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 using static Nostos.Backend.Tests.Portability.PortableArchiveTestSupport;
+using Nostos.Backend.Tests.Support;
 
 namespace Nostos.Backend.Tests.Portability;
 
@@ -783,7 +784,7 @@ public sealed class PortableArchiveServiceTests
         // The reader clocks the prepared metadata immediately before committing
         // staging; add a competing row at that moment so the transaction's
         // empty-destination recheck (plan 9.14) is what rejects the import.
-        var race = new CallbackTimeProvider(() =>
+        var race = new TestTimeProvider(onFirstRead: () =>
         {
             destination.Db.Topics.Add(new TopicModel { Topic = "concurrent writer" });
             destination.Db.SaveChanges();
@@ -1344,19 +1345,6 @@ public sealed class PortableArchiveServiceTests
             onCoverFile is null
                 ? base.SaveBookCoverAsync(bookId, content, fileName, ct)
                 : onCoverFile(bookId, content, fileName, ct);
-    }
-
-    private sealed class CallbackTimeProvider(Action onFirstUtcNow) : TimeProvider
-    {
-        private int _called;
-
-        public override DateTimeOffset GetUtcNow()
-        {
-            if (Interlocked.Exchange(ref _called, 1) == 0)
-                onFirstUtcNow();
-
-            return DateTimeOffset.UtcNow;
-        }
     }
 
     private sealed class RecordingBookTextScheduler : IBookTextIngestionScheduler

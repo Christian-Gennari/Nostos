@@ -120,7 +120,7 @@ public sealed class BookValuesAcrossEditionsTests : IClassFixture<SqliteTestFixt
         var before = (await GroupedAsync(h, BookFilter.All)).Single();
         before.Id.Should().Be(epub, "the edition read most recently stands for the book");
 
-        await Task.Delay(5);
+        await AgeLastReadAsync(h, epub, TimeSpan.FromMinutes(1));
         await h.Service.UpdateProgressAsync(audio, "10", 10);
 
         var after = (await GroupedAsync(h, BookFilter.All)).Single();
@@ -199,7 +199,7 @@ public sealed class BookValuesAcrossEditionsTests : IClassFixture<SqliteTestFixt
         var a = await CreateAsync(h, "ebook", "Fictions", "Borges", rating: 4, review: "From A", favourite: true);
         var b = await CreateAsync(h, "audiobook", "Ficciones", "J. L. Borges", rating: 2, review: "From B");
         await h.Service.UpdateProgressAsync(a, "cfi", 20);
-        await Task.Delay(5);
+        await AgeLastReadAsync(h, a, TimeSpan.FromMinutes(1));
         await h.Service.UpdateProgressAsync(b, "10", 10);
 
         await h.Service.LinkWorkAsync(new LibraryLinkWorkRequest(Client, Key(), a, b));
@@ -293,7 +293,7 @@ public sealed class BookValuesAcrossEditionsTests : IClassFixture<SqliteTestFixt
         var epub = await CreateAsync(h, "ebook", "Fictions", "Borges");
         var audio = await CreateAsync(h, "audiobook", "Fictions", "Borges");
         await h.Service.UpdateProgressAsync(audio, "60", 60);
-        await Task.Delay(5);
+        await AgeLastReadAsync(h, audio, TimeSpan.FromMinutes(1));
         await h.Service.UpdateProgressAsync(epub, "cfi", 100);
 
         (await GroupedAsync(h, BookFilter.Reading)).Should().BeEmpty(
@@ -310,7 +310,7 @@ public sealed class BookValuesAcrossEditionsTests : IClassFixture<SqliteTestFixt
         var epub = await CreateAsync(h, "ebook", "Fictions", "Borges");
         var audio = await CreateAsync(h, "audiobook", "Fictions", "Borges");
         await h.Service.UpdateProgressAsync(epub, "cfi", 100);
-        await Task.Delay(5);
+        await AgeLastReadAsync(h, epub, TimeSpan.FromMinutes(1));
         await h.Service.UpdateProgressAsync(audio, "10", 10);
 
         (await GroupedAsync(h, BookFilter.Reading)).Should().HaveCount(1);
@@ -329,7 +329,7 @@ public sealed class BookValuesAcrossEditionsTests : IClassFixture<SqliteTestFixt
         var audio = await CreateAsync(h, "audiobook", "Fictions", "Borges");
         var paper = await CreateAsync(h, "physical", "Fictions", "Borges");
         await h.Service.UpdateProgressAsync(audio, "cfi", 100);
-        await Task.Delay(5);
+        await AgeLastReadAsync(h, audio, TimeSpan.FromMinutes(1));
         await h.Service.UpdateProgressAsync(paper, """{"page":40}""", PaperPageProgress.Percent(40, null));
 
         (await GetAsync(h, paper)).ProgressPercent.Should().Be(0, "no page count, no made-up percentage");
@@ -349,7 +349,7 @@ public sealed class BookValuesAcrossEditionsTests : IClassFixture<SqliteTestFixt
         var second = await CreateAsync(h, "ebook", "Second", "B");
         await CreateAsync(h, "ebook", "Unread", "C");
         await h.Service.UpdateBookAsync(new(Client, "fin-1", first, IsFinished: true));
-        await Task.Delay(5);
+        await AgeLastReadAsync(h, first, TimeSpan.FromMinutes(1));
         await h.Service.UpdateBookAsync(new(Client, "fin-2", second, IsFinished: true));
 
         (await GetAsync(h, first)).LastReadAt.Should().NotBeNull("finishing is reading it last");
@@ -575,6 +575,20 @@ public sealed class BookValuesAcrossEditionsTests : IClassFixture<SqliteTestFixt
         var service = LibraryServiceGraph.Create(factory,
             new BookLookupService(new NoopHttpClientFactory(), NullLogger<BookLookupService>.Instance));
         return new TestHarness(factory, service);
+    }
+
+    /// <summary>
+    /// The service stamps a read with the wall clock, and the card shows the
+    /// edition read most recently. The tests only need one read to be older than
+    /// the other, so they age it explicitly instead of sleeping until the next
+    /// clock tick and hoping the order fell out.
+    /// </summary>
+    private static async Task AgeLastReadAsync(TestHarness h, Guid bookId, TimeSpan age)
+    {
+        await using var db = await h.Factory.CreateDbContextAsync();
+        var book = await db.Books.SingleAsync(b => b.Id == bookId);
+        book.Progress.LastReadAt = DateTime.UtcNow - age;
+        await db.SaveChangesAsync();
     }
 
     private sealed record TestHarness(IDbContextFactory<NostosDbContext> Factory, LibraryService Service);

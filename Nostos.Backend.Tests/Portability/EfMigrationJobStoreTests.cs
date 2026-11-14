@@ -9,6 +9,7 @@ using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Migration;
 using Npgsql;
 using Xunit;
+using Nostos.Backend.Tests.Support;
 
 namespace Nostos.Backend.Tests.Portability;
 
@@ -149,7 +150,7 @@ public sealed class EfMigrationJobStoreTests : IDisposable
     public async Task Create_rethrows_a_non_unique_database_failure()
     {
         var path = NewDatabasePath();
-        var clock = new ManualTimeProvider(T0);
+        var clock = new TestTimeProvider(T0);
         await using var harness = new Harness(
             path,
             clock,
@@ -607,7 +608,7 @@ public sealed class EfMigrationJobStoreTests : IDisposable
     public async Task Stale_version_with_a_valid_lease_token_is_a_typed_lease_conflict()
     {
         var path = NewDatabasePath();
-        var clock = new ManualTimeProvider(T0);
+        var clock = new TestTimeProvider(T0);
         var jobId = Guid.NewGuid();
         var versionBumper = new VersionBumpingInterceptor(path, jobId);
         await using var harness = new Harness(
@@ -648,7 +649,7 @@ public sealed class EfMigrationJobStoreTests : IDisposable
     public async Task Progress_is_rejected_when_the_job_advanced_to_another_state_before_the_guarded_update()
     {
         var path = NewDatabasePath();
-        var clock = new ManualTimeProvider(T0);
+        var clock = new TestTimeProvider(T0);
         var jobId = Guid.NewGuid();
         var advancing = new StateAdvancingInterceptor(
             path,
@@ -693,7 +694,7 @@ public sealed class EfMigrationJobStoreTests : IDisposable
     public async Task Progress_retries_across_benign_version_churn()
     {
         var path = NewDatabasePath();
-        var clock = new ManualTimeProvider(T0);
+        var clock = new TestTimeProvider(T0);
         var jobId = Guid.NewGuid();
         var churn = new CountingVersionBumpingInterceptor(path, jobId, bumps: 1);
         await using var harness = new Harness(
@@ -728,7 +729,7 @@ public sealed class EfMigrationJobStoreTests : IDisposable
     public async Task Transition_retries_across_version_churn_and_applies_exactly_once()
     {
         var path = NewDatabasePath();
-        var clock = new ManualTimeProvider(T0);
+        var clock = new TestTimeProvider(T0);
         var jobId = Guid.NewGuid();
         var churn = new CountingVersionBumpingInterceptor(path, jobId, bumps: 1);
         await using var harness = new Harness(
@@ -1012,7 +1013,7 @@ public sealed class EfMigrationJobStoreTests : IDisposable
     public async Task Cancellation_is_atomic_and_rolls_back_the_job_when_the_session_update_fails()
     {
         var path = NewDatabasePath();
-        var clock = new ManualTimeProvider(T0);
+        var clock = new TestTimeProvider(T0);
         var failingSessions = new SessionUpdateFailingInterceptor();
         await using var harness = new Harness(
             path,
@@ -1375,7 +1376,7 @@ public sealed class EfMigrationJobStoreTests : IDisposable
     {
         var harness = new Harness(
             NewDatabasePath(),
-            new ManualTimeProvider(now ?? T0),
+            new TestTimeProvider(now ?? T0),
             configure: null);
         await harness.InitializeAsync();
         return harness;
@@ -1581,7 +1582,7 @@ public sealed class EfMigrationJobStoreTests : IDisposable
     {
         public Harness(
             string databasePath,
-            ManualTimeProvider clock,
+            TestTimeProvider clock,
             Action<DbContextOptionsBuilder<NostosDbContext>>? configure)
         {
             DatabasePath = databasePath;
@@ -1596,7 +1597,7 @@ public sealed class EfMigrationJobStoreTests : IDisposable
 
         public string DatabasePath { get; }
 
-        public ManualTimeProvider Clock { get; }
+        public TestTimeProvider Clock { get; }
 
         public DbContextOptions<NostosDbContext> Options { get; }
 

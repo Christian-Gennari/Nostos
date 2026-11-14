@@ -5,6 +5,7 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Services.Portability;
+using Nostos.Backend.Tests.Support;
 using Nostos.Shared.Enums;
 using Xunit;
 
@@ -391,7 +392,7 @@ public sealed class PortableLibraryVerifierGoldenTests
         await using var library = await LocalPortableTestLibrary.CreateAsync();
         await PortableSnapshotGoldenLibrary.PopulateAsync(library);
         using var destination = new MemoryStream();
-        await library.Portability(new ManualTimeProvider(ExportTime)).ExportAsync(destination);
+        await library.Portability(new TestTimeProvider(ExportTime)).ExportAsync(destination);
         return destination.ToArray();
     }
 

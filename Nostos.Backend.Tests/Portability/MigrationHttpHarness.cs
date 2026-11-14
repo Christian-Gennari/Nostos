@@ -33,7 +33,7 @@ internal sealed class MigrationHttpHarness : IAsyncDisposable
     internal string Root { get; }
     internal string DatabasePath { get; }
     internal string TransferPath { get; }
-    internal EngineClock Clock { get; } = new();
+    internal TestTimeProvider Clock { get; } = new(new DateTimeOffset(2026, 10, 4, 12, 0, 0, TimeSpan.Zero));
     internal FakeTransferVolume Volume { get; } = new()
     {
         AvailableFreeSpaceBytes = 20L * 1024 * 1024 * 1024,

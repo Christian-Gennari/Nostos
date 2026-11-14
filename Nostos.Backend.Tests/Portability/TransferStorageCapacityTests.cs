@@ -5,6 +5,7 @@ using Nostos.Backend.Data;
 using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Transfers;
 using Xunit;
+using Nostos.Backend.Tests.Support;
 
 namespace Nostos.Backend.Tests.Portability;
 
@@ -20,7 +21,7 @@ public sealed class TransferStorageCapacityTests : IDisposable
         TotalSizeBytes = 1_000_000,
     };
 
-    private readonly ManualTimeProvider _time =
+    private readonly TestTimeProvider _time =
         new(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
 
     private readonly TransferStorageOptions _options = new()

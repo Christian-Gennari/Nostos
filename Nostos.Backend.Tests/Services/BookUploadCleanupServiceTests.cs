@@ -23,10 +23,11 @@ public sealed class BookUploadCleanupServiceTests : IDisposable
     {
         using var client = _factory.CreateClient();
         var maintenance = new LibraryMaintenanceCoordinator();
+        var signals = new SignallingMaintenanceCoordinator(maintenance);
         var worker = new BookUploadCleanupService(
             _factory.Services.GetRequiredService<IServiceScopeFactory>(),
             NullLogger<BookUploadCleanupService>.Instance,
-            maintenance);
+            signals);
         var paths = _factory.Services.GetRequiredService<TransferPathResolver>();
 
         var (staleId, finishedId) = await SeedAsync(paths);
@@ -34,8 +35,7 @@ public sealed class BookUploadCleanupServiceTests : IDisposable
         await using var exclusive = await maintenance.EnterExclusiveAsync(
             LibraryMaintenanceReason.BackupRestore);
         var pass = worker.ScanOnceAsync(CancellationToken.None);
-
-        await Task.Delay(300);
+        await signals.WaitForAttemptAsync(1);
 
         pass.IsCompleted.Should().BeFalse();
         await using (var db = OpenDb())
@@ -67,11 +67,12 @@ public sealed class BookUploadCleanupServiceTests : IDisposable
     {
         using var client = _factory.CreateClient();
         var maintenance = new LibraryMaintenanceCoordinator();
+        var signals = new SignallingMaintenanceCoordinator(maintenance);
         var paths = _factory.Services.GetRequiredService<TransferPathResolver>();
         var (staleId, finishedId) = await SeedAsync(paths);
         using var worker = new FastBookUploadCleanupService(
             _factory.Services.GetRequiredService<IServiceScopeFactory>(),
-            maintenance);
+            signals);
 
         var exclusive = await maintenance.EnterExclusiveAsync(
             LibraryMaintenanceReason.BackupRestore);
@@ -79,8 +80,9 @@ public sealed class BookUploadCleanupServiceTests : IDisposable
         {
             await worker.StartAsync(CancellationToken.None);
 
-            // Several 50 ms ticks pass while the library is held.
-            await Task.Delay(300);
+            // The first tick has reached the library and is waiting for the
+            // lease; nothing may have been cleaned while it waits.
+            await signals.WaitForAttemptAsync(1);
 
             await using var db = OpenDb();
             var stale = await db.BookUploadSessionRecords.SingleAsync(s => s.Id == staleId);
@@ -92,12 +94,9 @@ public sealed class BookUploadCleanupServiceTests : IDisposable
             await exclusive.DisposeAsync();
         }
 
-        var deadline = DateTime.UtcNow.AddSeconds(30);
-        while (Directory.Exists(paths.GetBookUploadSessionDirectory(finishedId))
-            && DateTime.UtcNow < deadline)
-        {
-            await Task.Delay(50);
-        }
+        // The second attempt means the first, now admitted, pass returned: the
+        // loop only ticks again after its pass finished.
+        await signals.WaitForAttemptAsync(2);
 
         await worker.StopAsync(CancellationToken.None);
         // A stop during the timer wait ends the task as canceled, which the

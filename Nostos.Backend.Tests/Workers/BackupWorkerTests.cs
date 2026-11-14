@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Nostos.Backend.Data;
 using Nostos.Backend.Services;
+using Nostos.Backend.Tests.Support;
 using Nostos.Backend.Workers;
 using Nostos.Shared.Dtos;
 using Xunit;
@@ -33,7 +34,7 @@ public sealed class BackupWorkerTests : IDisposable
             throw LibraryMaintenanceCoordinator.Busy();
         });
         var logger = new CapturingLogger<BackupWorker>();
-        var clock = new FakeWorkerClock();
+        var clock = new TestTimeProvider();
         var worker = new TestWorker(harness.Provider, harness.Settings, logger, clock);
 
         using var cts = new CancellationTokenSource();
@@ -67,7 +68,7 @@ public sealed class BackupWorkerTests : IDisposable
                 : CompletedBackup;
         });
         var logger = new CapturingLogger<BackupWorker>();
-        var clock = new FakeWorkerClock();
+        var clock = new TestTimeProvider();
         var worker = new TestWorker(harness.Provider, harness.Settings, logger, clock);
 
         using var cts = new CancellationTokenSource();
@@ -101,7 +102,7 @@ public sealed class BackupWorkerTests : IDisposable
             return CompletedBackup;
         });
         var logger = new CapturingLogger<BackupWorker>();
-        var clock = new FakeWorkerClock();
+        var clock = new TestTimeProvider();
         var worker = new TestWorker(harness.Provider, harness.Settings, logger, clock);
 
         using var cts = new CancellationTokenSource();
@@ -194,7 +195,7 @@ public sealed class BackupWorkerTests : IDisposable
         IServiceProvider provider,
         BackupSettingsProvider settingsProvider,
         ILogger<BackupWorker> logger,
-        FakeWorkerClock clock)
+        TestTimeProvider clock)
         : BackupWorker(provider.GetRequiredService<IServiceScopeFactory>(), settingsProvider, logger)
     {
         protected override TimeProvider Clock => clock;

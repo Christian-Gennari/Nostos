@@ -82,21 +82,22 @@ public sealed class LibriVoxSnapshotSourceTests
     }
 
     /// <summary>
-    /// A clock fixed at the scan start whose timers fire immediately while
-    /// recording the delay they were asked for, so the inter-page pause is
-    /// asserted without a real one-second wait.
+    /// Starts a continuation read and hands it back once its inter-page pause
+    /// is armed, after asserting that pause is the one the provider owes
+    /// LibriVox. Passing the clock over that pause is what lets the read
+    /// continue, so the test never waits a real second and the assertion is
+    /// about the delay itself, not about timer delivery.
     /// </summary>
-    private sealed class RecordingTimeProvider(DateTimeOffset now) : TimeProvider
+    private static async Task<ProviderSnapshot> PausedContinuationAsync(
+        Func<Task<ProviderSnapshot>> read,
+        TestTimeProvider clock)
     {
-        public List<TimeSpan> Delays { get; } = [];
-
-        public override DateTimeOffset GetUtcNow() => now;
-
-        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
-        {
-            Delays.Add(dueTime);
-            return base.CreateTimer(callback, state, TimeSpan.Zero, period);
-        }
+        var pending = read();
+        await clock.WaitForTimerCountAsync(1);
+        var pause = clock.ArmedDueTimes.Should().ContainSingle().Which;
+        pause.Should().Be(LibriVoxProvider.SnapshotPageDelay);
+        clock.Advance(pause);
+        return await pending.WaitAsync(TimeSpan.FromSeconds(10));
     }
 
     /// <summary>
@@ -131,11 +132,11 @@ public sealed class LibriVoxSnapshotSourceTests
             NullLogger<LibriVoxProvider>.Instance,
             clock);
 
-    private static (LibriVoxProvider Provider, StubHttpMessageHandler Handler, RecordingTimeProvider Clock) CreateProvider()
+    private static (LibriVoxProvider Provider, StubHttpMessageHandler Handler, TestTimeProvider Clock) CreateProvider()
     {
         var handler = new StubHttpMessageHandler();
         var factory = new StubHttpClientFactory(handler, new Uri("https://librivox.org"));
-        var clock = new RecordingTimeProvider(ScanStart);
+        var clock = new TestTimeProvider(ScanStart);
         return (CreateProvider(factory, clock), handler, clock);
     }
 
@@ -198,7 +199,7 @@ public sealed class LibriVoxSnapshotSourceTests
         var factory = new PerClientStubHttpClientFactory();
         var snapshotHandler = factory.HandlerFor(LibriVoxProvider.SnapshotHttpClientName);
         snapshotHandler.Register(PagePath(0), JsonResponse(LoadFixture("snapshot-page.json")));
-        var provider = CreateProvider(factory, new RecordingTimeProvider(ScanStart));
+        var provider = CreateProvider(factory, new TestTimeProvider(ScanStart));
 
         var snapshot = await provider.ReadAsync(new ProviderSnapshotRequest(), CancellationToken.None);
 
@@ -220,13 +221,14 @@ public sealed class LibriVoxSnapshotSourceTests
         (await ReadItemsAsync(first.Items)).Should().HaveCount(499, "the unparsable record is skipped");
         first.NextCursor.Should().NotBeNull("the raw page was full, so the scan must continue");
 
-        var second = await provider.ReadAsync(
-            new ProviderSnapshotRequest(Cursor: first.NextCursor),
-            CancellationToken.None);
+        var second = await PausedContinuationAsync(
+            () => provider.ReadAsync(
+                new ProviderSnapshotRequest(Cursor: first.NextCursor),
+                CancellationToken.None),
+            clock);
 
         (await ReadItemsAsync(second.Items)).Should().HaveCount(3);
         second.NextCursor.Should().BeNull();
-        clock.Delays.Should().ContainSingle().Which.Should().Be(LibriVoxProvider.SnapshotPageDelay);
     }
 
     [Fact]
@@ -249,16 +251,17 @@ public sealed class LibriVoxSnapshotSourceTests
 
         (await ReadItemsAsync(first.Items)).Should().HaveCount(500);
         first.NextCursor.Should().NotBeNull("a full page cannot prove the catalogue ended");
-        clock.Delays.Should().BeEmpty("the first page of a scan is not delayed");
+        clock.CreatedTimerCount.Should().Be(0, "the first page of a scan is not delayed");
 
-        var second = await provider.ReadAsync(
-            new ProviderSnapshotRequest(Cursor: first.NextCursor),
-            CancellationToken.None);
+        var second = await PausedContinuationAsync(
+            () => provider.ReadAsync(
+                new ProviderSnapshotRequest(Cursor: first.NextCursor),
+                CancellationToken.None),
+            clock);
 
         (await ReadItemsAsync(second.Items)).Should().HaveCount(3);
         second.NextCursor.Should().BeNull();
         second.LastModified.Should().Be(ScanStart, "every page of a scan reports the same watermark");
-        clock.Delays.Should().ContainSingle().Which.Should().Be(LibriVoxProvider.SnapshotPageDelay);
 
         requested.Should().Equal(new[] { PagePath(0), PagePath(500) }, "page 0 is fetched before its continuation");
     }
@@ -288,13 +291,14 @@ public sealed class LibriVoxSnapshotSourceTests
         first.NextCursor.Should().NotBeNull();
         (await ReadItemsAsync(first.Items)).Should().HaveCount(500);
 
-        var second = await provider.ReadAsync(
-            new ProviderSnapshotRequest(Cursor: first.NextCursor),
-            CancellationToken.None);
+        var second = await PausedContinuationAsync(
+            () => provider.ReadAsync(
+                new ProviderSnapshotRequest(Cursor: first.NextCursor),
+                CancellationToken.None),
+            clock);
 
         (await ReadItemsAsync(second.Items)).Should().HaveCount(3);
         second.NextCursor.Should().BeNull();
-        clock.Delays.Should().ContainSingle().Which.Should().Be(LibriVoxProvider.SnapshotPageDelay);
 
         requested.Should().Equal(new[] { PagePath(0, since), PagePath(500, since) }, "the since boundary carries into page 2");
     }
@@ -338,7 +342,7 @@ public sealed class LibriVoxSnapshotSourceTests
         // The API answers 404 when the offset reaches the end of the catalogue,
         // so a catalogue whose size is a multiple of the page size always gets
         // a missing page after its last full page: that is the end of the scan.
-        var (provider, handler, _) = CreateProvider();
+        var (provider, handler, clock) = CreateProvider();
         handler.Register(PagePath(0), JsonResponse(FullPageJson(500)));
         handler.Register(
             PagePath(500),
@@ -347,9 +351,11 @@ public sealed class LibriVoxSnapshotSourceTests
         var first = await provider.ReadAsync(new ProviderSnapshotRequest(), CancellationToken.None);
         first.NextCursor.Should().NotBeNull();
 
-        var second = await provider.ReadAsync(
-            new ProviderSnapshotRequest(Cursor: first.NextCursor),
-            CancellationToken.None);
+        var second = await PausedContinuationAsync(
+            () => provider.ReadAsync(
+                new ProviderSnapshotRequest(Cursor: first.NextCursor),
+                CancellationToken.None),
+            clock);
 
         second.Status.Should().Be(ProviderSnapshotStatus.Updated);
         second.NextCursor.Should().BeNull();

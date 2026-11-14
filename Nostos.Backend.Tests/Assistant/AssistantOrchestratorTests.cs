@@ -2481,7 +2481,7 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         // The clock stands still until the provider has been entered, so the
         // test does not depend on how fast the runner reaches the first call
         // (#896): the deadline fires only when the test fires it.
-        var clock = new TurnDeadlineClock();
+        var clock = new TestTimeProvider();
         var h = CreateHarness(
             configure: options => options.MaxTurnElapsedMilliseconds = 1_000,
             timeProvider: clock);
@@ -2497,12 +2497,12 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
             Turn("Hello.", Context(surface: "library", route: "/library")));
 
         await providerEntered.Task.WaitAsync(TimeSpan.FromSeconds(10));
-        clock.DeadlineDueTime.Should().Be(
+        clock.ArmedDueTimes.Should().Contain(
             TimeSpan.FromMilliseconds(1_000),
             "no time has passed, so the provider call is given the whole turn budget");
         turn.IsCompleted.Should().BeFalse("the provider call is still in flight");
 
-        clock.FireDeadline();
+        clock.Advance(TimeSpan.FromMilliseconds(1_000));
 
         var response = await turn.WaitAsync(TimeSpan.FromSeconds(10));
         h.Llm.CallCount.Should().Be(1);
@@ -2516,7 +2516,7 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         // clock (60 s by default) must be the one that fires for a stalled call,
         // so the person gets "Ask Nostos took too long to answer. Try again."
         // (assistant_provider_timeout) and not the turn's execution limit.
-        var clock = new MultiTimerClock();
+        var clock = new TestTimeProvider();
         var h = CreateHarness(timeProvider: clock);
         var providerEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         h.Llm.AsyncResponder = async (_, cancellationToken) =>
@@ -2530,15 +2530,15 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
             Turn("Hello.", Context(surface: "library", route: "/library")));
 
         await providerEntered.Task.WaitAsync(TimeSpan.FromSeconds(10));
-        clock.LiveDueTimes.Should().BeEquivalentTo(
+        clock.ArmedDueTimes.Should().BeEquivalentTo(
             [TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(90)],
             "the request clock and the turn clock are both armed for the call");
         turn.IsCompleted.Should().BeFalse("both clocks are still waiting");
 
         // A real stall consumes wall clock. At 60 s the turn budget (90 s) is
-        // still intact, so the request clock is the one that must fail the turn.
+        // still intact, so the request clock is the one that must fail the turn;
+        // advancing to its due time is what fires it.
         clock.Advance(TimeSpan.FromSeconds(60));
-        clock.Fire(TimeSpan.FromSeconds(60));
 
         Func<Task> waitForTurn = async () => await turn.WaitAsync(TimeSpan.FromSeconds(10));
         var thrown = await waitForTurn.Should().ThrowAsync<LlmException>(
@@ -2553,7 +2553,7 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         // Several requests, each finishing well inside its own 5 s timeout, and
         // a long tool round between them. The request clock never fires; the whole
         // turn reaches its 20 s budget and reports the execution limit.
-        var clock = new MultiTimerClock();
+        var clock = new TestTimeProvider();
         var h = CreateHarness(
             configure: options =>
             {
@@ -2564,10 +2564,10 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
 
         h.Llm.AsyncResponder = (call, _) =>
         {
-            // Each round's tool work advances the shared clock by seven seconds;
+            // Each round's tool work consumes seven seconds of the shared clock;
             // the provider call itself completes immediately, inside its 5 s
-            // request timeout.
-            clock.Advance(TimeSpan.FromSeconds(7));
+            // request timeout, so no timer is delivered here.
+            clock.Move(TimeSpan.FromSeconds(7));
             return Task.FromResult(new LlmCompletion(
                 null,
                 "tool_calls",
@@ -2592,7 +2592,7 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         // The turn has 4 s left when the second request starts, less than its 5 s
         // request timeout. There is nothing left for the request clock to be
         // ordered against, so the turn clock is the deliberate failure.
-        var clock = new MultiTimerClock();
+        var clock = new TestTimeProvider();
         var h = CreateHarness(
             configure: options =>
             {
@@ -2605,7 +2605,7 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         {
             if (call == 1)
             {
-                clock.Advance(TimeSpan.FromSeconds(16));
+                clock.Move(TimeSpan.FromSeconds(16));
                 return new LlmCompletion(
                     null,
                     "tool_calls",
@@ -2621,11 +2621,11 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
             Turn("Which collections do I have?", Context(surface: "library", route: "/library")));
 
         await secondCallEntered.Task.WaitAsync(TimeSpan.FromSeconds(10));
-        clock.LiveDueTimes.Should().BeEquivalentTo(
+        clock.ArmedDueTimes.Should().BeEquivalentTo(
             [TimeSpan.FromSeconds(4)],
             "only the remaining turn budget is armed; the full request timeout cannot fit");
 
-        clock.Fire(TimeSpan.FromSeconds(4));
+        clock.Advance(TimeSpan.FromSeconds(4));
 
         var response = await turn.WaitAsync(TimeSpan.FromSeconds(10));
         h.Llm.CallCount.Should().Be(2);
@@ -4615,122 +4615,6 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
             Exception? exception,
             Func<TState, Exception?, string> formatter)
         {
-        }
-    }
-
-    /// <summary>
-    /// A clock that never advances and arms timers without running them, so the
-    /// turn deadline fires exactly when a test calls <see cref="FireDeadline"/>.
-    /// </summary>
-    /// <summary>
-    /// A <see cref="TimeProvider"/> whose timestamp the test controls and whose
-    /// timers the test fires by due time. It exists so the per-request clock and
-    /// the whole-turn clock can run together deterministically (#1561): real time
-    /// never fires either one behind the test's back.
-    /// </summary>
-    private sealed class MultiTimerClock : TimeProvider
-    {
-        private long _timestampMilliseconds;
-        private readonly List<ManualTimer> _timers = [];
-
-        public override long GetTimestamp() => _timestampMilliseconds;
-
-        public override long TimestampFrequency => 1_000;
-
-        /// <summary>Timers still armed, in creation order.</summary>
-        public IReadOnlyList<TimeSpan> LiveDueTimes =>
-            _timers.Where(timer => !timer.IsDisposed).Select(timer => timer.DueTime).ToList();
-
-        public override ITimer CreateTimer(
-            TimerCallback callback,
-            object? state,
-            TimeSpan dueTime,
-            TimeSpan period)
-        {
-            var timer = new ManualTimer(callback, state, dueTime);
-            lock (_timers) _timers.Add(timer);
-            return timer;
-        }
-
-        public void Advance(TimeSpan amount) =>
-            _timestampMilliseconds += (long)amount.TotalMilliseconds;
-
-        public void Fire(TimeSpan dueTime)
-        {
-            ManualTimer timer;
-            lock (_timers)
-            {
-                timer = _timers.Single(
-                    candidate => !candidate.IsDisposed && candidate.DueTime == dueTime);
-            }
-
-            timer.Fire();
-        }
-
-        private sealed class ManualTimer(
-            TimerCallback callback,
-            object? state,
-            TimeSpan dueTime) : ITimer
-        {
-            public TimeSpan DueTime { get; } = dueTime;
-
-            public bool IsDisposed { get; private set; }
-
-            public void Fire()
-            {
-                if (!IsDisposed) callback(state);
-            }
-
-            public bool Change(TimeSpan dueTime, TimeSpan period) => !IsDisposed;
-
-            public void Dispose() => IsDisposed = true;
-
-            public ValueTask DisposeAsync()
-            {
-                Dispose();
-                return ValueTask.CompletedTask;
-            }
-        }
-    }
-
-    private sealed class TurnDeadlineClock : TimeProvider
-    {
-        private ManualTimer? _deadline;
-
-        public TimeSpan? DeadlineDueTime { get; private set; }
-
-        public override long GetTimestamp() => 0;
-
-        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
-        {
-            DeadlineDueTime = dueTime;
-            _deadline = new ManualTimer(callback, state);
-            return _deadline;
-        }
-
-        public void FireDeadline() => _deadline!.Fire();
-
-        private sealed class ManualTimer(TimerCallback callback, object? state) : ITimer
-        {
-            private bool _disposed;
-
-            public void Fire()
-            {
-                if (!_disposed)
-                {
-                    callback(state);
-                }
-            }
-
-            public bool Change(TimeSpan dueTime, TimeSpan period) => !_disposed;
-
-            public void Dispose() => _disposed = true;
-
-            public ValueTask DisposeAsync()
-            {
-                Dispose();
-                return ValueTask.CompletedTask;
-            }
         }
     }
 

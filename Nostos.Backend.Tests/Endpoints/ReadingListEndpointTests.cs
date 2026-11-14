@@ -48,6 +48,15 @@ public sealed class ReadingListEndpointTests : IClassFixture<LibraryEndpointFact
         return (await response.Content.ReadFromJsonAsync<ReadingListEntryDto>())!;
     }
 
+    private async Task AgeAsync(Guid id, TimeSpan age)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<NostosDbContext>();
+        var entry = await db.ReadingListEntries.SingleAsync(e => e.Id == id);
+        entry.CreatedAt = DateTime.UtcNow - age;
+        await db.SaveChangesAsync();
+    }
+
     private async Task<List<ReadingListEntryDto>> ListAsync() =>
         (await Client.GetFromJsonAsync<List<ReadingListEntryDto>>("/api/reading-list"))!;
 
@@ -128,7 +137,9 @@ public sealed class ReadingListEndpointTests : IClassFixture<LibraryEndpointFact
     {
         await ResetAsync();
         var older = await AddAsync("Older someday");
-        await Task.Delay(20);
+        // "Newest first" reads CreatedAt, which the endpoint stamps from the
+        // wall clock: age the first entry instead of sleeping for the next tick.
+        await AgeAsync(older.Id, TimeSpan.FromMinutes(5));
         var newer = await AddAsync("Newer someday");
         var first = await AddAsync("First next", readNext: true);
         var second = await AddAsync("Second next", readNext: true);

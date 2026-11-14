@@ -9,6 +9,7 @@ using Nostos.Backend.Services.Portability.Migration;
 using Nostos.Backend.Services.Portability.Transfers;
 using Npgsql;
 using Xunit;
+using Nostos.Backend.Tests.Support;
 
 namespace Nostos.Backend.Tests.Data;
 
@@ -738,7 +739,7 @@ public sealed class PostgreSqlCompatibilitySpikeTests
         // conditional lease acquire/steal-after-expiry, lease-guarded progress
         // and transition, direction-aware invalid transitions, cancel, retry
         // and recovery discovery.
-        var storeClock = new ManualTimeProvider(
+        var storeClock = new TestTimeProvider(
             new DateTimeOffset(2026, 10, 4, 12, 0, 0, TimeSpan.Zero));
         var storeKey = "pg-store-job-" + Guid.NewGuid().ToString("N");
 

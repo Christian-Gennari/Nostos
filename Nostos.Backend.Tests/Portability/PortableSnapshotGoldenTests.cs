@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Services;
 using Nostos.Backend.Services.Portability;
+using Nostos.Backend.Tests.Support;
 using Nostos.Shared.Enums;
 using Xunit;
 
@@ -45,7 +46,7 @@ public sealed class PortableSnapshotGoldenTests
         await PortableSnapshotGoldenLibrary.PopulateAsync(library);
 
         using var archive = new MemoryStream();
-        await library.Portability(new ManualTimeProvider(ExportTime)).ExportAsync(archive);
+        await library.Portability(new TestTimeProvider(ExportTime)).ExportAsync(archive);
 
         var entries = PortableArchiveTestSupport.ReadEntries(archive.ToArray());
 

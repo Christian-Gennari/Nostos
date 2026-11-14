@@ -16,6 +16,7 @@ using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Activation;
 using Nostos.Backend.Services.Portability.Migration;
 using Nostos.Backend.Services.Portability.Transfers;
+using Nostos.Backend.Tests.Support;
 namespace Nostos.Backend.Tests.Portability;
 
 /// <summary>
@@ -66,7 +67,7 @@ internal sealed class ActivationCoordinatorTemplate : IDisposable
     internal Dictionary<string, string> OriginalMedia { get; private set; } = null!;
     internal Dictionary<string, string> ExpectedImportedMedia { get; private set; } = null!;
     internal DateTimeOffset BaseTime { get; } = new(2026, 10, 4, 12, 0, 0, TimeSpan.Zero);
-    internal ManualTimeProvider Clock { get; } = new(new DateTimeOffset(2026, 10, 4, 12, 0, 0, TimeSpan.Zero));
+    internal TestTimeProvider Clock { get; } = new(new DateTimeOffset(2026, 10, 4, 12, 0, 0, TimeSpan.Zero));
 
     private ActivationCoordinatorTemplate(bool populated)
     {
@@ -393,7 +394,7 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
     internal Guid JobId => _template.JobId;
     internal bool Populated => _template.Populated;
     internal SelfHostedActivationPaths Paths { get; }
-    internal ManualTimeProvider Clock { get; }
+    internal TestTimeProvider Clock { get; }
     internal TransferStorageOptions StorageOptions { get; } = new()
     {
         DiskSafetyMarginBytes = 0,
@@ -449,7 +450,7 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
     {
         _template = template;
         _drainTimeout = drainTimeout;
-        Clock = new ManualTimeProvider(template.BaseTime);
+        Clock = new TestTimeProvider(template.BaseTime);
         Root = Path.Combine(Path.GetTempPath(), $"nostos-681-activation-{Guid.NewGuid():N}");
         TransferRoot = Path.Combine(Root, "transfer-volume", "transfers");
         Directory.CreateDirectory(Path.Combine(Root, "db-volume"));

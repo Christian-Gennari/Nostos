@@ -750,8 +750,16 @@ public sealed class BackupServiceTests
         var firstPath = Path.Combine(h.ContentRoot, "Storage", "backups", $"{first.Id}.nostos");
         File.Exists(firstPath).Should().BeTrue();
 
-        // Ordering is by CreatedAt, so make the second unambiguously newer.
-        await Task.Delay(50);
+        // Retention orders by CreatedAt, which the service reads from the wall
+        // clock. Make the first archive unambiguously older instead of sleeping
+        // until the next tick: the row is the only record retention reads.
+        await using (var db = h.NewDbContext())
+        {
+            var row = await db.BackupRecords.SingleAsync(r => r.Id == first.Id);
+            row.CreatedAt = row.CreatedAt.AddMinutes(-5);
+            await db.SaveChangesAsync();
+        }
+
         var second = await h.Service.CreateBackupAsync();
         second.Status.Should().Be(BackupStatus.Completed);
 
@@ -875,11 +883,11 @@ public sealed class BackupServiceTests
         using var h = BackupHarness.Create(maxBackups: 3);
         var backupsDir = Path.Combine(h.ContentRoot, "Storage", "backups");
 
-        // The backup to restore, then later backups whose rows are not in its snapshot.
+        // The backup to restore, then later backups whose rows are not in its
+        // snapshot. Their order does not need a sleep to establish: only the
+        // orphan below is old enough for retention to prune.
         var first = await h.Service.CreateBackupAsync();
-        await Task.Delay(30);
         var second = await h.Service.CreateBackupAsync();
-        await Task.Delay(30);
 
         // Ghost: a row (in the first backup's future) cannot be simulated directly,
         // so add a Completed row whose file never existed and make the snapshot
@@ -938,17 +946,18 @@ public sealed class BackupServiceTests
                 .Select(f => Guid.Parse(Path.GetFileNameWithoutExtension(f))));
         }
 
-        // Only the newest safety copy survives a second restore.
-        await Task.Delay(1100);
+        // Only the newest safety copy survives a second restore. Two restores
+        // inside the same second share one file name, so "one file" holds by
+        // replacement as well as by deletion; sleeping a second to move the
+        // wall clock would only make the run slower, not the assertion truer.
         (await h.Service.RestoreBackupAsync(first.Id)).Success.Should().BeTrue();
         Directory.GetFiles(Path.GetDirectoryName(h.DatabasePath)!, "nostos.db.pre-restore-*")
-            .Should().HaveCount(1);
+            .Should().HaveCount(1, "a restore keeps one safety copy, never a pile of them");
 
         // Retention counts files: an orphan file with no row still fills the limit.
         var orphan = Path.Combine(backupsDir, $"{Guid.NewGuid()}.nostos");
         File.Copy(archive, orphan);
         File.SetLastWriteTimeUtc(orphan, DateTime.UtcNow.AddDays(-30));
-        await Task.Delay(30);
         var third = await h.Service.CreateBackupAsync();
         third.Status.Should().Be(BackupStatus.Completed);
         Directory.GetFiles(backupsDir, "*.nostos").Should().HaveCount(3);

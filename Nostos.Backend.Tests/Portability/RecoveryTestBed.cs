@@ -7,6 +7,7 @@ using Nostos.Backend.Services;
 using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Activation;
 using Nostos.Backend.Services.Portability.Transfers;
+using Nostos.Backend.Tests.Support;
 
 namespace Nostos.Backend.Tests.Portability;
 
@@ -21,7 +22,7 @@ internal sealed class RecoveryTestBed : IDisposable
     internal Guid JobId { get; } = Guid.NewGuid();
     internal Guid OperationId { get; } = Guid.NewGuid();
     internal string Revision { get; } = "revision-1";
-    internal ManualTimeProvider Clock { get; } = new(new DateTimeOffset(2026, 10, 4, 12, 0, 0, TimeSpan.Zero));
+    internal TestTimeProvider Clock { get; } = new(new DateTimeOffset(2026, 10, 4, 12, 0, 0, TimeSpan.Zero));
     internal TransferStorageOptions Options { get; } = new() { DiskSafetyMarginBytes = 0, DiskSafetyMarginPercent = 0 };
     internal FakeTransferVolume TransferVolume { get; } = new()
     {

@@ -4,6 +4,7 @@ using System.Text;
 using FluentAssertions;
 using Nostos.Backend.Services.Mcp.OAuth;
 using Xunit;
+using Nostos.Backend.Tests.Support;
 
 namespace Nostos.Backend.Tests.Mcp;
 
@@ -234,13 +235,13 @@ public sealed class McpClientMetadataFetcherTests
     public async Task A_good_document_is_read_and_kept_for_ten_minutes()
     {
         var transport = new StubTransport(_ => Json(Document(ClientId)));
-        var clock = new ManualClock(DateTimeOffset.Parse("2026-11-07T10:00:00Z"));
+        var clock = new TestTimeProvider(DateTimeOffset.Parse("2026-11-07T10:00:00Z"));
         using var fetcher = new McpClientMetadataFetcher(transport, PublicDns, clock);
 
         var first = await fetcher.FetchAsync(ClientId, CancellationToken.None);
-        clock.Now += TimeSpan.FromMinutes(9);
+        clock.Advance(TimeSpan.FromMinutes(9));
         var cached = await fetcher.FetchAsync(ClientId, CancellationToken.None);
-        clock.Now += TimeSpan.FromMinutes(2);
+        clock.Advance(TimeSpan.FromMinutes(2));
         await fetcher.FetchAsync(ClientId, CancellationToken.None);
 
         first.Metadata!.ClientName.Should().Be("Claude");
@@ -311,9 +312,4 @@ public sealed class McpClientMetadataFetcherTests
         public override long Length => throw new NotSupportedException();
     }
 
-    private sealed class ManualClock(DateTimeOffset now) : TimeProvider
-    {
-        public DateTimeOffset Now { get; set; } = now;
-        public override DateTimeOffset GetUtcNow() => Now;
-    }
 }

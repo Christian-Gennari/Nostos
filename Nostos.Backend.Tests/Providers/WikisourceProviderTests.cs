@@ -311,11 +311,9 @@ public sealed class WikisourceProviderTests
     // Catalogue cache (#641): one download reused across searches
     // ------------------------------------------------------------------
 
-    private sealed class ManualClock : TimeProvider
-    {
-        public DateTimeOffset Now { get; set; } = new(2026, 9, 30, 12, 0, 0, TimeSpan.Zero);
-        public override DateTimeOffset GetUtcNow() => Now;
-    }
+    /// <summary>The catalogue's cache tests need a start time they control.</summary>
+    private static readonly DateTimeOffset CatalogueStart =
+        new(2026, 9, 30, 12, 0, 0, TimeSpan.Zero);
 
     private static int CatalogRequests(StubHttpMessageHandler handler) =>
         handler.RecordedRequestPaths.Count(path => path == CatalogPath);
@@ -330,7 +328,7 @@ public sealed class WikisourceProviderTests
     {
         var handler = new StubHttpMessageHandler();
         handler.RegisterXml(CatalogPath, LoadFixture("ready-for-export.xml"));
-        var provider = new WikisourceProvider(new StubHttpClientFactory(handler), new ManualClock());
+        var provider = new WikisourceProvider(new StubHttpClientFactory(handler), new TestTimeProvider(CatalogueStart));
 
         var first = await provider.SearchAsync(new ProviderSearchQuery("pride"), CancellationToken.None);
         var second = await provider.SearchAsync(new ProviderSearchQuery("austen"), CancellationToken.None);
@@ -346,18 +344,23 @@ public sealed class WikisourceProviderTests
     {
         var xml = LoadFixture("ready-for-export.xml");
         using var release = new ManualResetEventSlim(false);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var handler = new StubHttpMessageHandler();
         handler.Register(CatalogPath, _ =>
         {
+            started.TrySetResult();
             release.Wait(TimeSpan.FromSeconds(10));
             return CatalogResponse(xml);
         });
-        var provider = new WikisourceProvider(new StubHttpClientFactory(handler), new ManualClock());
+        var provider = new WikisourceProvider(new StubHttpClientFactory(handler), new TestTimeProvider(CatalogueStart));
 
         var searches = Enumerable.Range(0, 5)
             .Select(_ => provider.SearchAsync(new ProviderSearchQuery("pride"), CancellationToken.None))
             .ToArray();
-        await Task.Delay(100);
+
+        // All five searches are already in flight; the download is what they
+        // are waiting on, so releasing it is the only ordering that matters.
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(10));
         release.Set();
         var pages = await Task.WhenAll(searches).WaitAsync(TimeSpan.FromSeconds(10));
 
@@ -368,17 +371,17 @@ public sealed class WikisourceProviderTests
     [Fact]
     public async Task An_expired_catalogue_is_refetched_but_a_fresh_one_is_not()
     {
-        var clock = new ManualClock();
+        var clock = new TestTimeProvider(CatalogueStart);
         var handler = new StubHttpMessageHandler();
         handler.RegisterXml(CatalogPath, LoadFixture("ready-for-export.xml"));
         var provider = new WikisourceProvider(new StubHttpClientFactory(handler), clock);
 
         await provider.SearchAsync(new ProviderSearchQuery("pride"), CancellationToken.None);
-        clock.Now += WikisourceProvider.CatalogFreshFor - TimeSpan.FromMinutes(1);
+        clock.Advance(WikisourceProvider.CatalogFreshFor - TimeSpan.FromMinutes(1));
         await provider.SearchAsync(new ProviderSearchQuery("pride"), CancellationToken.None);
         CatalogRequests(handler).Should().Be(1, "the catalogue is still fresh");
 
-        clock.Now += TimeSpan.FromMinutes(2);
+        clock.Advance(TimeSpan.FromMinutes(2));
         await provider.SearchAsync(new ProviderSearchQuery("pride"), CancellationToken.None);
         CatalogRequests(handler).Should().Be(2, "an expired catalogue is never served");
     }
@@ -392,7 +395,7 @@ public sealed class WikisourceProviderTests
         handler.Register(CatalogPath, _ => fail
             ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
             : CatalogResponse(xml));
-        var provider = new WikisourceProvider(new StubHttpClientFactory(handler), new ManualClock());
+        var provider = new WikisourceProvider(new StubHttpClientFactory(handler), new TestTimeProvider(CatalogueStart));
 
         var act = () => provider.SearchAsync(new ProviderSearchQuery("pride"), CancellationToken.None);
         await act.Should().ThrowAsync<ProviderException>();
@@ -412,17 +415,19 @@ public sealed class WikisourceProviderTests
         // slower than the deadline would never be cached.
         var xml = LoadFixture("ready-for-export.xml");
         using var release = new ManualResetEventSlim(false);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var handler = new StubHttpMessageHandler();
         handler.Register(CatalogPath, _ =>
         {
+            started.TrySetResult();
             release.Wait(TimeSpan.FromSeconds(10));
             return CatalogResponse(xml);
         });
-        var provider = new WikisourceProvider(new StubHttpClientFactory(handler), new ManualClock());
+        var provider = new WikisourceProvider(new StubHttpClientFactory(handler), new TestTimeProvider(CatalogueStart));
         using var cts = new CancellationTokenSource();
 
         var abandoned = provider.SearchAsync(new ProviderSearchQuery("pride"), cts.Token);
-        await Task.Delay(100);
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(10));
         cts.Cancel();
         await FluentActions.Awaiting(() => abandoned).Should().ThrowAsync<OperationCanceledException>();
 
