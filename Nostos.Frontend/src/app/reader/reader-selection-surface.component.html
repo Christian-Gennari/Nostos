@@ -1,0 +1,237 @@
+@if (placement(); as place) {
+<div class="selection-scrim" (click)="cancelled.emit()" aria-hidden="true" data-testid="selection-scrim"></div>
+<div
+  class="selection-menu"
+  role="dialog"
+  aria-label="Selection actions"
+  data-testid="selection-menu"
+  [style.left.px]="place.left"
+  [style.width.px]="place.width"
+  [style.top.px]="place.top"
+  [style.bottom.px]="place.bottom"
+>
+  <blockquote appQuote size="sm" [lines]="3" [pen]="highlightColour()" class="selection-quote selected-text"
+    [title]="preview()">{{ preview() }}</blockquote>
+  <ng-container [ngTemplateOutlet]="selectionMenuActions"></ng-container>
+</div>
+} @else {
+<!-- The docked phone bar (#1255), at the top (#1344): quote and pens on the first line,
+     labelled utilities on the second, the decisions on the third. Every
+     row is placed by markup, so an optional action (Ask Nostos, Mark
+     passage) can neither land alone nor leave a hole. -->
+<div class="highlight-confirmation" [class.epub-actions]="fileType() === 'epub'" [class.has-note]="noteDraftOpen()" data-testid="selection-bar">
+  <div class="confirmation-content">
+    <div class="selection-quote-row">
+      <blockquote appQuote size="sm" [pen]="highlightColour()" class="selected-text">{{ preview() }}</blockquote>
+      <!-- The pens, where the mark is made: a dot picks the colour the
+           offered passage is shown in and keeps it as the book's pen.
+           Nothing is saved until Highlight or Save note. -->
+      @if (!noteDraftOpen()) {
+      <app-pen-swatches
+        class="hl-pens selection-pens"
+        [value]="highlightColour()"
+        [disabled]="saving()"
+        testIdPrefix="selection-pen-"
+        (chosen)="colourChosen.emit($event)"
+      />
+      }
+    </div>
+    @if (noteDraftOpen()) {
+      <ng-container [ngTemplateOutlet]="selectionNoteField"></ng-container>
+    } @else {
+      <div class="selection-utilities">
+        <!-- Words, not two bare glyphs: the phone bar has no hover, so a
+             label is the only thing that says what Copy and Ask do. -->
+        <button
+          appButton
+          type="button"
+          variant="ghost"
+          class="selection-copy"
+          (click)="copy.emit()"
+          [disabled]="saving()"
+          aria-label="Copy text"
+          title="Copy text"
+          data-testid="selection-copy"
+        >
+          <nostos-icon name="copy" [size]="16"></nostos-icon>
+          Copy
+        </button>
+        @if (askNostosAvailable()) {
+          <button
+            appButton
+            type="button"
+            variant="ghost"
+            class="selection-ask"
+            (click)="askNostos.emit()"
+            [disabled]="saving()"
+            aria-label="Ask Nostos about this"
+            title="Ask Nostos about this"
+            data-testid="selection-ask-nostos"
+          >
+            <nostos-icon name="sparkle" [size]="16"></nostos-icon>
+            Ask Nostos
+          </button>
+        }
+        @if (canMarkPassage()) {
+          <!-- One end of a passage (#1014) is an occasional, two-step
+               action: the shared menu gives it a labelled row instead of
+               costing the bar a third button. -->
+          <button
+            appIconButton
+            icon="dots-three"
+            type="button"
+            class="selection-more"
+            [nostosMenuTriggerFor]="selectionMore"
+            aria-label="More selection actions"
+            title="More selection actions"
+            data-testid="selection-more"
+          ></button>
+          <ng-template #selectionMore>
+            <nostos-menu aria-label="More selection actions">
+              <button
+                nostosMenuItem
+                icon="scroll"
+                [hint]="passageMarkActive() ? 'Ends the passage started earlier' : 'Its other end can come later'"
+                (triggered)="markPassage.emit()"
+                data-testid="selection-mark-passage"
+              >{{ passageMarkActive() ? 'Complete passage here' : 'Mark passage' }}</button>
+            </nostos-menu>
+          </ng-template>
+        }
+      </div>
+    }
+    <div class="confirmation-actions selection-decisions">
+      <ng-container [ngTemplateOutlet]="selectionCommit"></ng-container>
+    </div>
+  </div>
+</div>
+}
+
+<ng-template #selectionNoteField>
+  <div class="selection-note">
+    <app-note-composer
+      [compact]="true"
+      [words]="noteDraft()"
+      (wordsChange)="noteWordsChange.emit($event)"
+      [topics]="noteDraftTopics()"
+      (topicsChange)="noteTopicsChange.emit($event)"
+      inputId="selection-note-input"
+      ariaLabel="Note for this passage"
+      testId="selection-note-input"
+      [rows]="3"
+      [disabled]="saving()"
+      (submitted)="saveNote.emit()"
+    />
+  </div>
+</ng-template>
+
+<ng-template #selectionCommit>
+  <!-- Anchored (desktop menu): 32px desktop controls and a quiet Cancel.
+       Docked (phones): 44px touch targets, Cancel leading the commit. -->
+  @let anchored = !!placement();
+  <button
+    appButton
+    type="button"
+    [variant]="anchored ? 'ghost' : 'secondary'"
+    class="reader-confirm-action selection-cancel"
+    (click)="cancelled.emit()"
+    [disabled]="saving()"
+    data-testid="selection-cancel"
+  >
+    Cancel
+  </button>
+  @if (noteDraftOpen()) {
+    <button
+      appButton
+      type="button"
+      variant="primary"
+      class="reader-confirm-action selection-primary"
+      (click)="saveNote.emit()"
+      [disabled]="saving() || !noteDraftReady()"
+      [busy]="saving()"
+      data-testid="selection-save-note"
+    >
+      <nostos-icon name="check" [size]="16"></nostos-icon>
+      {{ saving() ? 'Saving…' : 'Save note' }}
+    </button>
+  } @else {
+    <button
+      appButton
+      type="button"
+      variant="secondary"
+      class="reader-confirm-action selection-note-action"
+      (click)="addNote.emit()"
+      [disabled]="saving()"
+      data-testid="selection-add-note"
+    >
+      <nostos-icon name="note" [size]="16"></nostos-icon>
+      Add note
+    </button>
+    <button
+      appButton
+      type="button"
+      variant="primary"
+      class="reader-confirm-action selection-primary"
+      (click)="highlight.emit()"
+      [disabled]="saving()"
+      [busy]="saving()"
+      data-testid="selection-highlight"
+    >
+      <nostos-icon name="highlighter" [size]="16"></nostos-icon>
+      {{ saving() ? 'Saving…' : 'Highlight' }}
+    </button>
+  }
+</ng-template>
+
+<ng-template #selectionMenuActions>
+  @if (noteDraftOpen()) {
+    <ng-container [ngTemplateOutlet]="selectionNoteField"></ng-container>
+  }
+  <div class="confirmation-actions">
+    <button
+      appIconButton
+      icon="copy"
+      type="button"
+      class="selection-copy"
+      (click)="copy.emit()"
+      [disabled]="saving()"
+      aria-label="Copy text"
+      title="Copy text"
+      data-testid="selection-copy"
+    ></button>
+    @if (canMarkPassage()) {
+      <!-- One end of a passage (issue #1014); the second mark, anywhere
+           in the book and in either order, opens the save sheet. -->
+      <button
+        appIconButton
+        icon="scroll"
+        type="button"
+        class="selection-passage"
+        [class.is-completing]="passageMarkActive()"
+        (click)="markPassage.emit()"
+        [disabled]="saving()"
+        [attr.aria-label]="passageMarkActive() ? 'Complete passage here' : 'Mark passage'"
+        [title]="passageMarkActive() ? 'Complete passage here' : 'Mark passage'"
+        data-testid="selection-mark-passage"
+      ></button>
+    }
+    @if (askNostosAvailable()) {
+      <button
+        appButton
+        variant="ghost"
+        size="sm"
+        type="button"
+        class="selection-ask"
+        (click)="askNostos.emit()"
+        [disabled]="saving()"
+        aria-label="Ask Nostos about this"
+        title="Ask Nostos about this"
+        data-testid="selection-ask-nostos"
+      >
+        <nostos-icon name="sparkle" [size]="14"></nostos-icon>
+        Ask Nostos
+      </button>
+    }
+    <ng-container [ngTemplateOutlet]="selectionCommit"></ng-container>
+  </div>
+</ng-template>

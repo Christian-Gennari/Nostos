@@ -1,0 +1,128 @@
+<aside class="notes-panel" [class.open]="open()">
+  <div class="notes-header">
+    <h2>Notes &amp; highlights</h2>
+    <button appIconButton icon="x" [glyphSize]="20" (click)="closed.emit()" aria-label="Close notes"></button>
+  </div>
+
+  @if (fileType() !== 'audio') {
+  <!-- The highlighter pens (issue #208). Four fills, remembered per book;
+       the swatch is the label, so this stays a row of dots rather than a row
+       of words. `aria-pressed` carries the choice to assistive tech, and the
+       title is the one discoverable name for a dot (a #226 follow-up). -->
+  <app-pen-swatches
+    class="hl-pens"
+    [value]="highlightColour()"
+    testIdPrefix="reader-highlight-pen-"
+    (chosen)="colourChosen.emit($event)"
+  />
+  }
+
+  <div class="quick-note">
+    <div class="input-wrapper">
+      <app-note-composer
+        [words]="quickNoteContent()"
+        (wordsChange)="quickNoteWordsChange.emit($event)"
+        [topics]="quickNoteTopics()"
+        (topicsChange)="quickNoteTopicsChange.emit($event)"
+        ariaLabel="Quick note"
+        testId="quick-note-input"
+        [rows]="2"
+        (submitted)="quickNoteSave.emit()"
+      />
+    </div>
+    <div class="quick-actions">
+      @if (quickNotePinnedTime(); as time) {
+      <!-- The audio moment this draft will be saved at (issue #906). The
+           row's height comes from Save, so showing it moves nothing. -->
+      <span class="quick-note-time" data-testid="quick-note-time">at {{ time }}</span>
+      }
+      <button
+        appButton
+        type="button"
+        variant="primary"
+        (click)="quickNoteSave.emit()"
+        [disabled]="!quickNoteReady() || quickNoteSaving()"
+        [busy]="quickNoteSaving()"
+      >
+        {{ quickNoteSaving() ? 'Saving…' : 'Save' }}
+      </button>
+    </div>
+  </div>
+
+  <div class="notes-list">
+    @for (row of rows(); track row.note.id) {
+    <app-note-item
+      [note]="row.item"
+      [class.is-flashed]="flashedNoteId() === row.note.id"
+      [topics]="topics()"
+      [topicMap]="topicMap()"
+      [showBook]="false"
+      [showMoreFromBook]="false"
+      [canSelect]="false"
+      [inBook]="true"
+      [audioTime]="noteAudioTime(row.note)"
+      [passageViewerOptions]="passageViewerOptions()"
+      [busy]="noteActions.busy().has(row.note.id)"
+      [suggestions]="suggestions.namesFor(row.note.id)"
+      [suggestionState]="suggestions.stateFor(row.note.id)"
+      (topicAdded)="noteActions.addTopic(row.item, $event)"
+      (topicRemoved)="noteActions.removeTopic(row.item, $event)"
+      (pickerOpened)="suggestions.request(row.item)"
+      (pickerClosed)="suggestions.closeFor(row.note.id)"
+      (edited)="edit.emit($event)"
+      (keepWithWriting)="noteActions.keepWithWriting([row.note.id])"
+      (deleteRequested)="delete.emit(row.note.id)"
+      (restored)="noteActions.restored($event)"
+      (jumpRequested)="jump.emit(row.note)"
+    />
+    } @empty {
+    @if (notesFailed()) {
+    <nostos-empty-state compact error message="Your notes could not be loaded." (retry)="retry.emit()" />
+    } @else {
+    <nostos-empty-state
+      compact
+      concept="note"
+      message="No notes yet."
+      detail="Highlight text or use the box above to add one."
+    />
+    }
+    }
+
+    @if (otherNotesLabel(); as otherLabel) {
+    <!-- The same book's notes from its other editions: collapsed, listed
+         after this edition's own, and never drawn on the page. Opening one
+         goes to its edition at its place. -->
+    <section class="notes-other" data-testid="notes-other-editions">
+      <button
+        appButton
+        variant="ghost"
+        size="sm"
+        type="button"
+        class="notes-other-toggle"
+        [attr.aria-expanded]="otherNotesOpen()"
+        aria-controls="notes-other-list"
+        (click)="otherNotesOpenChange.emit(!otherNotesOpen())"
+      >
+        <nostos-icon [name]="otherNotesOpen() ? 'caret-down' : 'caret-right'" [size]="14" aria-hidden="true" />
+        {{ otherLabel }}
+      </button>
+      @if (otherNotesOpen()) {
+      <div id="notes-other-list">
+        @for (hit of otherEditionNotes(); track hit.id) {
+        <app-note-item
+          [note]="hit"
+          [topics]="topics()"
+          [topicMap]="topicMap()"
+          [showBook]="false"
+          [showFormat]="true"
+          [showMoreFromBook]="false"
+          [canSelect]="false"
+          [readOnly]="true"
+        />
+        }
+      </div>
+      }
+    </section>
+    }
+  </div>
+</aside>

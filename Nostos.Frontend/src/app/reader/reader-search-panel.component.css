@@ -1,0 +1,86 @@
+/* Search in the open book (#761). It uses the canonical appInput/appIconButton
+   primitives; it overlays the page so opening search never changes EPUB
+   pagination or PDF layout. */
+.reader-search-panel {
+  position: absolute;
+  top: calc(var(--header-height) + 0.5rem);
+  right: 0.75rem;
+  z-index: 60;
+  width: min(24rem, calc(100vw - 1.5rem));
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-popover);
+  box-shadow: var(--shadow-md);
+}
+
+.reader-search-row,
+.reader-search-status-row,
+.reader-search-nav {
+  display: flex;
+  align-items: center;
+}
+
+.reader-search-row {
+  gap: 0.5rem;
+}
+
+.reader-search-field {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.reader-search-status-row {
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: var(--control-h-md);
+}
+
+.reader-search-status {
+  min-width: 0;
+  color: var(--color-text-light);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.reader-search-nav {
+  gap: 0.25rem;
+  flex-shrink: 0;
+}
+
+.reader-search-panel .icon-btn {
+  border-radius: var(--radius-lg);
+}
+
+/* Immersive chrome sits below the header's safe area. */
+:host-context(.reader-layout.immersive) .reader-search-panel {
+  top: calc(var(--header-height) + env(safe-area-inset-top, 0px) + 0.75rem);
+  right: max(2rem, env(safe-area-inset-right, 0px));
+}
+
+@media (max-width: 768px) {
+  /* A phone gives the panel the header's place and its full width. */
+  .reader-search-panel {
+    top: var(--header-height);
+    left: 0;
+    right: 0;
+    width: auto;
+    padding: 0.5rem max(0.75rem, env(safe-area-inset-right, 0px))
+      0.5rem max(0.75rem, env(safe-area-inset-left, 0px));
+    border: 0;
+    border-bottom: 1px solid var(--border-color);
+    border-radius: 0;
+    box-shadow: var(--shadow-md);
+  }
+
+  :host-context(.reader-layout.immersive) .reader-search-panel {
+    left: max(0.75rem, env(safe-area-inset-left, 0px));
+    right: max(0.75rem, env(safe-area-inset-right, 0px));
+    width: auto;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-popover);
+  }
+}

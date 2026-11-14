@@ -1,0 +1,16 @@
+/* The docked top bar the selection actions and the highlight card share: it
+   replaces the header while it is open, so its background reaches behind the
+   notch or status bar. The shadow is directional (down the page), not
+   incidental, so it is the one non-token shadow the reader keeps; it lives in
+   one file because both surfaces mount it. */
+.highlight-confirmation {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-color);
+  padding-top: env(safe-area-inset-top, 0px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+}

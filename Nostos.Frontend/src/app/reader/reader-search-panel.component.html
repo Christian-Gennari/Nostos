@@ -1,0 +1,67 @@
+<section
+  class="reader-search-panel"
+  role="search"
+  aria-label="Search in book"
+  data-testid="reader-search-panel"
+>
+  <div class="reader-search-row">
+    <!-- No clear button: Close sits right beside the field. -->
+    <nostos-search-field class="reader-search-field" size="sm" [clearable]="false">
+    <input
+      appInput
+      controlSize="compact"
+      class="reader-search-input"
+      type="search"
+      autocomplete="off"
+      spellcheck="false"
+      placeholder="Search this book…"
+      aria-label="Search this book"
+      [value]="query()"
+      (input)="queryChange.emit($any($event.target).value)"
+    />
+    </nostos-search-field>
+    <button
+      appIconButton
+      icon="x"
+      size="md"
+      type="button"
+      (click)="closed.emit()"
+      aria-label="Close search"
+      title="Close search"
+    ></button>
+  </div>
+
+  <div class="reader-search-status-row">
+    <span class="reader-search-status" aria-live="polite">
+      @switch (state().status) {
+        @case ('searching') { Searching book… }
+        @case ('not-found') { No matches }
+        @case ('ready') { {{ state().current }} of {{ state().total }} }
+        @default { Type to search }
+      }
+    </span>
+
+    <div class="reader-search-nav" role="group" aria-label="Search results">
+      <button
+        appIconButton
+        icon="caret-left"
+        size="md"
+        type="button"
+        (click)="previous.emit()"
+        [disabled]="state().total === 0"
+        aria-label="Previous match"
+        title="Previous match"
+      ></button>
+      <button
+        appIconButton
+        icon="caret-right"
+        size="md"
+        type="button"
+        (click)="next.emit()"
+        [disabled]="state().total === 0"
+        aria-label="Next match"
+        title="Next match"
+      ></button>
+    </div>
+  </div>
+</section>

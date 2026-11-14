@@ -1,0 +1,198 @@
+<nostos-settings-popover
+  [origin]="origin()"
+  heading="View settings"
+  (dismissed)="dismissed.emit()"
+>
+<div class="typo-panel" data-testid="typo-panel">
+  <!-- App-wide theme (#651). It drives ThemeService, the one owner of the
+       theme, so it is the same setting as Settings → Appearance and both
+       readers follow it without reloading. Kept first and identical for EPUB
+       and PDF; PDF "Page colours" below stays a separate page-pixel control. -->
+  <!-- Grouped by what a setting changes: the app, the page, the text. Each
+       group has a titled section with a hairline above it, so a row reads as
+       belonging to its group rather than to one flat list. -->
+  <section class="typo-group" aria-labelledby="typo-group-appearance">
+  <h3 class="typo-group-title" id="typo-group-appearance">Appearance</h3>
+  <div class="typo-row" data-testid="reader-appearance">
+    <span class="typo-label" aria-hidden="true">Theme</span>
+    <!-- The caption names the theme and its scope: it applies throughout Nostos. -->
+    <nostos-theme-picker class="typo-opts" label="Theme" note="applies throughout Nostos" />
+  </div>
+  <!-- The PDF's page pixels, so it lives with the app theme it follows. -->
+  @if (fileType() === 'pdf' && pdf()?.isDark()) {
+  <div class="typo-row">
+    <span class="typo-label" id="pdf-colours">Page colours</span>
+    <nostos-segmented
+      class="typo-opts"
+      fill
+      aria-labelledby="pdf-colours"
+      [options]="pageColourOptions"
+      [value]="pageInverted() ? 'inverted' : 'printed'"
+      (valueChange)="pdf()?.setPageInverted($event === 'inverted')"
+    />
+  </div>
+  }
+  </section>
+
+  @if (fileType() === 'pdf') {
+  <section class="typo-group" aria-labelledby="typo-group-page">
+  <h3 class="typo-group-title" id="typo-group-page">Page</h3>
+  <!-- Fixed layout: how the pages advance, the render scale, and the fits it
+       can snap to. Zoom used to be two header buttons; the modes and presets
+       had nowhere to live at all. -->
+  <div class="typo-row">
+    <span class="typo-label" id="pdf-mode">Reading mode</span>
+    <nostos-segmented
+      class="typo-opts"
+      fill
+      aria-labelledby="pdf-mode"
+      [options]="pdfReadingModes()"
+      [value]="pdfScrollMode()"
+      (valueChange)="setScrollMode($event)"
+    />
+  </div>
+  <div class="typo-row">
+    <span class="typo-label" id="pdf-zoom">Zoom</span>
+    <div class="typo-steps" role="group" aria-labelledby="pdf-zoom">
+      <button
+        appButton
+        size="sm"
+        type="button"
+        class="typo-step"
+        (click)="pdf()?.zoomOut()"
+        aria-label="Zoom out"
+        title="Zoom out"
+      >A−</button>
+      <span class="typo-step-value">{{ pdfZoomLabel() }}</span>
+      <button
+        appButton
+        size="sm"
+        type="button"
+        class="typo-step"
+        (click)="pdf()?.zoomIn()"
+        aria-label="Zoom in"
+        title="Zoom in"
+      >A+</button>
+    </div>
+  </div>
+  <div class="typo-row">
+    <span class="typo-label" id="pdf-rotation">Rotation</span>
+    <div class="typo-steps" role="group" aria-labelledby="pdf-rotation">
+      <button
+        appButton
+        size="sm"
+        type="button"
+        class="typo-step"
+        (click)="pdf()?.rotateCounterclockwise()"
+        aria-label="Rotate left"
+        title="Rotate left"
+      >Left</button>
+      <button
+        appButton
+        size="sm"
+        type="button"
+        class="typo-step"
+        (click)="pdf()?.resetRotation()"
+        aria-label="Reset rotation"
+        title="Reset rotation"
+      >Reset</button>
+      <button
+        appButton
+        size="sm"
+        type="button"
+        class="typo-step"
+        (click)="pdf()?.rotateClockwise()"
+        aria-label="Rotate right"
+        title="Rotate right"
+      >Right</button>
+    </div>
+  </div>
+  <div class="typo-row typo-row-stacked">
+    <span class="typo-label" id="pdf-fit">Page fit</span>
+    <nostos-segmented
+      class="typo-opts"
+      fill
+      aria-labelledby="pdf-fit"
+      [options]="pdfZoomPresets()"
+      [value]="pdfZoomPreset()"
+      (valueChange)="setZoomPreset($event)"
+    />
+  </div>
+  </section>
+  } @if (epub(); as epub) {
+  <section class="typo-group" aria-labelledby="typo-group-text">
+  <div class="typo-group-head">
+    <h3 class="typo-group-title" id="typo-group-text">Text</h3>
+    <!-- Reset sits on the group it resets: it only ever touched these rows. -->
+    <button
+      appButton
+      type="button"
+      variant="ghost"
+      size="sm"
+      class="typo-reset"
+      aria-label="Reset text settings"
+      title="Reset text settings"
+      (click)="epub.resetTypography()"
+    >Reset</button>
+  </div>
+  <div class="typo-row typo-row-stacked">
+    <span class="typo-label" id="typo-typeface">Typeface</span>
+    <nostos-segmented
+      class="typo-opts"
+      fill
+      aria-labelledby="typo-typeface"
+      [options]="epub.fontOptions"
+      [value]="epub.typography().fontFamily"
+      (valueChange)="epub.setTypography({ fontFamily: $event })"
+    />
+  </div>
+  <div class="typo-row">
+    <span class="typo-label" id="typo-size">Text size</span>
+    <div class="typo-steps" role="group" aria-labelledby="typo-size">
+      <button
+        appButton
+        size="sm"
+        type="button"
+        class="typo-step"
+        (click)="epub.zoomOut()"
+        aria-label="Smaller text"
+        title="Smaller text"
+      >A−</button>
+      <span class="typo-step-value">{{ epub.fontSizePercent() }}%</span>
+      <button
+        appButton
+        size="sm"
+        type="button"
+        class="typo-step"
+        (click)="epub.zoomIn()"
+        aria-label="Larger text"
+        title="Larger text"
+      >A+</button>
+    </div>
+  </div>
+  <div class="typo-row">
+    <span class="typo-label" id="typo-line">Line height</span>
+    <nostos-segmented
+      class="typo-opts"
+      fill
+      aria-labelledby="typo-line"
+      [options]="lineHeightOptions"
+      [value]="epub.typography().lineHeight"
+      (valueChange)="epub.setTypography({ lineHeight: $event })"
+    />
+  </div>
+  <div class="typo-row">
+    <span class="typo-label" id="typo-margins">Margins</span>
+    <nostos-segmented
+      class="typo-opts"
+      fill
+      aria-labelledby="typo-margins"
+      [options]="epub.marginOptions"
+      [value]="epub.typography().margin"
+      (valueChange)="epub.setTypography({ margin: $event })"
+    />
+  </div>
+  </section>
+  }
+</div>
+</nostos-settings-popover>

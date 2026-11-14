@@ -19,6 +19,8 @@ import { readFileSync } from 'node:fs';
 const readSource = (file: string) => readFileSync(new URL(file, import.meta.url), 'utf-8');
 
 import { PROGRESS_SCOPE_KEY, ReaderShell, selectionPreview } from './reader-shell.component';
+import { ReaderTimers } from './reader-timers';
+import { ReaderNotesPanel } from './reader-notes-panel.component';
 import { ToastService } from '../core/services/toast.service';
 import {
   DEFAULT_HIGHLIGHT_COLOUR,
@@ -307,13 +309,19 @@ async function configureReaderShell(
 
   TestBed.overrideComponent(ReaderShell, {
     remove: {
-      imports: [PdfReader, EpubReader, NoteItemComponent],
+      imports: [PdfReader, EpubReader],
       providers: [BrainTopicSuggestionsService],
     },
     add: {
-      imports: [PdfReaderStub, EpubReaderStub, NoteItemStub],
+      imports: [PdfReaderStub, EpubReaderStub],
       providers: [{ provide: BrainTopicSuggestionsService, useValue: suggestionsStub }],
     },
+  });
+  // The notes drawer is its own component now (#1607); its rows are painted by
+  // the same stub the shell spec has always used.
+  TestBed.overrideComponent(ReaderNotesPanel, {
+    remove: { imports: [NoteItemComponent] },
+    add: { imports: [NoteItemStub] },
   });
 
   await TestBed.configureTestingModule({
@@ -1659,12 +1667,14 @@ describe('ReaderShell toolbar contract', () => {
 
   it('draws every Reader view-setting choice with the shared segmented control', () => {
     // The selected state (role="radio" + aria-checked) is the component's
-    // contract, so the panel must not hand-roll option buttons again.
-    const source = readSource('./reader-shell.component.html');
+    // contract, so the panel must not hand-roll option buttons again. The panel
+    // is its own component (#1607); the shell only mounts it.
+    const source = readSource('./reader-view-settings.component.html');
     expect(source).not.toContain('class="typo-opt"');
     expect((source.match(/<nostos-segmented\b/g) ?? []).length).toBe(6);
     // The app theme is a row of swatches (#1074): six choices do not fit a track.
     expect((source.match(/<nostos-theme-picker\b/g) ?? []).length).toBe(1);
+    expect(readSource('./reader-shell.component.html')).toContain('<app-reader-view-settings');
   });
 
   it('has no overflow menu left to reach the desktop-only controls', async () => {
@@ -1844,18 +1854,19 @@ describe('ReaderShell toolbar contract', () => {
   });
 
   it('composes reader search from canonical Nostos input and icon-button primitives', () => {
-    const template = readSource('./reader-shell.component.html');
-    const css = readSource('./reader-shell.component.css');
+    const template = readSource('./reader-search-panel.component.html');
+    const css = readSource('./reader-search-panel.component.css');
 
     const panel = template.slice(
       template.indexOf('class="reader-search-panel"'),
-      template.indexOf('<div class="reader-body">'),
+      template.indexOf('</section>'),
     );
     expect(panel).toContain('appInput');
     expect(panel).toContain('appIconButton');
     expect(panel).toContain('controlSize="compact"');
     expect(css).toContain('.reader-search-panel');
     expect(css).toContain('position: absolute');
+    expect(readSource('./reader-shell.component.html')).toContain('<app-reader-search-panel');
   });
 
   /**
@@ -1896,8 +1907,8 @@ describe('ReaderShell toolbar contract', () => {
   });
 
   it('draws the active ToC rail with the shared rail, clear of the row radius', () => {
-    const template = readSource('./reader-shell.component.html');
-    const css = readSource('./reader-shell.component.css');
+    const template = readSource('./reader-toc-panel.component.html');
+    const css = readSource('./reader-toc-panel.component.css');
 
     expect(template).toContain('[class.nostos-accent-rail]="isActive(item)"');
 
@@ -1915,8 +1926,8 @@ describe('ReaderShell toolbar contract', () => {
     // The drawer used to read as a table: a hairline under every row and a
     // vertical rule at every nesting level. Both are gone; hierarchy is the
     // book's own parts (small tracked labels) over its chapters (plain rows).
-    const template = readSource('./reader-shell.component.html');
-    const css = readSource('./reader-shell.component.css');
+    const template = readSource('./reader-toc-panel.component.html');
+    const css = readSource('./reader-toc-panel.component.css');
 
     const rowRule = css.slice(css.indexOf('.toc-item {'), css.indexOf('@media (pointer: coarse)'));
     expect(rowRule).not.toContain('border-bottom');
@@ -1952,8 +1963,8 @@ describe('ReaderShell toolbar contract', () => {
     // The dots sat 4px from the drawer's edge (measured x=1064..1154 in a panel
     // spanning 1060..1440) while the control directly above them was inset 20px:
     // the whole row hung 16px to the left of everything else (a #226 follow-up).
-    const css = readSource('./reader-shell.component.css');
-    const pensRule = css.slice(css.indexOf('.hl-pens {'), css.indexOf('.hl-pens.selection-pens'));
+    const css = readSource('./reader-notes-panel.component.css');
+    const pensRule = css.slice(css.indexOf('.hl-pens {'), css.length);
 
     // 12px above, 16px below: it was `margin: 12px 20px 0`, so the row's bottom
     // edge landed exactly on `.quick-note`'s top edge and the dots read as glued
@@ -2480,12 +2491,16 @@ describe('ReaderShell UI kit migration (#362)', () => {
   });
 
   it('keeps mobile touch floors on custom Reader controls after the migration', () => {
+    // Runner: the panel and the notes drawer are their own components now
+    // (#1607), each carrying its own phone floor.
+    const settingsCss = readSource('./reader-view-settings.component.css');
+    expect(settingsCss).toContain('.typo-step,');
+    expect(settingsCss).toContain('min-height: var(--control-h-touch)');
+
     const css = readSource('./reader-shell.component.css');
     const mobileStart = css.indexOf('@media (max-width: 768px)');
     const mobileEnd = css.indexOf('@media (max-width: 360px)');
     const mobile = css.slice(mobileStart, mobileEnd);
-
-    expect(mobile).toContain('.typo-step,');
     expect(mobile).toContain('.quick-actions button[appButton]');
     expect(mobile).toContain('min-height: var(--control-h-touch)');
   });
@@ -3033,7 +3048,7 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     expect(copy.getAttribute('aria-label')).toBe('Copy text');
     expect(el('selection-cancel')!.classList.contains('nostos-button--ghost')).toBe(true);
 
-    const css = readSource('./reader-shell.component.css');
+    const css = readSource('./reader-selection-surface.component.css');
     expect(css).toContain('.highlight-confirmation .reader-confirm-action {');
     expect(css).not.toMatch(/^\.reader-confirm-action \{/m);
   });
@@ -3309,7 +3324,7 @@ describe('ReaderShell highlight card: a saved highlight opened from the page', (
     const list = TestBed.inject(NotesService) as unknown as { list: ReturnType<typeof vi.fn> };
     list.list.mockReturnValueOnce(throwError(() => new Error('offline')));
 
-    component.loadNotes('book-hl');
+    component.loadNotes();
     render();
 
     const panel = fixture.nativeElement.querySelector('.notes-panel') as HTMLElement;
@@ -3474,7 +3489,7 @@ describe('ReaderShell highlight card: a saved highlight opened from the page', (
     service['list'].mockReturnValue(of([note({ content: 'Rage first.' })]));
     service['browse'].mockReturnValue(of({ items: [{ id: 'n-1', topicNames: ['wrath'] }], totalCount: 1 }));
     service['update'].mockReturnValue(of(note({ content: 'Rage, first of all.' })));
-    component.loadNotes('book-hl');
+    component.loadNotes();
     render();
 
     const item = fixture.debugElement.query(By.css('.notes-panel app-note-item')).componentInstance as {
@@ -3516,7 +3531,7 @@ describe('ReaderShell highlight card: a saved highlight opened from the page', (
       totalCount: 3,
     }));
     component.book.set({ ...component.book()!, id: 'book-hl', workId: 'work-1', otherEditions: [{ id: 'book-other', type: 'physical' }] } as never);
-    component.loadNotes('book-hl');
+    component.loadNotes();
     render();
 
     expect(service['browse']).toHaveBeenCalledWith({ workId: 'work-1', limit: 200, offset: 0 });
@@ -3536,7 +3551,7 @@ describe('ReaderShell highlight card: a saved highlight opened from the page', (
 
   it('shows no group for a book with one edition (#1302)', async () => {
     const component = await openBook('iliad.epub', []);
-    component.loadNotes('book-hl');
+    component.loadNotes();
     render();
 
     expect(fixture.nativeElement.querySelector('.notes-other')).toBeNull();
@@ -3859,5 +3874,72 @@ describe('ReaderShell book/chapter progress toggle (#1269)', () => {
     expect(toggleRule).toContain('min-height: 44px');
     const fillRule = css.slice(css.indexOf('.reader-progress-fill {'), css.indexOf('.reader-progress-fill::after'));
     expect(fillRule).not.toContain('transition');
+  });
+});
+
+/**
+ * Issue #1607: the shell may not leave work behind. Its document listener is
+ * removed on destroy, and its deferred callbacks live in one registry that is
+ * emptied with the reader.
+ */
+describe('ReaderShell leaves nothing running behind (#1607)', () => {
+  let fixture: ComponentFixture<ReaderShell>;
+  const epubBook = { ...audiobook, id: 'book-lifecycle', fileName: 'iliad.epub' } as Book;
+
+  beforeEach(() => {
+    booksGetSpy.mockReset();
+    localStorage.clear();
+    mockMatchMedia();
+  });
+
+  afterEach(() => vi.useRealTimers());
+
+  function render() {
+    fixture.detectChanges();
+    fixture.detectChanges();
+  }
+
+  async function open(): Promise<ReaderShell> {
+    booksGetSpy.mockReturnValue(of(epubBook));
+    fixture = await configureReaderShell({}, 'book-lifecycle');
+    render();
+    await mountReader(fixture);
+    fixture.componentInstance.ready.set(true);
+    render();
+    return fixture.componentInstance;
+  }
+
+  it('registers its document keydown listener and removes the same one on destroy', async () => {
+    const added = vi.spyOn(document, 'addEventListener');
+    const removed = vi.spyOn(document, 'removeEventListener');
+    const component = await open();
+
+    // Other overlays may also listen on the document; this is the shell's own.
+    const listener = component.onDocumentKeydown;
+    expect(added).toHaveBeenCalledWith('keydown', listener);
+
+    fixture.destroy();
+
+    expect(removed).toHaveBeenCalledWith('keydown', listener);
+    added.mockRestore();
+    removed.mockRestore();
+  });
+
+  it('cancels a pending search debounce when the reader is destroyed', async () => {
+    const component = await open();
+    const stub = fixture.debugElement.query(By.directive(EpubReaderStub))
+      .componentInstance as EpubReaderStub;
+    const timers = fixture.debugElement.injector.get(ReaderTimers);
+
+    const waiting = timers.size;
+    component.onSearchInput({ target: { value: 'wrath' } } as unknown as Event);
+    expect(timers.size).toBe(waiting + 1);
+
+    vi.useFakeTimers();
+    fixture.destroy();
+    expect(timers.size).toBe(0);
+
+    vi.advanceTimersByTime(1000);
+    expect(stub.search).not.toHaveBeenCalled();
   });
 });

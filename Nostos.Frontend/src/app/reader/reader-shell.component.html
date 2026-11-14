@@ -187,73 +187,14 @@
   </ng-template>
 
   @if (searchPanelOpen()) {
-  <section
-    class="reader-search-panel"
-    role="search"
-    aria-label="Search in book"
-    data-testid="reader-search-panel"
-  >
-    <div class="reader-search-row">
-      <!-- No clear button: Close sits right beside the field. -->
-      <nostos-search-field class="reader-search-field" size="sm" [clearable]="false">
-      <input
-        appInput
-        controlSize="compact"
-        class="reader-search-input"
-        type="search"
-        autocomplete="off"
-        spellcheck="false"
-        placeholder="Search this book…"
-        aria-label="Search this book"
-        [value]="searchQuery()"
-        (input)="onSearchInput($event)"
-      />
-      </nostos-search-field>
-      <button
-        appIconButton
-        icon="x"
-        size="md"
-        type="button"
-        (click)="closeSearch()"
-        aria-label="Close search"
-        title="Close search"
-      ></button>
-    </div>
-
-    <div class="reader-search-status-row">
-      <span class="reader-search-status" aria-live="polite">
-        @switch (readerSearchState().status) {
-          @case ('searching') { Searching book… }
-          @case ('not-found') { No matches }
-          @case ('ready') { {{ readerSearchState().current }} of {{ readerSearchState().total }} }
-          @default { Type to search }
-        }
-      </span>
-
-      <div class="reader-search-nav" role="group" aria-label="Search results">
-        <button
-          appIconButton
-          icon="caret-left"
-          size="md"
-          type="button"
-          (click)="previousSearchResult()"
-          [disabled]="readerSearchState().total === 0"
-          aria-label="Previous match"
-          title="Previous match"
-        ></button>
-        <button
-          appIconButton
-          icon="caret-right"
-          size="md"
-          type="button"
-          (click)="nextSearchResult()"
-          [disabled]="readerSearchState().total === 0"
-          aria-label="Next match"
-          title="Next match"
-        ></button>
-      </div>
-    </div>
-  </section>
+  <app-reader-search-panel
+    [query]="searchQuery()"
+    [state]="readerSearchState()"
+    (queryChange)="onSearchInputValue($event)"
+    (closed)="closeSearch()"
+    (previous)="previousSearchResult()"
+    (next)="nextSearchResult()"
+  />
   }
 
   <div class="reader-body">
@@ -375,597 +316,101 @@
       }
 
       @if (pendingSelectionText() !== null) {
-      <!-- One set of selection decisions (#650), placed two ways. A fine-pointer
-           desktop anchors them at the marked text; phones and touch-first
-           devices dock the bar at the top (#1344), clear of
-           Chrome's bottom Touch to Search sheet and of the selection handles. -->
-      <ng-template #selectionNoteField>
-        <div class="selection-note">
-          <app-note-composer
-            [compact]="true"
-            [(words)]="noteDraft"
-            [(topics)]="noteDraftTopics"
-            inputId="selection-note-input"
-            ariaLabel="Note for this passage"
-            testId="selection-note-input"
-            [rows]="3"
-            [disabled]="highlightSaving()"
-            (submitted)="saveNote()"
-          />
-        </div>
-      </ng-template>
-
-      <ng-template #selectionCommit>
-        <!-- Anchored (desktop menu): 32px desktop controls and a quiet Cancel.
-             Docked (phones): 44px touch targets, Cancel leading the commit. -->
-        @let anchored = !!selectionMenuPlacement();
-        <button
-          appButton
-          type="button"
-          [variant]="anchored ? 'ghost' : 'secondary'"
-          class="reader-confirm-action selection-cancel"
-          (click)="discardHighlight()"
-          [disabled]="highlightSaving()"
-          data-testid="selection-cancel"
-        >
-          Cancel
-        </button>
-        @if (noteDraftOpen()) {
-          <button
-            appButton
-            type="button"
-            variant="primary"
-            class="reader-confirm-action selection-primary"
-            (click)="saveNote()"
-            [disabled]="highlightSaving() || !noteDraftReady()"
-            [busy]="highlightSaving()"
-            data-testid="selection-save-note"
-          >
-            <nostos-icon name="check" [size]="16"></nostos-icon>
-            {{ highlightSaving() ? 'Saving…' : 'Save note' }}
-          </button>
-        } @else {
-          <button
-            appButton
-            type="button"
-            variant="secondary"
-            class="reader-confirm-action selection-note-action"
-            (click)="openNoteDraft()"
-            [disabled]="highlightSaving()"
-            data-testid="selection-add-note"
-          >
-            <nostos-icon name="note" [size]="16"></nostos-icon>
-            Add note
-          </button>
-          <button
-            appButton
-            type="button"
-            variant="primary"
-            class="reader-confirm-action selection-primary"
-            (click)="commitHighlight()"
-            [disabled]="highlightSaving()"
-            [busy]="highlightSaving()"
-            data-testid="selection-highlight"
-          >
-            <nostos-icon name="highlighter" [size]="16"></nostos-icon>
-            {{ highlightSaving() ? 'Saving…' : 'Highlight' }}
-          </button>
-        }
-      </ng-template>
-
-      <!-- Anchored desktop menu (#657): the quote, then one compact row. The
-           capture replaced the native selection, so Copy lives here; the
-           actions stay compact because a small pointer surface must not read
-           like a phone sheet. Ask Nostos carries its words anyway: an unlabelled
-           sparkle did not say what it would do with the passage. This is
-           deliberately unchanged by #1255. -->
-      <ng-template #selectionMenuActions>
-        @if (noteDraftOpen()) {
-          <ng-container [ngTemplateOutlet]="selectionNoteField"></ng-container>
-        }
-        <div class="confirmation-actions">
-          <button
-            appIconButton
-            icon="copy"
-            type="button"
-            class="selection-copy"
-            (click)="copySelection()"
-            [disabled]="highlightSaving()"
-            aria-label="Copy text"
-            title="Copy text"
-            data-testid="selection-copy"
-          ></button>
-          @if (canMarkPassage()) {
-            <!-- One end of a passage (issue #1014); the second mark, anywhere
-                 in the book and in either order, opens the save sheet. -->
-            <button
-              appIconButton
-              icon="scroll"
-              type="button"
-              class="selection-passage"
-              [class.is-completing]="!!passageMark()"
-              (click)="markPassage()"
-              [disabled]="highlightSaving()"
-              [attr.aria-label]="passageMark() ? 'Complete passage here' : 'Mark passage'"
-              [title]="passageMark() ? 'Complete passage here' : 'Mark passage'"
-              data-testid="selection-mark-passage"
-            ></button>
-          }
-          @if (askNostosAvailable()) {
-            <button
-              appButton
-              variant="ghost"
-              size="sm"
-              type="button"
-              class="selection-ask"
-              (click)="askNostosAboutSelection()"
-              [disabled]="highlightSaving()"
-              aria-label="Ask Nostos about this"
-              title="Ask Nostos about this"
-              data-testid="selection-ask-nostos"
-            >
-              <nostos-icon name="sparkle" [size]="14"></nostos-icon>
-              Ask Nostos
-            </button>
-          }
-          <ng-container [ngTemplateOutlet]="selectionCommit"></ng-container>
-        </div>
-      </ng-template>
-
-      @if (selectionMenuPlacement(); as place) {
-      <div class="selection-scrim" (click)="discardHighlight()" aria-hidden="true" data-testid="selection-scrim"></div>
-      <div
-        class="selection-menu"
-        role="dialog"
-        aria-label="Selection actions"
-        data-testid="selection-menu"
-        [style.left.px]="place.left"
-        [style.width.px]="place.width"
-        [style.top.px]="place.top"
-        [style.bottom.px]="place.bottom"
-      >
-        <blockquote appQuote size="sm" [lines]="3" [pen]="highlightColour()" class="selection-quote selected-text"
-          [title]="selectionPreview()">{{ selectionPreview() }}</blockquote>
-        <ng-container [ngTemplateOutlet]="selectionMenuActions"></ng-container>
-      </div>
-      } @else {
-      <!-- The docked phone bar (#1255), at the top (#1344): quote and pens on the first line,
-           labelled utilities on the second, the decisions on the third. Every
-           row is placed by markup, so an optional action (Ask Nostos, Mark
-           passage) can neither land alone nor leave a hole. -->
-      <div class="highlight-confirmation" [class.epub-actions]="fileType() === 'epub'" [class.has-note]="noteDraftOpen()" data-testid="selection-bar">
-        <div class="confirmation-content">
-          <div class="selection-quote-row">
-            <blockquote appQuote size="sm" [pen]="highlightColour()" class="selected-text">{{ selectionPreview() }}</blockquote>
-            <!-- The pens, where the mark is made: a dot picks the colour the
-                 offered passage is shown in and keeps it as the book's pen.
-                 Nothing is saved until Highlight or Save note. -->
-            @if (!noteDraftOpen()) {
-            <app-pen-swatches
-              class="hl-pens selection-pens"
-              [value]="highlightColour()"
-              [disabled]="highlightSaving()"
-              testIdPrefix="selection-pen-"
-              (chosen)="setHighlightColour($event)"
-            />
-            }
-          </div>
-          @if (noteDraftOpen()) {
-            <ng-container [ngTemplateOutlet]="selectionNoteField"></ng-container>
-          } @else {
-            <div class="selection-utilities">
-              <!-- Words, not two bare glyphs: the phone bar has no hover, so a
-                   label is the only thing that says what Copy and Ask do. -->
-              <button
-                appButton
-                type="button"
-                variant="ghost"
-                class="selection-copy"
-                (click)="copySelection()"
-                [disabled]="highlightSaving()"
-                aria-label="Copy text"
-                title="Copy text"
-                data-testid="selection-copy"
-              >
-                <nostos-icon name="copy" [size]="16"></nostos-icon>
-                Copy
-              </button>
-              @if (askNostosAvailable()) {
-                <button
-                  appButton
-                  type="button"
-                  variant="ghost"
-                  class="selection-ask"
-                  (click)="askNostosAboutSelection()"
-                  [disabled]="highlightSaving()"
-                  aria-label="Ask Nostos about this"
-                  title="Ask Nostos about this"
-                  data-testid="selection-ask-nostos"
-                >
-                  <nostos-icon name="sparkle" [size]="16"></nostos-icon>
-                  Ask Nostos
-                </button>
-              }
-              @if (canMarkPassage()) {
-                <!-- One end of a passage (#1014) is an occasional, two-step
-                     action: the shared menu gives it a labelled row instead of
-                     costing the bar a third button. -->
-                <button
-                  appIconButton
-                  icon="dots-three"
-                  type="button"
-                  class="selection-more"
-                  [nostosMenuTriggerFor]="selectionMore"
-                  aria-label="More selection actions"
-                  title="More selection actions"
-                  data-testid="selection-more"
-                ></button>
-                <ng-template #selectionMore>
-                  <nostos-menu aria-label="More selection actions">
-                    <button
-                      nostosMenuItem
-                      icon="scroll"
-                      [hint]="passageMark() ? 'Ends the passage started earlier' : 'Its other end can come later'"
-                      (triggered)="markPassage()"
-                      data-testid="selection-mark-passage"
-                    >{{ passageMark() ? 'Complete passage here' : 'Mark passage' }}</button>
-                  </nostos-menu>
-                </ng-template>
-              }
-            </div>
-          }
-          <div class="confirmation-actions selection-decisions">
-            <ng-container [ngTemplateOutlet]="selectionCommit"></ng-container>
-          </div>
-        </div>
-      </div>
-      }
+      <app-reader-selection-surface
+        [placement]="selectionMenuPlacement()"
+        [preview]="selectionPreview()"
+        [highlightColour]="highlightColour()"
+        [saving]="highlightSaving()"
+        [fileType]="fileType()"
+        [noteDraftOpen]="noteDraftOpen()"
+        [noteDraft]="noteDraft()"
+        [noteDraftTopics]="noteDraftTopics()"
+        [noteDraftReady]="noteDraftReady()"
+        [canMarkPassage]="canMarkPassage()"
+        [passageMarkActive]="!!passageMark()"
+        [askNostosAvailable]="askNostosAvailable()"
+        (cancelled)="discardHighlight()"
+        (copy)="copySelection()"
+        (markPassage)="markPassage()"
+        (askNostos)="askNostosAboutSelection()"
+        (highlight)="commitHighlight()"
+        (addNote)="openNoteDraft()"
+        (saveNote)="saveNote()"
+        (noteWordsChange)="noteDraft.set($event)"
+        (noteTopicsChange)="noteDraftTopics.set($event)"
+        (colourChosen)="setHighlightColour($event)"
+      />
       }
       @if (activeHighlight(); as hl) {
-      <!-- A saved highlight opened from the page. The same body is placed the
-           two ways the selection actions are: anchored at the mark on a
-           fine-pointer desktop, docked at the top on phones (#1344). -->
-      <ng-template #highlightCardBody>
-        @let anchoredCard = !!highlightCardPlacement();
-        <blockquote appQuote size="sm" [lines]="3" [pen]="activeHighlightPen()"
-          class="selection-quote highlight-card-quote selected-text"
-          [title]="activeHighlightPreview()">{{ activeHighlightPreview() }}</blockquote>
-
-        @if (highlightNoteEditing()) {
-          <div class="selection-note">
-            <app-note-composer
-              [compact]="true"
-              [(words)]="highlightNoteDraft"
-              [(topics)]="highlightNoteTopics"
-              inputId="highlight-card-input"
-              ariaLabel="Note for this highlight"
-              testId="highlight-card-input"
-              [rows]="3"
-              [disabled]="highlightNoteSaving()"
-              (submitted)="saveHighlightNote()"
-            />
-          </div>
-        } @else if (activeHighlightHasNote()) {
-          @if (activeHighlightWords()) {
-          <div
-            class="highlight-card-note"
-            [innerHTML]="activeHighlightWords() | noteFormat : topicMap()"
-            data-testid="highlight-card-note"
-          ></div>
-          }
-          @if (activeHighlightTopics().length) {
-          <app-topic-row
-            class="highlight-card-topics"
-            [names]="activeHighlightTopics()"
-            [topicMap]="topicMap()"
-            [editable]="false"
-          />
-          }
-        }
-
-        @if (!highlightNoteEditing()) {
-        <div class="highlight-card-tools">
-          <app-pen-swatches
-            class="hl-pens selection-pens"
-            [value]="activeHighlightPen()"
-            testIdPrefix="highlight-card-pen-"
-            (chosen)="recolourActiveHighlight($event)"
-          />
-          <div class="highlight-card-utilities">
-            <button
-              appIconButton
-              icon="copy"
-              type="button"
-              (click)="copyActiveHighlight()"
-              aria-label="Copy text"
-              title="Copy text"
-              data-testid="highlight-card-copy"
-            ></button>
-            @if (askNostosAvailable()) {
-              <button
-                appIconButton
-                icon="sparkle"
-                type="button"
-                (click)="askNostosAboutHighlight()"
-                aria-label="Ask Nostos about this"
-                title="Ask Nostos about this"
-                data-testid="highlight-card-ask-nostos"
-              ></button>
-            }
-            <button
-              appIconButton
-              icon="notebook"
-              type="button"
-              (click)="showActiveHighlightInNotes()"
-              aria-label="Show in notes & highlights"
-              title="Show in notes & highlights"
-              data-testid="highlight-card-show-in-notes"
-            ></button>
-            <button
-              appIconButton
-              icon="trash"
-              type="button"
-              class="highlight-card-delete"
-              (click)="deleteActiveHighlight()"
-              [disabled]="highlightNoteSaving()"
-              aria-label="Delete highlight"
-              title="Delete highlight"
-              data-testid="highlight-card-delete"
-            ></button>
-          </div>
-        </div>
-        }
-
-        <div class="highlight-card-actions">
-          @if (highlightNoteEditing()) {
-            <button
-              appButton
-              type="button"
-              [variant]="anchoredCard ? 'ghost' : 'secondary'"
-              class="reader-confirm-action"
-              (click)="cancelHighlightNoteEdit()"
-              [disabled]="highlightNoteSaving()"
-              data-testid="highlight-card-cancel"
-            >
-              Cancel
-            </button>
-            <button
-              appButton
-              type="button"
-              variant="primary"
-              class="reader-confirm-action"
-              (click)="saveHighlightNote()"
-              [disabled]="highlightNoteSaving() || !highlightNoteChanged()"
-              [busy]="highlightNoteSaving()"
-              data-testid="highlight-card-save"
-            >
-              <nostos-icon name="check" [size]="16"></nostos-icon>
-              {{ highlightNoteSaving() ? 'Saving…' : activeHighlightHasNote() && highlightNoteEmpty() ? 'Remove note' : 'Save note' }}
-            </button>
-          } @else {
-            <button
-              appButton
-              type="button"
-              [variant]="anchoredCard ? 'ghost' : 'secondary'"
-              class="reader-confirm-action"
-              (click)="closeHighlightCard()"
-              data-testid="highlight-card-close"
-            >
-              Close
-            </button>
-            <button
-              appButton
-              type="button"
-              [variant]="activeHighlightHasNote() ? 'secondary' : 'primary'"
-              class="reader-confirm-action"
-              (click)="editHighlightNote()"
-              data-autofocus
-              data-testid="highlight-card-edit"
-            >
-              <nostos-icon [name]="activeHighlightHasNote() ? 'pencil-simple' : 'note'" [size]="16"></nostos-icon>
-              {{ activeHighlightHasNote() ? 'Edit note' : 'Add note' }}
-            </button>
-          }
-        </div>
-      </ng-template>
-
-      @if (highlightCardPlacement(); as place) {
-      <div
-        class="selection-menu highlight-card"
-        role="dialog"
-        aria-label="Highlight"
-        data-testid="highlight-card"
-        [style.left.px]="place.left"
-        [style.width.px]="place.width"
-        [style.top.px]="place.top"
-        [style.bottom.px]="place.bottom"
-      >
-        <ng-container [ngTemplateOutlet]="highlightCardBody"></ng-container>
-      </div>
-      } @else {
-      <div
-        class="highlight-confirmation highlight-card highlight-card-docked"
-        role="dialog"
-        aria-label="Highlight"
-        data-testid="highlight-card"
-      >
-        <div class="highlight-card-sheet">
-          <ng-container [ngTemplateOutlet]="highlightCardBody"></ng-container>
-        </div>
-      </div>
-      }
+      <app-reader-highlight-card
+        [note]="hl"
+        [hasNote]="activeHighlightHasNote()"
+        [words]="activeHighlightWords()"
+        [topics]="activeHighlightTopics()"
+        [topicMap]="topicMap()"
+        [pen]="activeHighlightPen()"
+        [preview]="activeHighlightPreview()"
+        [placement]="highlightCardPlacement()"
+        [editing]="highlightNoteEditing()"
+        [noteDraft]="highlightNoteDraft()"
+        [noteDraftTopics]="highlightNoteTopics()"
+        [noteDraftSaving]="highlightNoteSaving()"
+        [noteChanged]="highlightNoteChanged()"
+        [noteEmpty]="highlightNoteEmpty()"
+        [askNostosAvailable]="askNostosAvailable()"
+        (closed)="closeHighlightCard()"
+        (editNote)="editHighlightNote()"
+        (cancelEdit)="cancelHighlightNoteEdit()"
+        (saveNote)="saveHighlightNote()"
+        (noteWordsChange)="highlightNoteDraft.set($event)"
+        (noteTopicsChange)="highlightNoteTopics.set($event)"
+        (colourChosen)="recolourActiveHighlight($event)"
+        (copy)="copyActiveHighlight()"
+        (askNostos)="askNostosAboutHighlight()"
+        (showInNotes)="showActiveHighlightInNotes()"
+        (deleteHighlight)="deleteActiveHighlight()"
+      />
       }
     </main>
 
-    <aside class="toc-panel" [class.open]="tocOpen() && fileType() !== 'pdf'">
-      <div class="panel-header">
-        <h2>Contents</h2>
-        <button appIconButton icon="x" [glyphSize]="20" (click)="toggleToc()" aria-label="Close contents"></button>
-      </div>
+    <!-- The drawers are their own components (#1607); the shell owns what is
+         open and hands each one the reader's own outline and notes. -->
+    <app-reader-toc-panel
+      [open]="tocOpen()"
+      [fileType]="fileType()"
+      [items]="toc()"
+      [activeTarget]="activeReader()?.currentLocationTarget?.() ?? null"
+      (closed)="toggleToc()"
+      (itemSelected)="handleTocClick($event)"
+    />
 
-      <div class="toc-list">
-        <ng-template #tocTemplate let-items>
-          @for (item of items; track $index) {
-          <div class="toc-item-wrapper">
-            <button
-              appButton
-              variant="ghost"
-              type="button"
-              class="toc-item"
-              [class.toc-item--group]="item.children && item.children.length > 0"
-              [class.active]="isActive(item)"
-              [class.nostos-accent-rail]="isActive(item)"
-              (click)="handleTocClick(item)"
-            >
-              {{ item.label }}
-            </button>
-
-            @if (item.children && item.children.length > 0) {
-            <div class="toc-subitems">
-              <ng-container
-                *ngTemplateOutlet="tocTemplate; context: { $implicit: item.children }"
-              ></ng-container>
-            </div>
-            }
-          </div>
-          }
-        </ng-template>
-
-        <ng-container *ngTemplateOutlet="tocTemplate; context: { $implicit: toc() }"></ng-container>
-
-        @if (toc().length === 0) {
-        <nostos-empty-state compact message="No contents available." />
-        }
-      </div>
-    </aside>
-
-    <aside class="notes-panel" [class.open]="notesOpen()">
-      <div class="notes-header">
-        <h2>Notes & highlights</h2>
-        <button appIconButton icon="x" [glyphSize]="20" (click)="toggleNotes()" aria-label="Close notes"></button>
-      </div>
-
-      @if (fileType() !== 'audio') {
-      <!-- The highlighter pens (issue #208). Four fills, remembered per book;
-           the swatch is the label, so this stays a row of dots rather than a row
-           of words. `aria-pressed` carries the choice to assistive tech, and the
-           title is the one discoverable name for a dot (a #226 follow-up). -->
-      <app-pen-swatches
-        class="hl-pens"
-        [value]="highlightColour()"
-        testIdPrefix="reader-highlight-pen-"
-        (chosen)="setHighlightColour($event)"
-      />
-      }
-
-      <div class="quick-note">
-        <div class="input-wrapper">
-          <app-note-composer
-            [words]="quickNoteContent()"
-            (wordsChange)="onQuickNoteInput($event)"
-            [(topics)]="quickNoteTopics"
-            ariaLabel="Quick note"
-            testId="quick-note-input"
-            [rows]="2"
-            (submitted)="saveQuickNote()"
-          />
-        </div>
-        <div class="quick-actions">
-          @if (quickNotePinnedTime(); as time) {
-          <!-- The audio moment this draft will be saved at (issue #906). The
-               row's height comes from Save, so showing it moves nothing. -->
-          <span class="quick-note-time" data-testid="quick-note-time">at {{ time }}</span>
-          }
-          <button
-            appButton
-            type="button"
-            variant="primary"
-            (click)="saveQuickNote()"
-            [disabled]="!quickNoteReady() || quickNoteSaving()"
-            [busy]="quickNoteSaving()"
-          >
-            {{ quickNoteSaving() ? 'Saving…' : 'Save' }}
-          </button>
-        </div>
-      </div>
-
-      <div class="notes-list">
-        @for (row of noteRows(); track row.note.id) {
-        <app-note-item
-          [note]="row.item"
-          [class.is-flashed]="flashedNoteId() === row.note.id"
-          [topics]="brain.topics()"
-          [topicMap]="brain.lookup()"
-          [showBook]="false"
-          [showMoreFromBook]="false"
-          [canSelect]="false"
-          [inBook]="true"
-          [audioTime]="noteAudioTime(row.note)"
-          [passageViewerOptions]="passageViewerOptions"
-          [busy]="noteActions.busy().has(row.note.id)"
-          [suggestions]="suggestions.namesFor(row.note.id)"
-          [suggestionState]="suggestions.stateFor(row.note.id)"
-          (topicAdded)="noteActions.addTopic(row.item, $event)"
-          (topicRemoved)="noteActions.removeTopic(row.item, $event)"
-          (pickerOpened)="suggestions.request(row.item)"
-          (pickerClosed)="suggestions.closeFor(row.note.id)"
-          (edited)="onUpdateNote($event)"
-          (keepWithWriting)="noteActions.keepWithWriting([row.note.id])"
-          (deleteRequested)="onDeleteNote(row.note.id)"
-          (restored)="noteActions.restored($event)"
-          (jumpRequested)="onJumpToNote(row.note)"
-        />
-        } @empty {
-        @if (notesFailed()) {
-        <nostos-empty-state compact error message="Your notes could not be loaded." (retry)="retryNotes()" />
-        } @else {
-        <nostos-empty-state
-          compact
-          concept="note"
-          message="No notes yet."
-          detail="Highlight text or use the box above to add one."
-        />
-        }
-        }
-
-        @if (otherNotesLabel(); as otherLabel) {
-        <!-- The same book's notes from its other editions: collapsed, listed
-             after this edition's own, and never drawn on the page. Opening one
-             goes to its edition at its place. -->
-        <section class="notes-other" data-testid="notes-other-editions">
-          <button
-            appButton
-            variant="ghost"
-            size="sm"
-            type="button"
-            class="notes-other-toggle"
-            [attr.aria-expanded]="otherNotesOpen()"
-            aria-controls="notes-other-list"
-            (click)="otherNotesOpen.set(!otherNotesOpen())"
-          >
-            <nostos-icon [name]="otherNotesOpen() ? 'caret-down' : 'caret-right'" [size]="14" aria-hidden="true" />
-            {{ otherLabel }}
-          </button>
-          @if (otherNotesOpen()) {
-          <div id="notes-other-list">
-            @for (hit of otherEditionNotes(); track hit.id) {
-            <app-note-item
-              [note]="hit"
-              [topics]="brain.topics()"
-              [topicMap]="brain.lookup()"
-              [showBook]="false"
-              [showFormat]="true"
-              [showMoreFromBook]="false"
-              [canSelect]="false"
-              [readOnly]="true"
-            />
-            }
-          </div>
-          }
-        </section>
-        }
-      </div>
-    </aside>
+    <app-reader-notes-panel
+      [open]="notesOpen()"
+      [highlightColour]="highlightColour()"
+      [fileType]="fileType()"
+      [rows]="noteRows()"
+      [notesFailed]="notesFailed()"
+      [flashedNoteId]="flashedNoteId()"
+      [otherEditionNotes]="otherEditionNotes()"
+      [otherNotesLabel]="otherNotesLabel()"
+      [otherNotesOpen]="otherNotesOpen()"
+      [passageViewerOptions]="passageViewerOptions"
+      [quickNoteContent]="quickNoteContent()"
+      [quickNoteTopics]="quickNoteTopics()"
+      [quickNoteSaving]="quickNoteSaving()"
+      [quickNoteReady]="quickNoteReady()"
+      [quickNotePinnedTime]="quickNotePinnedTime()"
+      (closed)="toggleNotes()"
+      (colourChosen)="setHighlightColour($event)"
+      (retry)="retryNotes()"
+      (quickNoteWordsChange)="onQuickNoteInput($event)"
+      (quickNoteTopicsChange)="quickNoteTopics.set($event)"
+      (quickNoteSave)="saveQuickNote()"
+      (otherNotesOpenChange)="otherNotesOpen.set($event)"
+      (edit)="onUpdateNote($event)"
+      (delete)="onDeleteNote($event)"
+      (jump)="onJumpToNote($event)"
+    />
   </div>
 
   <!-- The pager. This is the one piece of chrome that stays at the bottom on
@@ -1062,210 +507,17 @@
   <!-- Delete and Keep with writing, from a note's menu or a highlight's card: the Brain's own dialogs. -->
   <app-brain-note-dialogs />
 
-  <!-- View settings: typeface, text size, line height, margins (EPUB) or the
-       page's mode, zoom and fit (PDF). The shared settings popover (issue #1201)
-       hangs it under the Aa control and owns Escape, a press outside, focus and
-       the phone sheet. State lives on the readers (persisted reader-wide); the
-       shell only owns whether the panel is open. -->
+  <!-- View settings: the app theme, then the open format's own rows. The
+       panel is its own component (#1607); the shell owns only whether it is
+       open and the Aa control it hangs from. -->
   @if (typoOpen() && (fileType() === 'epub' || fileType() === 'pdf')) {
-  <nostos-settings-popover
+  <app-reader-view-settings
     [origin]="typoToggleButton?.nativeElement ?? null"
-    heading="View settings"
+    [fileType]="fileType()"
+    [epub]="epubReader() ?? null"
+    [pdf]="pdfReader() ?? null"
     (dismissed)="closeTypo()"
-  >
-  <div class="typo-panel" data-testid="typo-panel">
-    <!-- App-wide theme (#651). It drives ThemeService, the one owner of the
-         theme, so it is the same setting as Settings → Appearance and both
-         readers follow it without reloading. Kept first and identical for EPUB
-         and PDF; PDF "Page colours" below stays a separate page-pixel control. -->
-    <!-- Grouped by what a setting changes: the app, the page, the text. Each
-         group has a titled section with a hairline above it, so a row reads as
-         belonging to its group rather than to one flat list. -->
-    <section class="typo-group" aria-labelledby="typo-group-appearance">
-    <h3 class="typo-group-title" id="typo-group-appearance">Appearance</h3>
-    <div class="typo-row" data-testid="reader-appearance">
-      <span class="typo-label" aria-hidden="true">Theme</span>
-      <!-- The caption names the theme and its scope: it applies throughout Nostos. -->
-      <nostos-theme-picker class="typo-opts" label="Theme" note="applies throughout Nostos" />
-    </div>
-    <!-- The PDF's page pixels, so it lives with the app theme it follows. -->
-    @if (fileType() === 'pdf' && pdfReader()?.isDark()) {
-    <div class="typo-row">
-      <span class="typo-label" id="pdf-colours">Page colours</span>
-      <nostos-segmented
-        class="typo-opts"
-        fill
-        aria-labelledby="pdf-colours"
-        [options]="pageColourOptions"
-        [value]="pdfReader()?.pageInverted() ? 'inverted' : 'printed'"
-        (valueChange)="pdfReader()?.setPageInverted($event === 'inverted')"
-      />
-    </div>
-    }
-    </section>
-
-    @if (fileType() === 'pdf') {
-    <section class="typo-group" aria-labelledby="typo-group-page">
-    <h3 class="typo-group-title" id="typo-group-page">Page</h3>
-    <!-- Fixed layout: how the pages advance, the render scale, and the fits it
-         can snap to. Zoom used to be two header buttons; the modes and presets
-         had nowhere to live at all. -->
-    <div class="typo-row">
-      <span class="typo-label" id="pdf-mode">Reading mode</span>
-      <nostos-segmented
-        class="typo-opts"
-        fill
-        aria-labelledby="pdf-mode"
-        [options]="pdfReadingModes()"
-        [value]="pdfScrollMode()"
-        (valueChange)="setScrollMode($event)"
-      />
-    </div>
-    <div class="typo-row">
-      <span class="typo-label" id="pdf-zoom">Zoom</span>
-      <div class="typo-steps" role="group" aria-labelledby="pdf-zoom">
-        <button
-          appButton
-          size="sm"
-          type="button"
-          class="typo-step"
-          (click)="zoomOut()"
-          aria-label="Zoom out"
-          title="Zoom out"
-        >A−</button>
-        <span class="typo-step-value">{{ pdfZoomLabel() }}</span>
-        <button
-          appButton
-          size="sm"
-          type="button"
-          class="typo-step"
-          (click)="zoomIn()"
-          aria-label="Zoom in"
-          title="Zoom in"
-        >A+</button>
-      </div>
-    </div>
-    <div class="typo-row">
-      <span class="typo-label" id="pdf-rotation">Rotation</span>
-      <div class="typo-steps" role="group" aria-labelledby="pdf-rotation">
-        <button
-          appButton
-          size="sm"
-          type="button"
-          class="typo-step"
-          (click)="pdfReader()?.rotateCounterclockwise()"
-          aria-label="Rotate left"
-          title="Rotate left"
-        >Left</button>
-        <button
-          appButton
-          size="sm"
-          type="button"
-          class="typo-step"
-          (click)="pdfReader()?.resetRotation()"
-          aria-label="Reset rotation"
-          title="Reset rotation"
-        >Reset</button>
-        <button
-          appButton
-          size="sm"
-          type="button"
-          class="typo-step"
-          (click)="pdfReader()?.rotateClockwise()"
-          aria-label="Rotate right"
-          title="Rotate right"
-        >Right</button>
-      </div>
-    </div>
-    <div class="typo-row typo-row-stacked">
-      <span class="typo-label" id="pdf-fit">Page fit</span>
-      <nostos-segmented
-        class="typo-opts"
-        fill
-        aria-labelledby="pdf-fit"
-        [options]="pdfZoomPresets()"
-        [value]="pdfZoomPreset()"
-        (valueChange)="setZoomPreset($event)"
-      />
-    </div>
-    </section>
-    } @if (epubReader(); as epub) {
-    <section class="typo-group" aria-labelledby="typo-group-text">
-    <div class="typo-group-head">
-      <h3 class="typo-group-title" id="typo-group-text">Text</h3>
-      <!-- Reset sits on the group it resets: it only ever touched these rows. -->
-      <button
-        appButton
-        type="button"
-        variant="ghost"
-        size="sm"
-        class="typo-reset"
-        aria-label="Reset text settings"
-        title="Reset text settings"
-        (click)="epub.resetTypography()"
-      >Reset</button>
-    </div>
-    <div class="typo-row typo-row-stacked">
-      <span class="typo-label" id="typo-typeface">Typeface</span>
-      <nostos-segmented
-        class="typo-opts"
-        fill
-        aria-labelledby="typo-typeface"
-        [options]="epub.fontOptions"
-        [value]="epub.typography().fontFamily"
-        (valueChange)="epub.setTypography({ fontFamily: $event })"
-      />
-    </div>
-    <div class="typo-row">
-      <span class="typo-label" id="typo-size">Text size</span>
-      <div class="typo-steps" role="group" aria-labelledby="typo-size">
-        <button
-          appButton
-          size="sm"
-          type="button"
-          class="typo-step"
-          (click)="epub.zoomOut()"
-          aria-label="Smaller text"
-          title="Smaller text"
-        >A−</button>
-        <span class="typo-step-value">{{ epub.fontSizePercent() }}%</span>
-        <button
-          appButton
-          size="sm"
-          type="button"
-          class="typo-step"
-          (click)="epub.zoomIn()"
-          aria-label="Larger text"
-          title="Larger text"
-        >A+</button>
-      </div>
-    </div>
-    <div class="typo-row">
-      <span class="typo-label" id="typo-line">Line height</span>
-      <nostos-segmented
-        class="typo-opts"
-        fill
-        aria-labelledby="typo-line"
-        [options]="lineHeightOptions"
-        [value]="epub.typography().lineHeight"
-        (valueChange)="epub.setTypography({ lineHeight: $event })"
-      />
-    </div>
-    <div class="typo-row">
-      <span class="typo-label" id="typo-margins">Margins</span>
-      <nostos-segmented
-        class="typo-opts"
-        fill
-        aria-labelledby="typo-margins"
-        [options]="epub.marginOptions"
-        [value]="epub.typography().margin"
-        (valueChange)="epub.setTypography({ margin: $event })"
-      />
-    </div>
-    </section>
-    }
-  </div>
-  </nostos-settings-popover>
+  />
   }
 </div>
 
@@ -1277,99 +529,21 @@
   (closed)="switchEditionOpen.set(false)"
 />
 
-<!-- Save a passage (issue #1014): both ends are marked; title it and keep it. -->
-<app-modal-shell
-  closeLabel="Close passage dialog"
+<!-- Save a passage (issue #1014). The sheet is its own component (#1607); the
+     shell keeps the draft it builds and the save it makes. -->
+<app-reader-passage-sheet
   [isOpen]="passageSheetOpen()"
-  variant="sheet"
-  cardClass="passage-sheet-card"
-  [maxWidth]="'560px'"
-  [layer]="120"
-  [busy]="passageSaving()"
-  [trapFocus]="true"
-  ariaLabelledBy="passage-sheet-title"
-  [style.--modal-head-padding]="'1.1rem 1.25rem 0.85rem'"
+  [draft]="passageDraft()"
+  [building]="passageBuilding()"
+  [buildFailed]="passageBuildFailed()"
+  [saving]="passageSaving()"
+  [title]="passageTitle()"
+  [note]="passageNote()"
+  [topics]="passageTopics()"
+  (titleChange)="passageTitle.set($event)"
+  (noteChange)="passageNote.set($event)"
+  (topicsChange)="passageTopics.set($event)"
+  (draftChange)="passageDraft.set($event)"
+  (save)="savePassage()"
   (closed)="closePassageSheet()"
->
-  <header class="passage-sheet-head" shellHeader>
-    <span class="passage-sheet-glyph" aria-hidden="true"><nostos-icon concept="passage" [size]="18"></nostos-icon></span>
-    <div class="passage-sheet-heading">
-      <h2 id="passage-sheet-title" class="passage-sheet-title">Save passage</h2>
-      @if (passageDraft(); as draft) {
-      <p class="passage-sheet-meta" data-testid="passage-sheet-size">{{ passageDraftSize() }}</p>
-      }
-    </div>
-  </header>
-
-  <div class="passage-sheet-body">
-    @if (passageBuilding()) {
-    <p class="passage-sheet-status" role="status">Gathering the passage…</p>
-    } @else if (passageBuildFailed()) {
-    <p class="passage-sheet-status" role="alert" data-testid="passage-sheet-error">
-      The passage between those two marks could not be read. Mark both ends again.
-    </p>
-    } @else if (passageDraft(); as draft) {
-    <label class="passage-sheet-label" for="passage-sheet-title-input">Title</label>
-    <input
-      appInput
-      id="passage-sheet-title-input"
-      class="passage-sheet-input"
-      maxlength="300"
-      [value]="passageTitle()"
-      (input)="passageTitle.set($any($event.target).value)"
-      (keydown.enter)="savePassage()"
-      data-testid="passage-sheet-title-input"
-    />
-
-    @if (draft.anchorKind === 'audio_timestamp') {
-    <!-- A clip's ends are set by ear, so each moves by 15 seconds here. -->
-    <div class="passage-sheet-nudges" data-testid="passage-sheet-nudges">
-      <div class="passage-sheet-nudge">
-        <span class="passage-sheet-nudge-label">Starts at <strong>{{ formatAudioTime(+draft.start) }}</strong></span>
-        <button appButton variant="secondary" size="sm" type="button" (click)="nudgePassage('start', -15)" aria-label="Start 15 seconds earlier">−15s</button>
-        <button appButton variant="secondary" size="sm" type="button" (click)="nudgePassage('start', 15)" aria-label="Start 15 seconds later">+15s</button>
-      </div>
-      <div class="passage-sheet-nudge">
-        <span class="passage-sheet-nudge-label">Ends at <strong>{{ formatAudioTime(+draft.end) }}</strong></span>
-        <button appButton variant="secondary" size="sm" type="button" (click)="nudgePassage('end', -15)" aria-label="End 15 seconds earlier">−15s</button>
-        <button appButton variant="secondary" size="sm" type="button" (click)="nudgePassage('end', 15)" aria-label="End 15 seconds later" data-testid="passage-sheet-end-later">+15s</button>
-      </div>
-    </div>
-    } @else {
-    <blockquote appQuote class="passage-sheet-excerpt" data-testid="passage-sheet-excerpt">
-      <p class="passage-sheet-opening">{{ draft.opening }}</p>
-      @if (draft.closing !== draft.opening) {
-      <p class="passage-sheet-closing">{{ draft.closing }}</p>
-      }
-    </blockquote>
-    }
-
-    <label class="passage-sheet-label" for="passage-sheet-note">Note <span class="passage-sheet-optional">(optional)</span></label>
-    <app-note-composer
-      [(words)]="passageNote"
-      [(topics)]="passageTopics"
-      inputId="passage-sheet-note"
-      testId="passage-sheet-note"
-      placeholder="Why keep this passage? Link a [[Topic]]"
-      [rows]="3"
-      [disabled]="passageSaving()"
-    />
-    }
-  </div>
-
-  <div class="passage-sheet-actions" shellActions>
-    <button appButton variant="ghost" type="button" [disabled]="passageSaving()" (click)="closePassageSheet()">Cancel</button>
-    <button
-      appButton
-      variant="primary"
-      type="button"
-      [disabled]="!passageDraft() || !passageTitle().trim() || passageSaving()"
-      [busy]="passageSaving()"
-      data-testid="passage-sheet-save"
-      (click)="savePassage()"
-    >
-      <nostos-icon concept="passage" [size]="16"></nostos-icon>
-      {{ passageSaving() ? 'Saving…' : 'Save passage' }}
-    </button>
-  </div>
-</app-modal-shell>
+/>

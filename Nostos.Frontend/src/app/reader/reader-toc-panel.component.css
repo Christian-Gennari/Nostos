@@ -1,0 +1,146 @@
+/* The contents drawer. It overlays the page the way a reader's drawers do, but
+   it is drawn as the app's card: surface fill, one hairline, one token shadow. */
+.toc-panel {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--panel-width);
+  max-width: 100%;
+  background: var(--bg-surface);
+  z-index: 100;
+  display: none;
+  flex-direction: column;
+  box-shadow: var(--shadow-md);
+  border-right: 1px solid var(--border-color);
+}
+.toc-panel.open {
+  display: flex;
+}
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-height: var(--header-height);
+  padding: 0.5rem 0.5rem 0.5rem 1.25rem;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-surface);
+  flex-shrink: 0;
+}
+/* Same heading treatment as the surfaces: Newsreader, tightened, no shouting. */
+.panel-header h2 {
+  margin: 0;
+  font-family: 'Newsreader', serif;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--color-text-main);
+}
+
+/* Contents. The book's own hierarchy is the whole structure: parts read as
+   quiet section labels, chapters as rows. There is no rule between rows and no
+   rail per nesting level — the old per-row hairline plus a vertical line at
+   every depth turned the list into a table, and the lines, not the titles, were
+   what the eye landed on. Space, weight and indent do the work instead. */
+.toc-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.75rem 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overscroll-behavior: contain;
+}
+.toc-subitems {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 0.8rem;
+  margin-top: 2px;
+}
+.toc-item {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+  min-height: var(--control-h-md);
+  padding: 0.45rem 0.75rem;
+  border: 0;
+  border-radius: var(--radius-row);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  text-align: left;
+  white-space: normal;
+  background: transparent;
+  color: var(--color-text-main);
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+@media (pointer: coarse) {
+  .toc-item {
+    min-height: var(--control-h-touch);
+  }
+}
+.toc-item:hover {
+  background-color: var(--bg-hover);
+  color: var(--color-text-main);
+}
+.toc-item:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
+}
+/* A parent in the book's own outline is a section, not a chapter: a small,
+   tracked label that groups the rows beneath it. */
+.toc-item--group {
+  margin-top: 0.5rem;
+  padding: 0.35rem 0.75rem;
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.06em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+.toc-item-wrapper:first-child > .toc-item--group {
+  margin-top: 0;
+}
+.toc-item.active {
+  --nostos-accent-rail-color: var(--color-brand-accent);
+  /* Inside the row's rounded corners, so the rail reads as a mark on the
+     selected row rather than a square post sticking out of it. */
+  --nostos-accent-rail-block-start: 6px;
+  --nostos-accent-rail-block-end: 6px;
+  --nostos-accent-rail-inline-start: 2px;
+  background-color: var(--bg-hover);
+  color: var(--color-brand-accent);
+}
+/* The selected row keeps its own ink under the pointer; the ghost button's
+   hover would otherwise paint it the same as its neighbours. */
+.toc-item.active:hover {
+  color: var(--color-brand-accent);
+}
+
+@media (max-width: 768px) {
+  .toc-panel {
+    width: 100%;
+  }
+  .panel-header {
+    padding-top: max(0.5rem, env(safe-area-inset-top, 0px));
+    padding-inline-start: max(1.25rem, env(safe-area-inset-left, 0px));
+    padding-inline-end: max(0.5rem, env(safe-area-inset-right, 0px));
+  }
+  .toc-list {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* The audio header keeps its safe area itself, so the drawer's does not. */
+@media (max-width: 768px) {
+  :host-context(.reader-layout.audio-immersive) .panel-header {
+    padding-top: 0.5rem;
+  }
+}

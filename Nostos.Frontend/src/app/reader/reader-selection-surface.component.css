@@ -1,0 +1,216 @@
+
+.confirmation-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1.25rem;
+  min-height: 56px;
+}
+
+/* The quote is the shared quote block (ui/quote-block), in the pen it will be
+   marked with. Docked beside the dots it is one line that gives way to them. */
+.selected-text {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+.highlight-confirmation .selected-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.confirmation-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+/* Touch targets for the docked bar only. The anchored desktop menu keeps the
+   primitives' own 32px desktop height (#657); 44px buttons there made a small
+   pointer surface read like a phone sheet. */
+.highlight-confirmation .reader-confirm-action {
+  min-height: var(--control-h-touch);
+}
+
+/* --- Selection actions (#650) ---------------------------------------------------
+   The same actions in two placements. Docked at the top (phones, touch-first
+   devices, #1344): the bar above. Anchored (fine-pointer desktop): a small surface next to
+   the marked text, positioned by the shell in viewport coordinates, with a
+   transparent scrim behind it so a click outside dismisses without saving.
+   Colours come only from tokens. */
+.selection-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 59;
+  background: transparent;
+}
+
+.selection-menu {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  /* The floating-panel recipe the Dropdown primitive uses: surface, hairline,
+     the popover corner, shadow-md. */
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-popover);
+  box-shadow: var(--shadow-md);
+  animation: selection-menu-in var(--motion-fast) var(--ease-out);
+}
+
+@keyframes selection-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .selection-menu {
+    animation: none;
+  }
+}
+
+.selection-menu .confirmation-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px 6px;
+}
+
+/* The icon utilities keep their full 32px square; squeezing them is what
+   pushed them out of the menu's padding. */
+.selection-menu .confirmation-actions > [appIconButton] {
+  flex-shrink: 0;
+}
+
+/* Copy, Mark passage and Ask Nostos are utilities, not choices about the mark:
+   in the anchored menu they lead as one group, and the decisions (Cancel,
+   Add note, Highlight) sit apart at the end. The docked bar groups them on
+   their own row instead. */
+.selection-menu .selection-cancel {
+  margin-left: auto;
+}
+
+.selection-note {
+  display: flex;
+  width: 100%;
+}
+
+.selection-note app-note-composer {
+  flex: 1 1 auto;
+}
+
+/* The docked bar is three explicit groups (#1255): the passage and its pens,
+   the labelled utilities, then the decisions. Phones stack them (see the phone
+   block); a wide docked bar keeps them on one line and wraps only if it must. */
+.selection-quote-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.selection-utilities {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.selection-decisions {
+  justify-content: flex-end;
+}
+
+/* Stacked, the column must not wrap: a wrapping column is a multi-line flex
+   container, whose line is as wide as its widest item, so the nowrap quote
+   stretched the actions and Save note with it (39f6dfd1). */
+.highlight-confirmation.has-note .confirmation-content {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: stretch;
+}
+
+.highlight-confirmation.has-note .confirmation-actions {
+  justify-content: flex-end;
+}
+
+/* The mark button reads as the step it completes once one end is marked. */
+.selection-passage.is-completing {
+  color: var(--color-text-main);
+  background: var(--color-accent-bg);
+}
+
+/* The same dots in the docked selection bar, beside the quote. */
+.hl-pens.selection-pens {
+  margin: 0;
+  flex-shrink: 0;
+}
+
+@media (max-width: 768px) {
+  .highlight-confirmation .confirmation-content {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+  }
+  /* #1255: the docked bar is three rows, each placed by markup. The quote gives
+     way to the pens on the first line; a wider bar keeps them on one row. */
+  .selection-quote-row {
+    flex: none;
+    gap: 0.75rem;
+  }
+  /* With or without the pens beside it, the quote gives way: its text never
+     wraps, so an unconstrained width would scroll the whole bar sideways. */
+  .selection-quote-row .selected-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 100%;
+  }
+  /* Utilities above the decisions, starting at the content edge so Copy lines
+     up with the quote and Cancel; the occasional More action sits at the far
+     end. Ghost buttons carry visible words, and keep the touch floor the bar
+     has always had. */
+  .selection-utilities {
+    justify-content: flex-start;
+    gap: 0.25rem;
+  }
+  .selection-utilities > button {
+    min-height: var(--control-h-touch);
+  }
+  .selection-more {
+    width: var(--control-h-touch);
+    height: var(--control-h-touch);
+    margin-left: auto;
+  }
+  .selection-decisions {
+    justify-content: flex-start;
+    gap: 0.5rem;
+  }
+  /* Cancel leads; the commit pair keeps the thumb corner. */
+  .selection-decisions .selection-cancel {
+    margin-right: auto;
+  }
+}
+
+@media (max-width: 360px) {
+  /* Three labelled decisions at 320px: tighten the gaps and the inline padding,
+     never the touch height, so Cancel + Add note + Highlight stay on one row. */
+  .selection-utilities {
+    gap: 0.125rem;
+  }
+  .selection-decisions {
+    gap: 0.375rem;
+  }
+  .selection-decisions .reader-confirm-action {
+    padding-inline: 0.625rem;
+  }
+}

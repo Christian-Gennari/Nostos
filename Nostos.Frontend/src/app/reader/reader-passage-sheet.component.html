@@ -1,0 +1,98 @@
+<!-- Save a passage (issue #1014): both ends are marked; title it and keep it. -->
+<app-modal-shell
+  closeLabel="Close passage dialog"
+  [isOpen]="isOpen()"
+  variant="sheet"
+  cardClass="passage-sheet-card"
+  [maxWidth]="'560px'"
+  [layer]="120"
+  [busy]="saving()"
+  [trapFocus]="true"
+  ariaLabelledBy="passage-sheet-title"
+  [style.--modal-head-padding]="'1.1rem 1.25rem 0.85rem'"
+  (closed)="closed.emit()"
+>
+  <header class="passage-sheet-head" shellHeader>
+    <span class="passage-sheet-glyph" aria-hidden="true"><nostos-icon concept="passage" [size]="18"></nostos-icon></span>
+    <div class="passage-sheet-heading">
+      <h2 id="passage-sheet-title" class="passage-sheet-title">Save passage</h2>
+      @if (draft()) {
+      <p class="passage-sheet-meta" data-testid="passage-sheet-size">{{ draftSize() }}</p>
+      }
+    </div>
+  </header>
+
+  <div class="passage-sheet-body">
+    @if (building()) {
+    <p class="passage-sheet-status" role="status">Gathering the passage…</p>
+    } @else if (buildFailed()) {
+    <p class="passage-sheet-status" role="alert" data-testid="passage-sheet-error">
+      The passage between those two marks could not be read. Mark both ends again.
+    </p>
+    } @else if (draft(); as draft) {
+    <label class="passage-sheet-label" for="passage-sheet-title-input">Title</label>
+    <input
+      appInput
+      id="passage-sheet-title-input"
+      class="passage-sheet-input"
+      maxlength="300"
+      [value]="title()"
+      (input)="titleChange.emit($any($event.target).value)"
+      (keydown.enter)="save.emit()"
+      data-testid="passage-sheet-title-input"
+    />
+
+    @if (draft.anchorKind === 'audio_timestamp') {
+    <!-- A clip's ends are set by ear, so each moves by 15 seconds here. -->
+    <div class="passage-sheet-nudges" data-testid="passage-sheet-nudges">
+      <div class="passage-sheet-nudge">
+        <span class="passage-sheet-nudge-label">Starts at <strong>{{ audioTime(+draft.start) }}</strong></span>
+        <button appButton variant="secondary" size="sm" type="button" (click)="nudge('start', -15)" aria-label="Start 15 seconds earlier">−15s</button>
+        <button appButton variant="secondary" size="sm" type="button" (click)="nudge('start', 15)" aria-label="Start 15 seconds later">+15s</button>
+      </div>
+      <div class="passage-sheet-nudge">
+        <span class="passage-sheet-nudge-label">Ends at <strong>{{ audioTime(+draft.end) }}</strong></span>
+        <button appButton variant="secondary" size="sm" type="button" (click)="nudge('end', -15)" aria-label="End 15 seconds earlier">−15s</button>
+        <button appButton variant="secondary" size="sm" type="button" (click)="nudge('end', 15)" aria-label="End 15 seconds later" data-testid="passage-sheet-end-later">+15s</button>
+      </div>
+    </div>
+    } @else {
+    <blockquote appQuote class="passage-sheet-excerpt" data-testid="passage-sheet-excerpt">
+      <p class="passage-sheet-opening">{{ draft.opening }}</p>
+      @if (draft.closing !== draft.opening) {
+      <p class="passage-sheet-closing">{{ draft.closing }}</p>
+      }
+    </blockquote>
+    }
+
+    <label class="passage-sheet-label" for="passage-sheet-note">Note <span class="passage-sheet-optional">(optional)</span></label>
+    <app-note-composer
+      [words]="note()"
+      (wordsChange)="noteChange.emit($event)"
+      [topics]="topics()"
+      (topicsChange)="topicsChange.emit($event)"
+      inputId="passage-sheet-note"
+      testId="passage-sheet-note"
+      placeholder="Why keep this passage? Link a [[Topic]]"
+      [rows]="3"
+      [disabled]="saving()"
+    />
+    }
+  </div>
+
+  <div class="passage-sheet-actions" shellActions>
+    <button appButton variant="ghost" type="button" [disabled]="saving()" (click)="closed.emit()">Cancel</button>
+    <button
+      appButton
+      variant="primary"
+      type="button"
+      [disabled]="!canSave()"
+      [busy]="saving()"
+      data-testid="passage-sheet-save"
+      (click)="save.emit()"
+    >
+      <nostos-icon concept="passage" [size]="16"></nostos-icon>
+      {{ saving() ? 'Saving…' : 'Save passage' }}
+    </button>
+  </div>
+</app-modal-shell>
