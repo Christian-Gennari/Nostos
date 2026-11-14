@@ -149,13 +149,25 @@ public sealed class ActivationRealHostDrillTests
         }
 
         drill.ExpireJobLeases();
-        await using var second = await ActivationDrillHost.StartAsync(drill);
+
+        // Two things happen on the restarted host, and the second is fast enough
+        // to race the first: the startup reconciler rolls the pre-commit journal
+        // back to the pre-restore library, then the startup scan resumes the
+        // durably claimed restore. Park the resumed run at its first Phase A
+        // boundary — after reconciliation, before it mutates anything — so the
+        // imported library can be asserted deterministically rather than
+        // observed only if the restore has not finished yet.
+        var releasePath = Path.Combine(drill.Root, "drill-restore-resume-release");
+        await using var second = await ActivationDrillHost.StartAsync(
+            drill, SelfHostedRecoveryRestoreSteps.PhaseCandidatePrepared, releasePath);
         drill.ExpireJobLeases();
+        await second.WaitForMarkerAsync();
         drill.AssertMaintenanceReleased();
         await drill.AssertImportedGenerationAsync();
 
-        // The durable Restoring claim is resumed by the startup scan and the
-        // restore completes; the imported library must survive until then.
+        // Releasing the boundary lets the resumed restore run to its durable
+        // commit; the imported library must survive until then.
+        second.ReleaseBoundary();
         await second.WaitForRecoveryStatusAsync(recoveryId, "Restored");
         drill.AssertPortableAndMedia(drill.Template.OriginalPortable, drill.Template.OriginalMedia,
             "the completed restore must expose exactly the retained previous library");
