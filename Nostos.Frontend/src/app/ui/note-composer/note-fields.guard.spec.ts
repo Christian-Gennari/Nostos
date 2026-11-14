@@ -29,7 +29,7 @@ const NOT_NOTE_FIELDS: Record<string, string> = {
   'book-detail/photo-quote/photo-quote-modal.component.html': 'the quote read from a photo, not the note',
   'reading-list/reading-list.component.html': 'why a book is on the reading list',
   'brain/brain-topic-words.component.html': 'a topic’s own description',
-  'ui/assistant/assistant.component.html': 'the Ask Nostos chat box',
+  'ui/assistant/assistant-composer.component.html': 'the Ask Nostos chat box',
   'add-book-modal/add-book-metadata-form.component.html':
     'a book’s description and personal review',
   'ui/ui-catalogue/ui-catalogue.component.html': 'the catalogue’s form control samples',

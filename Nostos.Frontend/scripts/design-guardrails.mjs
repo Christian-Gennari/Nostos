@@ -503,8 +503,8 @@ const STATE_HOMES = new Set([
 const PRODUCT_KEYFRAMES = new Map([
   // The assistant's "Thinking…" line: a text shimmer while a long answer is
   // written, deliberately text rather than a spinner (#1003).
-  ['assistant-shimmer', 'src/app/ui/assistant/assistant.component.css'],
-  ['assistant-thinking', 'src/app/ui/assistant/assistant.component.css'],
+  ['assistant-shimmer', 'src/app/ui/assistant/assistant-transcript.component.css'],
+  ['assistant-thinking', 'src/app/ui/assistant/assistant-transcript.component.css'],
   // Read-aloud buffering: the transport's play glyph breathes while audio
   // streams in, part of the transport rather than a page load.
   ['read-aloud-buffering', 'src/app/reader/read-aloud/read-aloud-bar.component.css'],
@@ -619,7 +619,9 @@ export const PRODUCT_BUTTONS = new Map(Object.entries({
   // is the control, and a help row that is a disclosure, not an action button.
   'src/app/ui/import-drop-zone/import-drop-zone.component.html': ['import-drop__button', 'import-help__summary'],
   // Assistant rows and recording controls (see also check-design RULE 15).
-  'src/app/ui/assistant/assistant.component.html': ['starter', 'suggestion-chip', 'anchor-chip-dismiss', 'voice-control', 'assistant-trigger'],
+  'src/app/ui/assistant/assistant.component.html': ['starter', 'assistant-trigger'],
+  'src/app/ui/assistant/assistant-entry.component.html': ['suggestion-chip'],
+  'src/app/ui/assistant/assistant-composer.component.html': ['anchor-chip-dismiss', 'voice-control'],
 
   // --- App chrome and navigation.
   // The dock: navigation rows whose <a> twins share the recipe.

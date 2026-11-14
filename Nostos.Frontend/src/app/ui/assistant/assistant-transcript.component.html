@@ -1,0 +1,53 @@
+@for (entry of assistant.entries(); track entry.id) {
+<article
+  appAssistantEntry
+  [entry]="entry"
+  class="entry"
+  [class.entry-user]="entry.kind === 'user'"
+  [class.entry-assistant]="entry.kind === 'assistant'"
+  [class.entry-error]="entry.kind === 'error'"
+  (evidenceSelected)="evidenceSelected.emit($event)"
+  (sourceSelected)="sourceSelected.emit($event)"
+  (failureActionSelected)="failureActionSelected.emit($event)"
+  (retried)="retried.emit()"
+  (changesetDetailsToggled)="changesetDetailsToggled.emit($event)"
+></article>
+}
+
+@if (assistant.pendingVisible()) {
+<!-- Fast turns never render this block. Slow turns expose only server-owned
+     product activity; no model reasoning or raw tool payload is shown. -->
+<article
+  class="entry entry-assistant entry-pending"
+  role="status"
+  aria-live="polite"
+  data-testid="assistant-pending"
+>
+  <span class="entry-speaker visually-hidden">Nostos</span>
+  <div class="pending-row">
+    @if (assistant.turnActivity(); as activity) {
+    <span class="turn-activity shimmer" data-testid="assistant-activity">{{ activity.message }}</span>
+    } @else {
+    <span class="visually-hidden">Working</span>
+    <span class="thinking-dots" aria-hidden="true">
+      <span class="thinking-dot"></span>
+      <span class="thinking-dot"></span>
+      <span class="thinking-dot"></span>
+    </span>
+    }
+    @if (assistant.activeTurnId()) {
+    <button
+      appButton
+      variant="ghost"
+      size="sm"
+      type="button"
+      class="turn-stop"
+      (click)="assistant.stopActiveTurn()"
+      data-testid="assistant-stop-turn"
+    >
+      Stop
+    </button>
+    }
+  </div>
+</article>
+}

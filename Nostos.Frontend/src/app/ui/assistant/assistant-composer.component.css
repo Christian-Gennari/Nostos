@@ -1,0 +1,231 @@
+/* Composer internals. The host's own layout/padding lives in the panel
+   stylesheet beside `.assistant-panel`, because the host element belongs to the
+   panel template; everything inside it is styled here. */
+
+.composer-shell {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-field);
+  background: var(--bg-input);
+  transition:
+    border-color var(--motion-fast) var(--ease-plain),
+    box-shadow var(--motion-fast) var(--ease-plain);
+}
+
+.composer-shell:focus-within {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent-faint);
+}
+
+.composer-context-row {
+  display: flex;
+  padding: 8px 9px 0;
+}
+
+.anchor-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 4px 6px 4px 7px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-pill);
+  background: var(--bg-surface-alt);
+  color: var(--color-text-muted);
+  font-size: 0.7rem;
+  line-height: 1;
+}
+
+.anchor-chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.anchor-chip-dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.anchor-chip-dismiss:hover {
+  color: var(--color-text-main);
+}
+
+.anchor-chip-dismiss:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.composer-field {
+  width: 100%;
+  min-height: 34px;
+  max-height: 160px;
+  box-sizing: border-box;
+  padding: 10px 11px 6px;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-main);
+  font-family: 'Newsreader', serif;
+  font-size: 0.96rem;
+  line-height: 1.5;
+  resize: none;
+  overflow-y: auto;
+}
+
+.composer-context-row + .composer-field {
+  padding-top: 8px;
+}
+
+.composer-field::placeholder {
+  color: var(--color-text-placeholder);
+}
+
+.composer-field:focus {
+  outline: none;
+}
+
+.composer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: var(--control-h-md);
+  padding: 1px 5px 5px 10px;
+}
+
+.composer-hint {
+  color: var(--color-text-muted);
+  font-size: 0.68rem;
+  line-height: 1.25;
+  /* Only while the field is focused and empty: once there is a draft, or the
+     field is not in use, the hint is noise. Opacity, so the row keeps its height. */
+  opacity: 0;
+  transition: opacity var(--motion-fast) var(--ease-plain);
+}
+
+.composer-shell:focus-within:not(.has-draft) .composer-hint {
+  opacity: 1;
+}
+
+.voice-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  min-width: var(--control-h-md);
+}
+
+.voice-control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-h-md);
+  height: var(--control-h-md);
+  padding: 0;
+  border: 1px solid var(--dock-border);
+  border-radius: var(--radius-pill);
+  background: var(--dock-surface);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition:
+    color var(--motion-fast) var(--ease-plain),
+    border-color var(--motion-fast) var(--ease-plain),
+    background var(--motion-fast) var(--ease-plain),
+    transform var(--motion-fast) var(--ease-plain);
+}
+
+.voice-control:hover:not(:disabled) {
+  color: var(--color-text-main);
+  border-color: var(--color-accent);
+  transform: translateY(-1px);
+}
+
+.voice-control:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.voice-control:disabled {
+  color: var(--color-text-placeholder);
+  border-color: var(--border-color);
+  cursor: default;
+}
+
+.composer-send {
+  border-color: var(--primary-fill);
+  background: var(--primary-fill);
+  color: var(--on-primary);
+}
+
+.composer-send:hover:not(:disabled) {
+  border-color: var(--color-primary-hover);
+  background: var(--color-primary-hover);
+  color: var(--on-primary);
+}
+
+.voice-control-stop {
+  color: var(--danger-ink);
+  border-color: var(--danger-hairline);
+}
+
+.voice-timer,
+.voice-status {
+  color: var(--color-text-muted);
+  font-size: 0.74rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.voice-error {
+  margin: 0;
+  padding: 0 2px;
+  color: var(--danger-ink);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+}
+
+/* Pre-dispatch Undo for an auto-sent transcript. Quiet by design: it reads as a
+   status line above the composer rather than another card inside the panel. */
+.transcript-undo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: var(--radius-action);
+  background: var(--bg-surface-alt);
+  color: var(--color-text-muted);
+  font-size: 0.76rem;
+}
+
+@media (max-width: 768px) {
+  .composer-hint {
+    display: none;
+  }
+
+  .composer-footer {
+    justify-content: flex-end;
+    padding-left: 5px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-control {
+    transition: none;
+  }
+
+  .voice-control:hover:not(:disabled) {
+    transform: none;
+  }
+}

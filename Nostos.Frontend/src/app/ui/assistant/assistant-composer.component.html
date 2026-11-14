@@ -1,0 +1,130 @@
+@if (assistant.autoSendPending()) {
+<!-- Pre-dispatch Undo for an auto-sent transcript. Nothing has been sent
+     yet; cancelling here is the only chance to avoid a wrong capture. -->
+<div
+  class="transcript-undo"
+  role="status"
+  aria-live="polite"
+  data-testid="assistant-voice-undo"
+>
+  <span class="transcript-undo-text">Sending your note…</span>
+  <button
+    appButton
+    variant="ghost"
+    size="sm"
+    type="button"
+    (click)="onUndoTranscript()"
+    data-testid="assistant-voice-undo-button"
+  >
+    Undo
+  </button>
+</div>
+}
+
+<div class="composer-shell" [class.has-draft]="hasDraft()">
+  @if (assistant.anchorChip(); as chip) {
+  <div class="composer-context-row">
+    <div class="anchor-chip" data-testid="assistant-anchor-chip">
+      <nostos-icon name="map-pin" [size]="12"></nostos-icon>
+      <span class="anchor-chip-label">{{ chip.label }}</span>
+      <button
+        type="button"
+        class="anchor-chip-dismiss"
+        (click)="assistant.dismissAnchor()"
+        aria-label="Remove source location"
+      >
+        <nostos-icon name="x" [size]="12"></nostos-icon>
+      </button>
+    </div>
+  </div>
+  } @else if (readingLabel(); as bookTitle) {
+  <div class="composer-context-row">
+    <span class="anchor-chip reading-chip" [title]="bookTitle" data-testid="assistant-reading-chip">
+      <nostos-icon name="book-open" [size]="12"></nostos-icon>
+      <span class="anchor-chip-label">{{ bookTitle }}</span>
+    </span>
+  </div>
+  }
+
+  <textarea
+    #composer
+    class="composer-field"
+    rows="1"
+    placeholder="Ask Nostos, or capture a thought…"
+    aria-label="Ask Nostos, or capture a thought"
+    data-testid="assistant-composer"
+    [value]="assistant.draft()"
+    (input)="onComposerInput($event)"
+    (keydown.enter)="onComposerEnter($event)"
+  ></textarea>
+
+  <div class="composer-footer">
+    <span class="composer-hint">Enter to send · Shift+Enter for a new line</span>
+
+    <!-- Push-to-talk. `getUserMedia` is requested only on this tap; the mic
+         is absent while closed, so the collapsed capsule is untouched. -->
+    <div class="voice-row">
+      @if (voice.isRecording()) {
+      <span class="voice-timer" data-testid="assistant-voice-timer" aria-live="polite">
+        {{ elapsedLabel() }}
+      </span>
+      <button
+        type="button"
+        class="voice-control voice-control-stop"
+        (click)="onVoiceStop()"
+        aria-label="Stop recording"
+        data-testid="assistant-voice-stop"
+      >
+        <nostos-icon name="stop" [size]="14"></nostos-icon>
+      </button>
+      <button
+        type="button"
+        class="voice-control"
+        (click)="onVoiceCancel()"
+        aria-label="Discard recording"
+        data-testid="assistant-voice-cancel"
+      >
+        <nostos-icon name="x" [size]="14"></nostos-icon>
+      </button>
+      } @else if (voice.isTranscribing()) {
+      <span class="voice-status" data-testid="assistant-voice-transcribing">Transcribing…</span>
+      <button
+        type="button"
+        class="voice-control"
+        (click)="onVoiceCancel()"
+        aria-label="Cancel transcription"
+        data-testid="assistant-voice-cancel"
+      >
+        <nostos-icon name="x" [size]="14"></nostos-icon>
+      </button>
+      } @else if (hasDraft()) {
+      <button
+        type="button"
+        class="voice-control composer-send"
+        [disabled]="assistant.sending()"
+        (click)="onSendClick()"
+        aria-label="Send to Nostos"
+        data-testid="assistant-send"
+      >
+        <nostos-icon name="arrow-right" [size]="14"></nostos-icon>
+      </button>
+      } @else if (voiceTranscriptionEnabled()) {
+      <button
+        type="button"
+        class="voice-control voice-control-mic"
+        (click)="onMicTap()"
+        aria-label="Record a voice note"
+        data-testid="assistant-voice-start"
+      >
+        <nostos-icon name="microphone" [size]="14"></nostos-icon>
+      </button>
+      }
+    </div>
+  </div>
+</div>
+
+@if (voice.error(); as voiceError) {
+<p class="voice-error" role="status" aria-live="polite" data-testid="assistant-voice-error">
+  {{ voiceError.message }}
+</p>
+}
