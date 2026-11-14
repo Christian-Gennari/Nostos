@@ -1,0 +1,19 @@
+.first-run-cloud-import.is-selected {
+  border-radius: var(--radius-row);
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 4px;
+}
+
+.portable-export-status {
+  margin-top: 6px;
+}
+
+.portable-export-status.is-error {
+  color: var(--color-danger);
+}
+
+@media (max-width: 600px) {
+  .portable-export-action {
+    width: 100%;
+  }
+}

@@ -1,0 +1,119 @@
+      <!-- Reading assistant (W1). Availability is the server's to decide; this
+           toggle is user intent only. When unavailable it renders off and
+           non-interactive, and the supporting sentence explains why rather than
+           the card hiding or adding a warning. -->
+      <section class="settings-card" data-testid="assistant-settings-card">
+        <div class="card-header">
+          <div class="card-header-copy">
+            <h2>Ask Nostos</h2>
+          </div>
+        </div>
+
+        <div class="card-body">
+          <div class="setting-row">
+            <div class="setting-label">
+              <span class="label-text">Show Ask Nostos</span>
+              @if (assistantAvailable()) {
+                <span class="label-desc">Read, capture and organise anywhere in Nostos. Changes are applied with Undo, or shown for review first.</span>
+              } @else if (managedAi() || !canConfigureAiProvider()) {
+                <span class="label-desc">{{ assistantUnavailableCopy() }}</span>
+              } @else {
+                <span class="label-desc" data-testid="assistant-setup-hint">
+                  Connect an AI provider in
+                  <a class="label-link" href="/settings?section=connections" (click)="$event.preventDefault(); openSection.emit('connections')">AI connections</a>
+                  to turn this on.
+                </span>
+              }
+            </div>
+            @if (assistantAvailable()) {
+              <label appSwitch>
+                <input
+                  type="checkbox"
+                  [checked]="assistantEnabled()"
+                  (change)="setAssistantEnabled($event)"
+                  aria-label="Ask Nostos"
+                  data-testid="assistant-enabled-toggle"
+                >
+              </label>
+            } @else {
+              <label appSwitch>
+                <input
+                  type="checkbox"
+                  [checked]="false"
+                  disabled
+                  aria-disabled="true"
+                  aria-label="Ask Nostos"
+                  data-testid="assistant-enabled-toggle"
+                >
+              </label>
+            }
+          </div>
+
+          @if (managedVoiceTranscription()) {
+            <div class="setting-row" data-testid="managed-voice-setting">
+              <div class="setting-label">
+                <span class="label-text">Voice transcription</span>
+                <span class="label-desc">Use your microphone with Ask Nostos. Nostos manages transcription for this account.</span>
+              </div>
+              <label appSwitch>
+                <input
+                  type="checkbox"
+                  [checked]="assistantVoiceEnabled()"
+                  (change)="setAssistantVoiceEnabled($event)"
+                  aria-label="Voice transcription"
+                  data-testid="managed-voice-transcription-toggle"
+                >
+              </label>
+            </div>
+          }
+        </div>
+      </section>
+
+      @if (managedUsageAvailable()) {
+      <section class="settings-card" data-testid="managed-ai-usage-card">
+        <div class="card-header">
+          <div class="card-header-copy">
+            <h2>Ask Nostos usage</h2>
+          </div>
+        </div>
+
+        <div class="card-body">
+          <!-- One row: the allowance state stays visible here, everything
+               about refills (balance, purchase) lives on the account site. -->
+          <div class="setting-row" data-testid="managed-ai-usage-row">
+            <div class="setting-label">
+              @if (managedAiUsageFailed()) {
+                <span class="label-text">Could not load usage</span>
+                <span class="label-desc" role="alert">
+                  Nostos could not read your managed AI allowance.
+                  <button appButton variant="link" size="sm" type="button" (click)="loadManagedAiUsage()">Try again</button>
+                </span>
+              } @else if (managedAiUsage(); as usage) {
+                <span class="label-text">Included allowance</span>
+                <span class="label-desc">
+                  {{ managedAiUsageCopy() }}
+                  @if (usage.renewsAtUtc) {
+                    Renews {{ usage.renewsAtUtc | nostosDate }}.
+                  }
+                </span>
+              } @else {
+                <span class="label-text">Included allowance</span>
+                <span class="label-desc"><nostos-loading-indicator size="sm" label="Loading usage" /></span>
+              }
+            </div>
+            @if (accountManagementUrl(); as accountUrl) {
+              <a
+                appButton
+                variant="secondary"
+                [href]="accountUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+                data-testid="managed-ai-refill-link"
+              >
+                Manage on nostos.page ↗
+              </a>
+            }
+          </div>
+        </div>
+      </section>
+      }

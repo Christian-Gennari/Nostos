@@ -1,0 +1,124 @@
+/* --- Local backup rows and history -------------------------------- */
+.history-error {
+  color: var(--color-danger);
+}
+
+/* --- Last Backup Info --- */
+.last-backup-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  border-top: 1px solid var(--border-light);
+}
+
+/* --- History List --- */
+.history-list {
+  padding: 0;
+}
+
+.history-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.history-item:last-child {
+  border-bottom: none;
+}
+
+.history-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.history-date {
+  font-size: var(--text-sm);
+  font-weight: var(--fw-medium);
+  color: var(--color-text-main);
+}
+
+.history-meta {
+  font-size: var(--text-xs);
+  color: var(--color-text-light);
+}
+
+.history-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.history-actions .icon-btn {
+  background: var(--bg-surface-alt);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-action);
+}
+
+.history-actions .icon-btn:hover {
+  background: var(--bg-hover);
+}
+
+/* --- Progress Bar --- */
+.progress-bar-container {
+  padding: 0 0 16px;
+}
+
+.progress-step-label {
+  font-size: var(--text-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--color-text-main);
+  margin-bottom: 6px;
+}
+
+.slow-notice {
+  margin-top: 8px;
+  font-size: var(--text-xs);
+  color: var(--color-text-light);
+}
+
+.backup-warning {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  font-size: var(--text-sm);
+}
+
+/* Compact settings dropdowns should remain controls, not become full-row fields.
+   The canonical Dropdown sizes to its content by default; settings caps that
+   intrinsic width so long labels still respect the available row width. */
+.select-sm {
+  width: auto;
+  max-width: min(100%, 20rem);
+  flex-shrink: 0;
+}
+
+@media (max-width: 600px) {
+  .history-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .history-actions {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 480px) {
+  .backup-warning {
+    flex-wrap: wrap;
+  }
+}

@@ -1,0 +1,19 @@
+/* Book sources (issue #774): the capability capsules sit between the
+   description and the optional rights line inside one setting-label column. */
+.provider-capabilities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.provider-rights {
+  margin-top: 6px;
+  font-style: italic;
+}
+
+.settings-pane-loading {
+  display: flex;
+  justify-content: center;
+  padding: 1.5rem 0;
+}

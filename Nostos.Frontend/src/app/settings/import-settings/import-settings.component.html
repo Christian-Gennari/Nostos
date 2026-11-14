@@ -1,0 +1,35 @@
+            <section class="settings-card" data-testid="import-drop-card">
+              <div class="card-header">
+                <div class="card-header-copy">
+                  <h2>Import a file</h2>
+                </div>
+              </div>
+              <div class="card-body">
+                <p class="label-desc card-purpose">
+                  Drop an export from any of these apps and Nostos takes it from there. You see where every book is
+                  going before anything is added, and importing the same file again never creates duplicates.
+                </p>
+                <app-import-drop-zone [readwiseActions]="true" />
+              </div>
+            </section>
+
+            @if (mediaFolders()) {
+              <section class="settings-card" data-testid="import-books-card">
+                <div class="card-header">
+                  <div class="card-header-copy">
+                    <h2>Books</h2>
+                  </div>
+                </div>
+                <div class="card-body">
+                  <div class="setting-row" data-testid="import-source-folders">
+                    <div class="setting-label">
+                      <span class="label-text">Media folders</span>
+                      <span class="label-desc">Link a folder of books or audiobooks on this server, read-only.</span>
+                    </div>
+                    <button appButton variant="secondary" class="import-action" data-testid="import-action-folders" (click)="openSection.emit('external')">
+                      Open…
+                    </button>
+                  </div>
+                </div>
+              </section>
+            }

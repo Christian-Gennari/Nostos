@@ -1,0 +1,33 @@
+      <section class="manage-library-group" aria-labelledby="manage-library-move-heading">
+      <h2
+        class="settings-section-title manage-library-group-title"
+        id="manage-library-move-heading"
+      >
+        Move to another Nostos
+      </h2>
+      <!-- Portable library transfer is deliberately separate from the local
+           operational Backup above: these archives move a library between
+           Nostos installations, they do not recover this installation. -->
+      <section
+        class="settings-card"
+        data-testid="library-transfer-card"
+        aria-labelledby="library-transfer-heading"
+      >
+        <div class="card-header">
+          <div class="card-header-copy">
+            <h2 id="library-transfer-heading">Move your library</h2>
+          </div>
+        </div>
+
+        <div class="card-body">
+          <p class="label-desc card-purpose" data-testid="library-transfer-purpose">
+            Library archives are for moving your library between Nostos installations.
+          </p>
+          <app-library-transfer-host
+            [supportsSafeActivation]="supportsSafeActivation()"
+            [focusImport]="focusImport()"
+            (importCompleted)="importCompleted.emit()"
+          />
+        </div>
+      </section>
+      </section>

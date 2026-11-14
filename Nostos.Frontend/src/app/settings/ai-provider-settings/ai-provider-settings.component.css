@@ -1,0 +1,201 @@
+/* --- AI provider card --------------------------------------------------
+   A form rather than a list of rows: each field gets the full card width so a
+   long endpoint or model id is readable, and the phone layout is the same
+   column with the "Load models" button dropped below its field. */
+.provider-intro {
+  margin: 0;
+  padding: 14px 0 15px;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--color-text-light);
+  background: transparent;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.provider-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  padding: 12px 0 0;
+}
+
+.provider-section {
+  min-width: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+.provider-section + .provider-section {
+  padding-left: 24px;
+  border-left: 1px solid var(--border-light);
+}
+
+/* A section that takes a full row of its own under the two-column pair. */
+.provider-section + .provider-section.provider-section--wide {
+  grid-column: 1 / -1;
+  padding-top: 20px;
+  padding-left: 0;
+  border-top: 1px solid var(--border-light);
+  border-left: 0;
+}
+
+.provider-wide-fields {
+  display: grid;
+  /* Lines the two columns up with the bordered pair above: half the grid
+     minus half its 24px gap, then gap + divider + the pair's 24px padding. */
+  grid-template-columns: calc(50% - 12px) minmax(0, 1fr);
+  column-gap: 49px;
+}
+
+.provider-heading {
+  margin: 0 0 14px;
+  font-size: 0.85rem;
+  font-weight: var(--fw-semibold);
+  letter-spacing: -0.01em;
+  color: var(--color-text-main);
+}
+
+.provider-field {
+  margin-bottom: 14px;
+}
+
+.provider-field:last-of-type {
+  margin-bottom: 0;
+}
+
+.provider-label {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 0.8rem;
+  font-weight: var(--fw-medium);
+  color: var(--color-text-main);
+}
+
+.provider-help {
+  margin: 5px 0 0;
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  color: var(--color-text-light);
+}
+
+.provider-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.provider-input-row .provider-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.provider-key-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.provider-key-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--text-xs);
+  color: var(--color-success-dark);
+}
+
+.provider-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.provider-toggle-help {
+  margin: 0 0 16px;
+}
+
+.provider-toggle-label {
+  font-size: 0.85rem;
+  color: var(--color-text-main);
+}
+
+.provider-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.provider-status {
+  margin: 10px 0 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--color-text-light);
+}
+
+.provider-status.is-ok,
+.provider-save-status.is-ok {
+  color: var(--color-success-dark);
+}
+
+.provider-status.is-error,
+.provider-save-status.is-error {
+  color: var(--color-danger);
+}
+
+.provider-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 15px 0 18px;
+  border-top: 0;
+}
+
+.provider-save-status {
+  font-size: 0.78rem;
+  color: var(--color-text-light);
+}
+
+/* The read-aloud section links to its setup guide beside its test button. */
+.provider-guide-link {
+  align-self: center;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.provider-guide-link:hover {
+  color: var(--color-text-main);
+}
+
+@media (max-width: 760px) {
+  .provider-grid,
+  .provider-wide-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .provider-section + .provider-section {
+    margin-top: 6px;
+    padding-top: 18px;
+    padding-left: 0;
+    border-top: 1px solid var(--border-light);
+    border-left: 0;
+  }
+}
+
+@media (max-width: 600px) {
+  .provider-input-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .provider-key-row {
+    flex-wrap: wrap;
+  }
+}
