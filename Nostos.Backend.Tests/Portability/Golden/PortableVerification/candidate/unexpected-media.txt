@@ -1,0 +1,8 @@
+passed=false
+failureCount=1
+kinds=PortableWork,PortableBook,PortableBookMetadata,PortableReadingProgress,PortableCollection,PortableBookCollection,PortableNote,PortableTopic,PortableNoteTopic,PortableWriting,PortableWritingNote,PortableBookAcquisition,PortableAssistantSettings,PortableNoteImportBookLink,PortableReadingListEntry,PortableArchiveMediaEntry
+rows=29
+mediaFiles=9
+mediaBytes=12135
+--
+portable_verify_media_unexpected|media|||The candidate media root contains a file the prepared import does not declare.
