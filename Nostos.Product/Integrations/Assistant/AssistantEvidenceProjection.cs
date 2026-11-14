@@ -15,9 +15,6 @@ namespace Nostos.Backend.Integrations.Assistant;
 /// </summary>
 internal static class AssistantEvidenceProjection
 {
-    private static readonly JsonSerializerOptions JsonOptions =
-        new(JsonSerializerDefaults.Web);
-
     public static void MergeEvidenceReferences(
         List<AssistantEvidenceReferenceDto> target,
         IEnumerable<AssistantEvidenceReferenceDto> incoming,
@@ -54,22 +51,10 @@ internal static class AssistantEvidenceProjection
     public static IEnumerable<AssistantEvidenceReferenceDto> ExtractKnowledgeSearchEvidence(
         JsonElement? data)
     {
-        if (data is not { ValueKind: JsonValueKind.Object } element)
+        if (data is not { ValueKind: JsonValueKind.Object })
             yield break;
 
-        KnowledgeSearchResponse? response;
-        try
-        {
-            response = JsonSerializer.Deserialize<KnowledgeSearchResponse>(
-                element.GetRawText(),
-                JsonOptions);
-        }
-        catch (JsonException)
-        {
-            yield break;
-        }
-
-        if (response is null)
+        if (AssistantCapabilityPayloads.Read<KnowledgeSearchResponse>(data) is not { } response)
             yield break;
 
         foreach (var note in response.Notes)
@@ -98,22 +83,7 @@ internal static class AssistantEvidenceProjection
     public static IEnumerable<AssistantEvidenceReferenceDto> ExtractNoteListForBookEvidence(
         JsonElement? data)
     {
-        if (data is not { ValueKind: JsonValueKind.Array } element)
-            yield break;
-
-        List<NoteDto>? notes;
-        try
-        {
-            notes = JsonSerializer.Deserialize<List<NoteDto>>(
-                element.GetRawText(),
-                JsonOptions);
-        }
-        catch (JsonException)
-        {
-            yield break;
-        }
-
-        if (notes is null)
+        if (AssistantCapabilityPayloads.Read<List<NoteDto>>(data) is not { } notes)
             yield break;
 
         foreach (var note in notes)
@@ -131,22 +101,7 @@ internal static class AssistantEvidenceProjection
     public static IEnumerable<AssistantEvidenceReferenceDto> ExtractNoteSearchEvidence(
         JsonElement? data)
     {
-        if (data is not { ValueKind: JsonValueKind.Array } element)
-            yield break;
-
-        List<NoteSearchHitDto>? notes;
-        try
-        {
-            notes = JsonSerializer.Deserialize<List<NoteSearchHitDto>>(
-                element.GetRawText(),
-                JsonOptions);
-        }
-        catch (JsonException)
-        {
-            yield break;
-        }
-
-        if (notes is null)
+        if (AssistantCapabilityPayloads.Read<List<NoteSearchHitDto>>(data) is not { } notes)
             yield break;
 
         foreach (var note in notes)
@@ -164,22 +119,10 @@ internal static class AssistantEvidenceProjection
     public static IEnumerable<AssistantEvidenceReferenceDto> ExtractKnowledgeReadEvidence(
         JsonElement? data)
     {
-        if (data is not { ValueKind: JsonValueKind.Object } element)
+        if (data is not { ValueKind: JsonValueKind.Object })
             yield break;
 
-        KnowledgeReadResponse? response;
-        try
-        {
-            response = JsonSerializer.Deserialize<KnowledgeReadResponse>(
-                element.GetRawText(),
-                JsonOptions);
-        }
-        catch (JsonException)
-        {
-            yield break;
-        }
-
-        if (response is null)
+        if (AssistantCapabilityPayloads.Read<KnowledgeReadResponse>(data) is not { } response)
             yield break;
 
         if (response.Note is { } note)
@@ -206,22 +149,10 @@ internal static class AssistantEvidenceProjection
     public static IEnumerable<AssistantEvidenceReferenceDto> ExtractBookTextEvidence(
         JsonElement? data)
     {
-        if (data is not { ValueKind: JsonValueKind.Object } element)
+        if (data is not { ValueKind: JsonValueKind.Object })
             yield break;
 
-        BookTextSearchResponse? response;
-        try
-        {
-            response = JsonSerializer.Deserialize<BookTextSearchResponse>(
-                element.GetRawText(),
-                JsonOptions);
-        }
-        catch (JsonException)
-        {
-            yield break;
-        }
-
-        if (response is null)
+        if (AssistantCapabilityPayloads.Read<BookTextSearchResponse>(data) is not { } response)
             yield break;
 
         foreach (var passage in response.Passages)
@@ -255,22 +186,10 @@ internal static class AssistantEvidenceProjection
     public static IEnumerable<AssistantSourceReferenceDto> ExtractKnowledgeSearchSources(
         JsonElement? data)
     {
-        if (data is not { ValueKind: JsonValueKind.Object } element)
+        if (data is not { ValueKind: JsonValueKind.Object })
             yield break;
 
-        KnowledgeSearchResponse? response;
-        try
-        {
-            response = JsonSerializer.Deserialize<KnowledgeSearchResponse>(
-                element.GetRawText(),
-                JsonOptions);
-        }
-        catch (JsonException)
-        {
-            yield break;
-        }
-
-        if (response is null)
+        if (AssistantCapabilityPayloads.Read<KnowledgeSearchResponse>(data) is not { } response)
             yield break;
 
         foreach (var passage in response.BookPassages)
@@ -292,22 +211,10 @@ internal static class AssistantEvidenceProjection
     public static IEnumerable<AssistantSourceReferenceDto> ExtractKnowledgeReadSources(
         JsonElement? data)
     {
-        if (data is not { ValueKind: JsonValueKind.Object } element)
+        if (data is not { ValueKind: JsonValueKind.Object })
             yield break;
 
-        KnowledgeReadResponse? response;
-        try
-        {
-            response = JsonSerializer.Deserialize<KnowledgeReadResponse>(
-                element.GetRawText(),
-                JsonOptions);
-        }
-        catch (JsonException)
-        {
-            yield break;
-        }
-
-        if (response?.BookPassage is not { } passage)
+        if (AssistantCapabilityPayloads.Read<KnowledgeReadResponse>(data) is not { BookPassage: { } passage })
             yield break;
 
         if (ToAssistantSource(
@@ -326,22 +233,10 @@ internal static class AssistantEvidenceProjection
     public static IEnumerable<AssistantSourceReferenceDto> ExtractBookTextSources(
         JsonElement? data)
     {
-        if (data is not { ValueKind: JsonValueKind.Object } element)
+        if (data is not { ValueKind: JsonValueKind.Object })
             yield break;
 
-        BookTextSearchResponse? response;
-        try
-        {
-            response = JsonSerializer.Deserialize<BookTextSearchResponse>(
-                element.GetRawText(),
-                JsonOptions);
-        }
-        catch (JsonException)
-        {
-            yield break;
-        }
-
-        if (response is null)
+        if (AssistantCapabilityPayloads.Read<BookTextSearchResponse>(data) is not { } response)
             yield break;
 
         foreach (var passage in response.Passages)

@@ -17,11 +17,15 @@ namespace Nostos.Backend.Integrations.Assistant;
 /// The object is turn-scoped and contains no durable conversation state. The
 /// browser already carries historical book identity through
 /// <see cref="AssistantHistoricalContextDto"/>.
+///
+/// Capability results are read through <see cref="AssistantCapabilityPayloads"/>
+/// (issue #1598), so the ingestion status of a source is parsed once rather than
+/// twice by two string-keyed probes.
 /// </summary>
 internal sealed class AssistantRetrievalTurnState(AssistantContextDto context)
 {
-    private const string BookTextCapability = "book_text_search";
-    private const string KnowledgeSearchCapability = "knowledge_search";
+    private const string BookTextCapability = AssistantCapabilityNames.BookTextSearch;
+    private const string KnowledgeSearchCapability = AssistantCapabilityNames.KnowledgeSearch;
 
     private static readonly JsonSerializerOptions JsonOptions =
         new(JsonSerializerDefaults.Web);
@@ -109,9 +113,25 @@ internal sealed class AssistantRetrievalTurnState(AssistantContextDto context)
             RecordBookScope(readBook.BookId.ToString(), readBook.BookTitle);
         }
 
-        if (data is not { } retrievalData
-            || (!string.Equals(capabilityName, KnowledgeSearchCapability, StringComparison.Ordinal)
-                && !string.Equals(capabilityName, BookTextCapability, StringComparison.Ordinal)))
+        IReadOnlyList<BookTextIngestionStatus> states;
+        bool callHasEvidence;
+        if (string.Equals(capabilityName, KnowledgeSearchCapability, StringComparison.Ordinal))
+        {
+            if (AssistantCapabilityPayloads.ReadKnowledgeSearch(data) is not { } knowledge)
+                return;
+
+            callHasEvidence = knowledge.EvidenceAvailable;
+            states = knowledge.BookTextStates?.Select(state => state.Status).ToList() ?? [];
+        }
+        else if (string.Equals(capabilityName, BookTextCapability, StringComparison.Ordinal))
+        {
+            if (AssistantCapabilityPayloads.ReadBookTextSearch(data) is not { } bookText)
+                return;
+
+            callHasEvidence = bookText.EvidenceAvailable;
+            states = bookText.States?.Select(state => state.Status).ToList() ?? [];
+        }
+        else
         {
             return;
         }
@@ -119,12 +139,12 @@ internal sealed class AssistantRetrievalTurnState(AssistantContextDto context)
         RetrievalAttempted = true;
         ScopedRetrievalAttempted |= HasRetrievalScope(args);
 
-        var callHasEvidence = RetrievalHasEvidence(retrievalData);
         RetrievalEvidenceAvailable |= callHasEvidence;
         if (!callHasEvidence)
             RecordScopedBookIds(args, _emptyRetrievalBookIds);
 
-        ObserveIngestionStates(capabilityName, retrievalData);
+        if (states.Count > 0)
+            _states.AddRange(states);
     }
 
     public void RecordSources(IEnumerable<AssistantSourceReferenceDto> sources)
@@ -240,7 +260,7 @@ internal sealed class AssistantRetrievalTurnState(AssistantContextDto context)
 
     private static bool IsSparseKnowledgeResult(JsonElement data)
     {
-        if (data.ValueKind != JsonValueKind.Object)
+        if (AssistantCapabilityPayloads.ReadKnowledgeSearch(data) is not { } knowledge)
             return false;
 
         // A topic hit can be a useful orientation clue without containing
@@ -248,63 +268,22 @@ internal sealed class AssistantRetrievalTurnState(AssistantContextDto context)
         // it has at most one concrete note/passage, so a topic-only or
         // one-note distractor cannot prevent the bounded library fallback.
         var concreteEvidenceCount =
-            ArrayLength(data, "notes")
-            + ArrayLength(data, "bookPassages");
+            (knowledge.Notes?.Count ?? 0)
+            + (knowledge.BookPassages?.Count ?? 0);
 
         return concreteEvidenceCount <= 1;
     }
 
     private static bool HasBlockingKnowledgeSourceState(JsonElement data)
     {
-        if (data.ValueKind != JsonValueKind.Object
-            || !data.TryGetProperty("bookTextStates", out var states)
-            || states.ValueKind != JsonValueKind.Array)
-        {
+        if (AssistantCapabilityPayloads.ReadKnowledgeSearch(data) is not { BookTextStates: { } states })
             return false;
-        }
 
-        foreach (var item in states.EnumerateArray())
-        {
-            if (!item.TryGetProperty("status", out var status))
-                continue;
-
-            if (TryReadIngestionStatus(status, out var parsed)
-                && parsed is BookTextIngestionStatus.Pending
-                    or BookTextIngestionStatus.Processing
-                    or BookTextIngestionStatus.Failed
-                    or BookTextIngestionStatus.Unsupported)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static int ArrayLength(JsonElement data, string propertyName) =>
-        data.TryGetProperty(propertyName, out var value)
-        && value.ValueKind == JsonValueKind.Array
-            ? value.GetArrayLength()
-            : 0;
-
-    private static bool TryReadIngestionStatus(
-        JsonElement status,
-        out BookTextIngestionStatus parsed)
-    {
-        parsed = default;
-        if (status.ValueKind == JsonValueKind.Number
-            && status.TryGetInt32(out var numeric)
-            && Enum.IsDefined(typeof(BookTextIngestionStatus), numeric))
-        {
-            parsed = (BookTextIngestionStatus)numeric;
-            return true;
-        }
-
-        return status.ValueKind == JsonValueKind.String
-            && Enum.TryParse(
-                status.GetString(),
-                ignoreCase: true,
-                out parsed);
+        return states.Any(state => state.Status is
+            BookTextIngestionStatus.Pending
+            or BookTextIngestionStatus.Processing
+            or BookTextIngestionStatus.Failed
+            or BookTextIngestionStatus.Unsupported);
     }
 
     private AssistantTurnErrorDto? SourceStateFailure()
@@ -332,43 +311,6 @@ internal sealed class AssistantRetrievalTurnState(AssistantContextDto context)
         }
 
         return null;
-    }
-
-    private void ObserveIngestionStates(string capabilityName, JsonElement data)
-    {
-        var statePropertyName = string.Equals(
-            capabilityName,
-            KnowledgeSearchCapability,
-            StringComparison.Ordinal)
-                ? "bookTextStates"
-                : "states";
-
-        if (!data.TryGetProperty(statePropertyName, out var stateArray)
-            || stateArray.ValueKind != JsonValueKind.Array)
-        {
-            return;
-        }
-
-        foreach (var item in stateArray.EnumerateArray())
-        {
-            if (!item.TryGetProperty("status", out var status))
-                continue;
-
-            if (status.ValueKind == JsonValueKind.Number
-                && status.TryGetInt32(out var numeric)
-                && Enum.IsDefined(typeof(BookTextIngestionStatus), numeric))
-            {
-                _states.Add((BookTextIngestionStatus)numeric);
-            }
-            else if (status.ValueKind == JsonValueKind.String
-                     && Enum.TryParse<BookTextIngestionStatus>(
-                         status.GetString(),
-                         ignoreCase: true,
-                         out var parsed))
-            {
-                _states.Add(parsed);
-            }
-        }
     }
 
     private static bool HasRetrievalScope(JsonElement args)
@@ -463,11 +405,6 @@ internal sealed class AssistantRetrievalTurnState(AssistantContextDto context)
         return true;
     }
 
-    private static bool RetrievalHasEvidence(JsonElement data) =>
-        data.ValueKind == JsonValueKind.Object
-        && data.TryGetProperty("evidenceAvailable", out var evidence)
-        && evidence.ValueKind == JsonValueKind.True;
-
     private static void RecordScopedBookIds(
         JsonElement args,
         HashSet<Guid> target)
@@ -501,109 +438,61 @@ internal sealed class AssistantRetrievalTurnState(AssistantContextDto context)
         }
     }
 
+    /// <summary>
+    /// The canonical book a library read answered with, from the typed library
+    /// envelope or the typed resolution (issue #1599 contracts).
+    /// </summary>
     private static bool TryReadCanonicalBook(
         string capabilityName,
         JsonElement? data,
         out AssistantResolvedBookDto book)
     {
         book = default!;
-        if (data is not { ValueKind: JsonValueKind.Object } element)
-            return false;
-
-        JsonElement candidate = default;
         if (string.Equals(capabilityName, "library_get_book", StringComparison.Ordinal))
         {
-            if (!element.TryGetProperty("data", out candidate)
-                || candidate.ValueKind != JsonValueKind.Object)
-            {
-                return false;
-            }
+            return AssistantCapabilityPayloads.ReadLibraryBook(data) is { } read
+                && TryAccept(read.Id, read.Title, out book);
         }
-        else if (string.Equals(capabilityName, "library_resolve_book", StringComparison.Ordinal))
+
+        if (string.Equals(capabilityName, "library_resolve_book", StringComparison.Ordinal))
         {
-            if (element.TryGetProperty("matchedBook", out var matched)
-                && matched.ValueKind == JsonValueKind.Object)
-            {
-                candidate = matched;
-            }
-            else if (element.TryGetProperty("candidates", out var candidates)
-                     && candidates.ValueKind == JsonValueKind.Array
-                     && candidates.GetArrayLength() == 1)
-            {
-                candidate = candidates.EnumerateArray().Single();
-            }
-            else
-            {
+            if (AssistantCapabilityPayloads.ReadResolvedBook(data) is not { } resolved)
                 return false;
-            }
-        }
-        else
-        {
+
+            if (resolved.MatchedBook is { } matched)
+                return TryAccept(matched.Id, matched.Title, out book);
+
+            if (resolved.Candidates is { Count: 1 } candidates)
+                return TryAccept(candidates[0].BookId, candidates[0].Title, out book);
+
             return false;
         }
 
-        if (!candidate.TryGetProperty("id", out var idProperty))
-            candidate.TryGetProperty("bookId", out idProperty);
+        return false;
+    }
 
-        if (idProperty.ValueKind != JsonValueKind.String
-            || !Guid.TryParse(idProperty.GetString(), out var id)
-            || !candidate.TryGetProperty("title", out var titleProperty)
-            || titleProperty.ValueKind != JsonValueKind.String
-            || string.IsNullOrWhiteSpace(titleProperty.GetString()))
-        {
+    private static bool TryAccept(Guid id, string? title, out AssistantResolvedBookDto book)
+    {
+        book = default!;
+        if (string.IsNullOrWhiteSpace(title))
             return false;
-        }
 
-        book = new AssistantResolvedBookDto(id, titleProperty.GetString()!);
+        book = new AssistantResolvedBookDto(id, title);
         return true;
     }
 
     private static bool CanRetryBookTextSearch(JsonElement data)
     {
-        if (data.ValueKind != JsonValueKind.Object)
+        if (AssistantCapabilityPayloads.ReadBookTextSearch(data) is not { } bookText)
             return false;
 
-        if (data.TryGetProperty("evidenceAvailable", out var evidence)
-            && evidence.ValueKind == JsonValueKind.True)
-        {
+        if (bookText.EvidenceAvailable)
             return false;
-        }
 
-        if (!data.TryGetProperty("states", out var states)
-            || states.ValueKind != JsonValueKind.Array
-            || states.GetArrayLength() == 0)
-        {
+        if (bookText.States is not { Count: > 0 } states)
             return false;
-        }
 
-        foreach (var item in states.EnumerateArray())
-        {
-            if (!item.TryGetProperty("status", out var status))
-                return false;
-
-            if (status.ValueKind == JsonValueKind.Number
-                && status.TryGetInt32(out var numeric))
-            {
-                if ((BookTextIngestionStatus)numeric != BookTextIngestionStatus.Ready)
-                    return false;
-                continue;
-            }
-
-            if (status.ValueKind == JsonValueKind.String
-                && Enum.TryParse<BookTextIngestionStatus>(
-                    status.GetString(),
-                    ignoreCase: true,
-                    out var parsed))
-            {
-                if (parsed != BookTextIngestionStatus.Ready)
-                    return false;
-                continue;
-            }
-
-            return false;
-        }
-
-        return true;
+        return states.All(state => state.Status == BookTextIngestionStatus.Ready);
     }
 
     private static string? ReadString(JsonElement obj, string name) =>
