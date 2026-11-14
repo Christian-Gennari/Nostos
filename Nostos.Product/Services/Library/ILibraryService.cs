@@ -19,6 +19,17 @@ public sealed record LibraryBookScopeEntry(
 }
 
 /// <summary>
+/// The memberships one <see cref="ILibraryService.ApplyBookCollectionChangesAsync"/>
+/// call actually added and removed (issue #1625). A collection the book was
+/// already in, or already out of, is in neither list: it changed nothing, so an
+/// import's undo record never claims it.
+/// </summary>
+public sealed record LibraryBookCollectionChange(
+    Guid BookId,
+    IReadOnlyList<Guid> Added,
+    IReadOnlyList<Guid> Removed);
+
+/// <summary>
 /// Canonical library domain service. REST endpoints, Ask Nostos and the UI
 /// all call this one service; no surface computes or caches authoritative library
 /// state. Mutations are exact-once through LibraryCommandReceipt.
@@ -232,4 +243,21 @@ public interface ILibraryService
         CancellationToken ct = default);
 
     Task<LibraryCommandResultDto> DeleteCollectionAsync(LibraryDeleteCollectionRequest request, CancellationToken ct = default);
+
+    /// <summary>
+    /// Adds and removes one book's collection memberships in one transaction,
+    /// addressing the exact rows named rather than replacing the set
+    /// (issue #1625). Importers bring tags and shelves and take them back on
+    /// undo; a full-replacement update would race another writer and drop a
+    /// membership nobody asked about.
+    ///
+    /// A row already in the requested state is left alone, and a call that
+    /// changes nothing succeeds without advancing the state version. Data is a
+    /// <see cref="LibraryBookCollectionChange"/>: what actually changed.
+    /// </summary>
+    Task<LibraryCommandResultDto> ApplyBookCollectionChangesAsync(
+        Guid bookId,
+        IReadOnlyList<Guid> addCollectionIds,
+        IReadOnlyList<Guid> removeCollectionIds,
+        CancellationToken ct = default);
 }

@@ -233,6 +233,13 @@ public sealed class LibraryService : ILibraryService, ILibraryChangesetService
         CancellationToken ct = default) =>
         _collections.DeleteAsync(request, ct);
 
+    public Task<LibraryCommandResultDto> ApplyBookCollectionChangesAsync(
+        Guid bookId,
+        IReadOnlyList<Guid> addCollectionIds,
+        IReadOnlyList<Guid> removeCollectionIds,
+        CancellationToken ct = default) =>
+        _collections.ApplyBookCollectionChangesAsync(bookId, addCollectionIds, removeCollectionIds, ct);
+
     // ------------------------------------------------------------------
     // Changesets
     // ------------------------------------------------------------------

@@ -49,6 +49,77 @@ public sealed class LibraryCollectionService(LibraryMutationExecutor mutations)
         mutations.ExecuteAsync(request.ClientId, request.IdempotencyKey, "DeleteCollection",
             (db, token) => DeleteCollectionCoreAsync(db, request, token), ct);
 
+    /// <summary>
+    /// Adds and removes exactly the memberships named (issue #1625). The read
+    /// and the write happen inside one transaction under the library gate, so
+    /// the current set is never stale: a collection another writer adds while
+    /// an import runs is kept rather than overwritten by a full replacement.
+    /// </summary>
+    public Task<LibraryCommandResultDto> ApplyBookCollectionChangesAsync(
+        Guid bookId,
+        IReadOnlyList<Guid> addCollectionIds,
+        IReadOnlyList<Guid> removeCollectionIds,
+        CancellationToken ct = default) =>
+        mutations.RunInTransactionAsync<LibraryCommandResultDto>(
+            (db, token) => ApplyBookCollectionChangesCoreAsync(
+                db, bookId, addCollectionIds, removeCollectionIds, token),
+            ct);
+
+    internal async Task<(bool DidChange, LibraryCommandResultDto Result)> ApplyBookCollectionChangesCoreAsync(
+        NostosDbContext db,
+        Guid bookId,
+        IReadOnlyList<Guid> addCollectionIds,
+        IReadOnlyList<Guid> removeCollectionIds,
+        CancellationToken ct)
+    {
+        var state = await LibraryStateGuard.EnsureAsync(db, ct);
+
+        var book = await db.Books.AsNoTracking()
+            .Where(candidate => candidate.Id == bookId)
+            .Select(candidate => new { candidate.Title })
+            .FirstOrDefaultAsync(ct);
+        if (book is null)
+            return LibraryCommandResults.NoChange(LibraryCommandResults.Failure(
+                "book_not_found", LibraryReplyFormatter.BookNotFound, state.StateVersion));
+
+        var wanted = addCollectionIds.Distinct().ToList();
+        if (!await LibraryCollectionMembership.AllExistAsync(db, wanted, ct))
+            return LibraryCommandResults.NoChange(LibraryCommandResults.Failure(
+                "collection_not_found", LibraryReplyFormatter.CollectionNotFound, state.StateVersion));
+
+        var dropping = removeCollectionIds.ToHashSet();
+        var current = await db.BookCollections
+            .Where(membership => membership.BookId == bookId)
+            .ToListAsync(ct);
+        var removed = current.Where(membership => dropping.Contains(membership.CollectionId)).ToList();
+        var held = current.Select(membership => membership.CollectionId).ToHashSet();
+        var added = wanted.Where(collectionId => !held.Contains(collectionId)).ToList();
+
+        if (removed.Count == 0 && added.Count == 0)
+            return LibraryCommandResults.NoChange(LibraryCommandResults.Result(
+                LibraryReplyFormatter.CollectionsUnchanged(book.Title),
+                new LibraryBookCollectionChange(bookId, [], []),
+                state.StateVersion));
+
+        db.BookCollections.RemoveRange(removed);
+        foreach (var collectionId in added)
+            db.BookCollections.Add(new BookCollectionModel { BookId = bookId, CollectionId = collectionId });
+
+        // The join rows are tracked, so the save pipeline advances the revision
+        // with them inside this transaction exactly once; the value it produced
+        // is reported rather than the pre-write one.
+        var version = await LibraryRevision.AdvanceAndGetAsync(db, ct);
+        await db.SaveChangesAsync(ct);
+
+        return LibraryCommandResults.Change(LibraryCommandResults.Result(
+            LibraryReplyFormatter.CollectionsChanged(book.Title, added.Count, removed.Count),
+            new LibraryBookCollectionChange(
+                bookId,
+                added,
+                removed.Select(membership => membership.CollectionId).ToList()),
+            version));
+    }
+
     internal async Task<(bool DidChange, LibraryCommandResultDto Result)> CreateCollectionCoreAsync(
         NostosDbContext db,
         LibraryCreateCollectionRequest request,

@@ -135,7 +135,7 @@ public sealed class ReadingHistoryImportService
         var results = new List<ReadingHistoryImportResultBook>(sourceBooks.Count);
 
         // Loaded once per commit; rows share them.
-        var collections = await _db.Collections.ToListAsync(ct);
+        var collections = new ImportCollectionIndex(await _db.Collections.ToListAsync(ct));
         var readingList = await _db.ReadingListEntries.ToListAsync(ct);
         var readingListKeys = readingList
             .Select(entry => ReadingListKey(entry.Title, entry.Author, entry.Isbn))
@@ -223,6 +223,7 @@ public sealed class ReadingHistoryImportService
             }
 
             var book = await _db.Books
+                .AsNoTracking()
                 .Include(candidate => candidate.BookCollections)
                 .FirstOrDefaultAsync(candidate => candidate.Id == bookId.Value, ct);
             if (book is null)
@@ -234,22 +235,27 @@ public sealed class ReadingHistoryImportService
             var work = book.Work
                 ?? throw new InvalidOperationException("A library book must have a work.");
 
-            // Change the values, keeping what was there so undo can restore it.
+            // Decide every value before anything is written: what the row asks
+            // for, and what it displaces, so undo can put the library back.
             workLastRead.TryGetValue(work.Id, out var existingLastRead);
-            var ratingBefore = work.Rating;
-            var reviewBefore = work.PersonalReview;
-            var editionRatingBefore = book.Progress.Rating;
-            var editionReviewBefore = book.Progress.PersonalReview;
-            var finishedBefore = book.Progress.FinishedAt;
-
-            ApplyValues(book, work, row, existingLastRead);
+            var values = DecideValues(book, work, row, existingLastRead);
             if (row.FinishedAt is { } readAt && (existingLastRead is null || readAt > existingLastRead))
                 workLastRead[work.Id] = readAt;
 
             var addedCollections = new List<Guid>();
             var createdCollections = new List<Guid>();
+            var wantedCollections = new List<Guid>();
             if (decision.MapShelves && row.Shelves.Count > 0)
-                MapShelves(book, row.Shelves, collections, addedCollections, createdCollections);
+            {
+                var shelves = await ResolveShelvesAsync(
+                    book.BookCollections.Select(membership => membership.CollectionId).ToHashSet(),
+                    row.Shelves,
+                    collections,
+                    ct);
+                wantedCollections.AddRange(shelves.Wanted);
+                createdCollections.AddRange(shelves.Created);
+                addedCollections.AddRange(shelves.Wanted);
+            }
 
             var noteKey = string.IsNullOrWhiteSpace(row.PrivateNotes) ? null : PrivateNoteKey(row);
             var writeNote = noteKey is not null
@@ -258,11 +264,11 @@ public sealed class ReadingHistoryImportService
                     .AnyAsync(receipt => receipt.ClientId == ClientId && receipt.IdempotencyKey == noteKey, ct);
 
             var changes = new BookImportSnapshot(
-                ratingBefore, work.Rating,
-                reviewBefore, work.PersonalReview,
-                editionRatingBefore, book.Progress.Rating,
-                editionReviewBefore, book.Progress.PersonalReview,
-                finishedBefore, book.Progress.FinishedAt,
+                work.Rating, values.Rating,
+                work.PersonalReview, values.Review,
+                book.Progress.Rating, values.EditionRating,
+                book.Progress.PersonalReview, values.EditionReview,
+                book.Progress.FinishedAt, values.FinishedAt,
                 addedCollections,
                 createdCollections);
 
@@ -275,12 +281,23 @@ public sealed class ReadingHistoryImportService
 
             var batchRow = AddBatchRow(
                 batch, row, null, book.Id, created ? book.Id : null, null, writeNote ? noteKey : null, changes, changeCount);
+
+            // The row that takes these values back is durable before the values
+            // are: undo only restores what still says what the import wrote, so a
+            // row saved ahead of its write is harmless, and a write without one
+            // would be the import's one unpickable change.
+            await _db.SaveChangesAsync(ct);
+
+            if (wantedCollections.Count > 0)
+                await AddMembershipsAsync(batchRow, book.Id, wantedCollections, ct);
+            if (ValuesChange(book, work, values))
+                await ApplyValuesAsync(book, work, values, ct);
+
             if (writeNote)
             {
                 // The note service saves on its own, so everything this row
                 // changed is committed (with the batch row) first; the note then
                 // joins it, and a failure can never leave values without undo.
-                await _db.SaveChangesAsync(ct);
                 batchRow.NoteId = await CapturePrivateNoteAsync(book.Id, row, noteKey!, ct);
                 await _db.SaveChangesAsync(ct);
             }
@@ -305,9 +322,15 @@ public sealed class ReadingHistoryImportService
 
     /// <summary>
     /// Rating and review move to the work through the one roll-up rule; the
-    /// finish date goes on the edition and never moves backwards.
+    /// finish date goes on the edition and never moves backwards. Decided here,
+    /// without writing, so the batch row can record both sides of every value
+    /// before the library is changed.
     /// </summary>
-    private static void ApplyValues(BookModel book, WorkModel work, ReadingHistorySourceBook row, DateTime? existingLastRead)
+    private static ImportedValues DecideValues(
+        BookModel book,
+        WorkModel work,
+        ReadingHistorySourceBook row,
+        DateTime? existingLastRead)
     {
         // An older export must not displace a newer value: the library ranks
         // first unless the file was read strictly later than the library's last
@@ -326,51 +349,136 @@ public sealed class ReadingHistoryImportService
 
         // Only this edition may be written: an import is about the copy the
         // owner matched, not about re-writing every edition of the work.
-        BookValueRollUp.Merge(
-            work,
-            [
-                new BookValueParty(workSide, [book]),
-                new BookValueParty(importSide, [book]),
-            ],
-            [book]);
+        var combined = BookValueRollUp.Combine([workSide, importSide]);
 
-        if (row.FinishedAt is { } finished
-            && (book.Progress.FinishedAt is null || finished > book.Progress.FinishedAt))
+        // The edition's own value after the merge, read off the same rule
+        // BookValueRollUp.Merge applies: a losing side keeps its value on this
+        // edition unless the edition already says something of its own, and a
+        // value that agrees with the book's stops being an exception.
+        var editionRating = book.Progress.Rating;
+        var editionReview = book.Progress.PersonalReview;
+        foreach (var side in new[] { workSide, importSide })
         {
-            book.Progress.FinishedAt = finished;
+            if (combined.RatingLosers.Contains(side.Id) && editionRating == 0)
+                editionRating = side.Rating;
+            if (combined.ReviewLosers.Contains(side.Id) && string.IsNullOrEmpty(editionReview))
+                editionReview = side.Review;
         }
+
+        var finishedAt = book.Progress.FinishedAt;
+        if (row.FinishedAt is { } finished && (finishedAt is null || finished > finishedAt))
+            finishedAt = finished;
+
+        return new ImportedValues(
+            combined.Rating,
+            combined.Review,
+            BookValueRollUp.EditionRatingAfter(editionRating, combined.Rating),
+            BookValueRollUp.EditionReviewAfter(editionReview, combined.Review),
+            finishedAt);
     }
 
-    private void MapShelves(
+    private static bool ValuesChange(BookModel book, WorkModel work, ImportedValues values) =>
+        values.Rating != work.Rating
+        || !string.Equals(values.Review, work.PersonalReview, StringComparison.Ordinal)
+        || values.EditionRating != book.Progress.Rating
+        || !string.Equals(values.EditionReview, book.Progress.PersonalReview, StringComparison.Ordinal)
+        || values.FinishedAt != book.Progress.FinishedAt;
+
+    /// <summary>
+    /// Writes the values through the library service, naming only the fields
+    /// that change: the book's rating and review go to its work, the finish date
+    /// to the edition. Nothing is written when nothing changes, so a row that
+    /// says what the library already holds never advances the state version.
+    /// </summary>
+    private async Task ApplyValuesAsync(
         BookModel book,
-        IReadOnlyList<string> shelves,
-        List<CollectionModel> collections,
-        List<Guid> added,
-        List<Guid> created)
+        WorkModel work,
+        ImportedValues values,
+        CancellationToken ct)
     {
+        var rating = values.Rating != work.Rating ? values.Rating : (int?)null;
+        var review = string.Equals(values.Review, work.PersonalReview, StringComparison.Ordinal)
+            ? null
+            : values.Review ?? string.Empty;
+        var editionRating = values.EditionRating != book.Progress.Rating ? values.EditionRating : (int?)null;
+        var editionReview = string.Equals(values.EditionReview, book.Progress.PersonalReview, StringComparison.Ordinal)
+            ? null
+            : values.EditionReview ?? string.Empty;
+        var finishedAt = values.FinishedAt != book.Progress.FinishedAt ? values.FinishedAt : null;
+        // A finish date that goes away is cleared by IsFinished, never by a
+        // null FinishedAt: null means "leave it as it is".
+        var isFinished = values.FinishedAt is null && book.Progress.FinishedAt is not null
+            ? false
+            : (bool?)null;
+
+        await _library.UpdateBookAsync(
+            new LibraryUpdateBookRequest(
+                ClientId,
+                $"{ClientId}-{Guid.NewGuid():N}",
+                book.Id,
+                Rating: rating,
+                PersonalReview: review,
+                FinishedAt: finishedAt,
+                IsFinished: isFinished,
+                EditionRating: editionRating,
+                EditionReview: editionReview),
+            ct);
+    }
+
+    /// <summary>
+    /// The collections a row's shelves name, created through the library when
+    /// missing, and the memberships to add: decided before the write so the batch
+    /// row records exactly what the import brings. A shelf the book is already
+    /// filed under is not named again.
+    /// </summary>
+    private async Task<(IReadOnlyList<Guid> Wanted, IReadOnlyList<Guid> Created)> ResolveShelvesAsync(
+        IReadOnlySet<Guid> memberIds,
+        IReadOnlyList<string> shelves,
+        ImportCollectionIndex collections,
+        CancellationToken ct)
+    {
+        var wanted = new List<Guid>();
+        var created = new List<Guid>();
         foreach (var shelf in shelves)
         {
             var name = shelf.Trim();
             if (name.Length == 0)
                 continue;
 
-            var normalized = BookIdentityNormalizer.NormalizeTitle(name);
-            var collection = collections.FirstOrDefault(candidate =>
-                string.Equals(BookIdentityNormalizer.NormalizeTitle(candidate.Name), normalized, StringComparison.Ordinal));
-            if (collection is null)
-            {
-                collection = new CollectionModel { Name = name };
-                _db.Collections.Add(collection);
-                collections.Add(collection);
+            var (collection, wasCreated) = await collections.EnsureAsync(name, _library, ClientId, ct);
+            if (wasCreated)
                 created.Add(collection.Id);
-            }
-
-            if (book.BookCollections.Any(membership => membership.CollectionId == collection.Id))
+            if (memberIds.Contains(collection.Id) || wanted.Contains(collection.Id))
                 continue;
 
-            book.BookCollections.Add(new BookCollectionModel { BookId = book.Id, CollectionId = collection.Id });
-            added.Add(collection.Id);
+            wanted.Add(collection.Id);
         }
+
+        return (wanted, created);
+    }
+
+    /// <summary>
+    /// Adds the memberships the row brings and records on the batch row how many
+    /// actually went in: a membership another writer added first is not this
+    /// import's to take back.
+    /// </summary>
+    private async Task AddMembershipsAsync(
+        BookImportBatchBook batchRow,
+        Guid bookId,
+        IReadOnlyList<Guid> wanted,
+        CancellationToken ct)
+    {
+        var outcome = await _library.ApplyBookCollectionChangesAsync(bookId, wanted, [], ct);
+        if (outcome.Data is not LibraryBookCollectionChange membership)
+            throw new InvalidOperationException("The shelves could not be mapped onto the book.");
+
+        if (membership.Added.Count == wanted.Count && wanted.All(membership.Added.Contains))
+            return;
+
+        batchRow.ChangesJson = JsonSerializer.Serialize(
+            Deserialize(batchRow.ChangesJson) with { AddedCollectionIds = membership.Added },
+            SnapshotJson);
+        await _db.SaveChangesAsync(ct);
     }
 
     /// <summary>
@@ -482,22 +590,7 @@ public sealed class ReadingHistoryImportService
         int take,
         CancellationToken ct = default)
     {
-        var batches = await _db.BookImportBatches
-            .AsNoTracking()
-            .Where(batch => batch.Books.Count > 0)
-            .OrderByDescending(batch => batch.CreatedAtUtc)
-            .Take(take)
-            .Select(batch => new
-            {
-                batch.Id,
-                batch.Source,
-                batch.FileName,
-                batch.CreatedAtUtc,
-                batch.ChangeCount,
-                BookCount = batch.Books.Count,
-            })
-            .ToListAsync(ct);
-
+        var batches = await ImportBatchUndo.ListBatchesAsync(_db, source: null, take, ct);
         return batches
             .Select(batch => new ReadingHistoryImportBatchSummary(
                 batch.Id, batch.Source, batch.FileName, batch.CreatedAtUtc, batch.BookCount, batch.ChangeCount))
@@ -522,13 +615,7 @@ public sealed class ReadingHistoryImportService
         {
             var changes = Deserialize(row.ChangesJson);
             if (row.BookId is { } bookId)
-            {
-                var book = await _db.Books
-                    .Include(candidate => candidate.BookCollections)
-                    .FirstOrDefaultAsync(candidate => candidate.Id == bookId, ct);
-                if (book is not null)
-                    Restore(book, changes);
-            }
+                await RestoreAsync(bookId, changes, ct);
 
             if (row.ReadingListEntryId is { } entryId)
             {
@@ -549,107 +636,110 @@ public sealed class ReadingHistoryImportService
             }
         }
 
-        _db.BookImportBatches.Remove(batch);
-        await _db.SaveChangesAsync(ct);
-
-        await RemoveCreatedCollectionsAsync(batch, ct);
-        await RemoveCreatedBooksAsync(batch, ct);
-        return batch.Books.Count;
-    }
-
-    private void Restore(BookModel book, BookImportSnapshot changes)
-    {
-        var work = book.Work;
-        if (work is not null)
-        {
-            if (changes.RatingBefore != changes.RatingAfter && work.Rating == changes.RatingAfter)
-                work.Rating = changes.RatingBefore;
-            if (!string.Equals(changes.ReviewBefore, changes.ReviewAfter, StringComparison.Ordinal)
-                && string.Equals(work.PersonalReview, changes.ReviewAfter, StringComparison.Ordinal))
-            {
-                work.PersonalReview = changes.ReviewBefore;
-            }
-        }
-
-        if (changes.EditionRatingBefore != changes.EditionRatingAfter
-            && book.Progress.Rating == changes.EditionRatingAfter)
-        {
-            book.Progress.Rating = changes.EditionRatingBefore;
-        }
-
-        if (!string.Equals(changes.EditionReviewBefore, changes.EditionReviewAfter, StringComparison.Ordinal)
-            && string.Equals(book.Progress.PersonalReview, changes.EditionReviewAfter, StringComparison.Ordinal))
-        {
-            book.Progress.PersonalReview = changes.EditionReviewBefore;
-        }
-
-        if (changes.FinishedAtBefore != changes.FinishedAtAfter
-            && book.Progress.FinishedAt == changes.FinishedAtAfter)
-        {
-            book.Progress.FinishedAt = changes.FinishedAtBefore;
-        }
-
-        if (changes.AddedCollectionIds is { Count: > 0 } addedIds)
-        {
-            var added = addedIds.ToHashSet();
-            _db.BookCollections.RemoveRange(
-                book.BookCollections.Where(membership => added.Contains(membership.CollectionId)));
-        }
-
-        // The roll-up invariant again: an edition value that now says the same
-        // as the work is not an exception.
-        if (work is not null && book.Progress.Rating == work.Rating)
-            book.Progress.Rating = 0;
-        if (work is not null && string.Equals(book.Progress.PersonalReview, work.PersonalReview, StringComparison.Ordinal))
-            book.Progress.PersonalReview = null;
-    }
-
-    private async Task RemoveCreatedCollectionsAsync(BookImportBatch batch, CancellationToken ct)
-    {
-        var created = batch.Books
+        var createdCollections = batch.Books
             .SelectMany(row => Deserialize(row.ChangesJson).CreatedCollectionIds ?? [])
             .Distinct()
             .ToList();
-        if (created.Count == 0)
-            return;
+        var createdBooks = batch.Books
+            .Where(row => row.CreatedBookId is not null)
+            .Select(row => new ImportBatchUndo.CreatedBook(row.CreatedBookId!.Value))
+            .ToList();
 
-        var empty = await _db.Collections
-            .Where(collection => created.Contains(collection.Id))
-            .Where(collection => !_db.BookCollections.Any(membership => membership.CollectionId == collection.Id))
-            .Where(collection => !_db.Collections.Any(child => child.ParentId == collection.Id))
-            .ToListAsync(ct);
-        if (empty.Count > 0)
-        {
-            _db.Collections.RemoveRange(empty);
-            await _db.SaveChangesAsync(ct);
-        }
+        _db.BookImportBatches.Remove(batch);
+        await _db.SaveChangesAsync(ct);
+
+        await ImportBatchUndo.RemoveCreatedCollectionsAsync(_db, _library, ClientId, createdCollections, ct);
+        await ImportBatchUndo.RemoveCreatedBooksAsync(_db, _library, storage: null, createdBooks, ct);
+        return batch.Books.Count;
     }
 
     /// <summary>
-    /// The books this import added go with it when nothing else has come to
-    /// them: no other note, no file, no membership. Mirrors the highlight
-    /// import's rule.
+    /// Puts back only a value that still says what this import wrote, so a later
+    /// edit by the owner is never overwritten; the edition keeps an exception
+    /// that still differs from the book's, as the roll-up rule requires.
     /// </summary>
-    private async Task RemoveCreatedBooksAsync(BookImportBatch batch, CancellationToken ct)
+    private async Task RestoreAsync(Guid bookId, BookImportSnapshot changes, CancellationToken ct)
     {
-        foreach (var bookId in batch.Books
-                     .Where(row => row.CreatedBookId is not null)
-                     .Select(row => row.CreatedBookId!.Value)
-                     .Distinct())
-        {
-            var book = await _db.Books
-                .AsNoTracking()
-                .Where(candidate => candidate.Id == bookId)
-                .Select(candidate => new { IsPhysical = candidate is PhysicalBookModel, candidate.FileDetails.FileName })
-                .FirstOrDefaultAsync(ct);
-            if (book is null || !book.IsPhysical || !string.IsNullOrEmpty(book.FileName))
-                continue;
-            if (await _db.Notes.AnyAsync(note => note.BookId == bookId, ct))
-                continue;
+        var book = await _db.Books
+            .AsNoTracking()
+            .Where(candidate => candidate.Id == bookId)
+            .Select(candidate => new
+            {
+                WorkRating = candidate.Work!.Rating,
+                WorkReview = candidate.Work.PersonalReview,
+                EditionRating = candidate.Progress.Rating,
+                EditionReview = candidate.Progress.PersonalReview,
+                FinishedAt = candidate.Progress.FinishedAt,
+            })
+            .FirstOrDefaultAsync(ct);
+        if (book is null)
+            return;
 
-            await _library.DeleteBookAsync(bookId, ct);
+        var rating = changes.RatingBefore != changes.RatingAfter && book.WorkRating == changes.RatingAfter
+            ? changes.RatingBefore
+            : (int?)null;
+        var review = !string.Equals(changes.ReviewBefore, changes.ReviewAfter, StringComparison.Ordinal)
+            && string.Equals(book.WorkReview, changes.ReviewAfter, StringComparison.Ordinal)
+                ? changes.ReviewBefore ?? string.Empty
+                : null;
+        var editionRating = changes.EditionRatingBefore != changes.EditionRatingAfter
+            && book.EditionRating == changes.EditionRatingAfter
+                ? changes.EditionRatingBefore
+                : (int?)null;
+        var editionReview = !string.Equals(changes.EditionReviewBefore, changes.EditionReviewAfter, StringComparison.Ordinal)
+            && string.Equals(book.EditionReview, changes.EditionReviewAfter, StringComparison.Ordinal)
+                ? changes.EditionReviewBefore ?? string.Empty
+                : null;
+
+        // The finish date is never cleared by a null value (that means "leave
+        // it"), so a date the import added goes with IsFinished.
+        var finishedAt = changes.FinishedAtBefore != changes.FinishedAtAfter
+            && book.FinishedAt == changes.FinishedAtAfter
+                ? changes.FinishedAtBefore
+                : null;
+        var isFinished = changes.FinishedAtBefore != changes.FinishedAtAfter
+            && book.FinishedAt == changes.FinishedAtAfter
+            && changes.FinishedAtBefore is null
+                ? false
+                : (bool?)null;
+
+        // The roll-up invariant again: an edition value that now says the same
+        // as the work is not an exception.
+        var workRatingAfter = rating ?? book.WorkRating;
+        var workReviewAfter = review is null ? book.WorkReview : NullIfEmpty(review);
+
+        var editionRatingAfter = BookValueRollUp.EditionRatingAfter(
+            editionRating ?? book.EditionRating, workRatingAfter);
+        editionRating = editionRatingAfter == book.EditionRating ? null : editionRatingAfter;
+
+        var editionReviewAfter = BookValueRollUp.EditionReviewAfter(
+            editionReview ?? book.EditionReview, workReviewAfter);
+        editionReview = string.Equals(editionReviewAfter, book.EditionReview, StringComparison.Ordinal)
+            ? null
+            : editionReviewAfter ?? string.Empty;
+
+        if (rating is not null || review is not null || editionRating is not null
+            || editionReview is not null || finishedAt is not null || isFinished is not null)
+        {
+            await _library.UpdateBookAsync(
+                new LibraryUpdateBookRequest(
+                    ClientId,
+                    $"{ClientId}-{Guid.NewGuid():N}",
+                    bookId,
+                    Rating: rating,
+                    PersonalReview: review,
+                    FinishedAt: finishedAt,
+                    IsFinished: isFinished,
+                    EditionRating: editionRating,
+                    EditionReview: editionReview),
+                ct);
         }
+
+        if (changes.AddedCollectionIds is { Count: > 0 } addedIds)
+            await _library.ApplyBookCollectionChangesAsync(bookId, [], addedIds, ct);
     }
+
+    private static string? NullIfEmpty(string value) => value.Trim().Length == 0 ? null : value;
 
     private static BookImportSnapshot Deserialize(string json) =>
         JsonSerializer.Deserialize<BookImportSnapshot>(json, SnapshotJson) ?? new BookImportSnapshot();
@@ -754,6 +844,14 @@ public sealed class ReadingHistoryImportService
         value is null || value.Length <= length ? value : value[..length];
 
     private sealed record LibraryBookMeta(string Title, int Rating, string? Review, DateTime? FinishedAt);
+
+    /// <summary>The library values one row asks for, decided before any write.</summary>
+    private sealed record ImportedValues(
+        int Rating,
+        string? Review,
+        int EditionRating,
+        string? EditionReview,
+        DateTime? FinishedAt);
 
     private sealed record BookImportSnapshot(
         int RatingBefore = 0,

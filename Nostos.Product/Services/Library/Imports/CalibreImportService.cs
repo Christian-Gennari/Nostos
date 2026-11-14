@@ -221,7 +221,7 @@ public sealed class CalibreImportService(
         var context = new CommitContext
         {
             Editions = await LoadEditionsAsync(ct),
-            Collections = await db.Collections.ToListAsync(ct),
+            Collections = new ImportCollectionIndex(await db.Collections.ToListAsync(ct)),
             Batch = new BookImportBatch { Source = SourceName },
         };
         context.ById = context.Editions.ToDictionary(edition => edition.Id);
@@ -685,7 +685,7 @@ public sealed class CalibreImportService(
             .GroupBy(edition => edition.WorkId)
             .ToDictionary(group => group.Key, group => group.ToList());
         context.MatcherLibrary = ToMatcherLibrary(context.Editions);
-        context.Collections = await db.Collections.ToListAsync(ct);
+        context.Collections = new ImportCollectionIndex(await db.Collections.ToListAsync(ct));
     }
 
     private static bool IsTransientLock(Exception ex) =>
@@ -735,6 +735,13 @@ public sealed class CalibreImportService(
                 && !edition.HasFile
                 && edition.Status is not (BookStatus.Downloading or BookStatus.Transcoding or BookStatus.UploadPending));
 
+    /// <summary>
+    /// The book's tags become collections only when the owner asked. A
+    /// collection already here is reused by its normalized name, a missing one
+    /// is created through <see cref="ILibraryService"/>, and the membership is
+    /// added the same way: the batch records the rows that actually changed, so
+    /// undo takes back exactly what the import brought.
+    /// </summary>
     private async Task<(IReadOnlyList<Guid> Added, IReadOnlyList<Guid> Created)> AddCollectionsAsync(
         Guid bookId,
         IReadOnlyList<string> tags,
@@ -745,38 +752,36 @@ public sealed class CalibreImportService(
         if (!enabled || tags.Count == 0)
             return ([], []);
 
-        var book = await db.Books
-            .Include(candidate => candidate.BookCollections)
-            .SingleAsync(candidate => candidate.Id == bookId, ct);
-        var added = new List<Guid>();
-        var created = new List<Guid>();
-        var memberNames = book.BookCollections
-            .Select(membership => context.Collections.FirstOrDefault(collection => collection.Id == membership.CollectionId))
-            .Where(collection => collection is not null)
-            .Select(collection => BookIdentityNormalizer.NormalizeTitle(collection!.Name))
+        var memberIds = await db.BookCollections
+            .AsNoTracking()
+            .Where(membership => membership.BookId == bookId)
+            .Select(membership => membership.CollectionId)
+            .ToListAsync(ct);
+        var memberNames = memberIds
+            .Select(id => context.Collections.FindById(id)?.Name)
+            .Where(name => name is not null)
+            .Select(name => BookIdentityNormalizer.NormalizeTitle(name!))
             .ToHashSet(StringComparer.Ordinal);
 
+        var wanted = new List<Guid>();
+        var created = new List<Guid>();
         foreach (var tag in tags.Select(tag => tag.Trim()).Where(tag => tag.Length > 0))
         {
             var normalized = BookIdentityNormalizer.NormalizeTitle(tag);
             if (!memberNames.Add(normalized))
                 continue;
 
-            var collection = context.Collections.FirstOrDefault(candidate =>
-                string.Equals(BookIdentityNormalizer.NormalizeTitle(candidate.Name), normalized, StringComparison.Ordinal));
-            if (collection is null)
-            {
-                collection = new CollectionModel { Name = tag };
-                db.Collections.Add(collection);
-                context.Collections.Add(collection);
+            var (collection, wasCreated) = await context.Collections.EnsureAsync(tag, library, ClientId, ct);
+            if (wasCreated)
                 created.Add(collection.Id);
-            }
-
-            book.BookCollections.Add(new BookCollectionModel { BookId = book.Id, CollectionId = collection.Id });
-            added.Add(collection.Id);
+            wanted.Add(collection.Id);
         }
 
-        return (added, created);
+        var change = await library.ApplyBookCollectionChangesAsync(bookId, wanted, [], ct);
+        if (change.Data is not LibraryBookCollectionChange membership)
+            throw new CalibreLibraryException("The tags could not be added to the book.");
+
+        return (membership.Added, created);
     }
 
     // ------------------------------------------------------------------
@@ -787,22 +792,7 @@ public sealed class CalibreImportService(
         int take,
         CancellationToken ct = default)
     {
-        var batches = await db.BookImportBatches
-            .AsNoTracking()
-            .Where(batch => batch.Source == SourceName && batch.Books.Count > 0)
-            .OrderByDescending(batch => batch.CreatedAtUtc)
-            .Take(take)
-            .Select(batch => new
-            {
-                batch.Id,
-                batch.Source,
-                batch.FileName,
-                batch.CreatedAtUtc,
-                batch.ChangeCount,
-                BookCount = batch.Books.Count,
-            })
-            .ToListAsync(ct);
-
+        var batches = await ImportBatchUndo.ListBatchesAsync(db, SourceName, take, ct);
         return batches
             .Select(batch => new CalibreImportBatchSummary(
                 batch.Id, batch.Source, batch.FileName, batch.CreatedAtUtc, batch.BookCount, batch.ChangeCount))
@@ -846,15 +836,21 @@ public sealed class CalibreImportService(
         db.BookImportBatches.Remove(batch);
         await db.SaveChangesAsync(ct);
 
-        await RemoveCreatedCollectionsAsync(createdCollections, ct);
-        var kept = await RemoveCreatedBooksAsync(createdChanges, ct);
+        await ImportBatchUndo.RemoveCreatedCollectionsAsync(db, library, ClientId, createdCollections, ct);
+        var kept = await ImportBatchUndo.RemoveCreatedBooksAsync(
+            db,
+            library,
+            storage,
+            createdChanges
+                .Select(created => new ImportBatchUndo.CreatedBook(created.Key, created.Value.EntityTag))
+                .ToList(),
+            ct);
         return new CalibreUndoResult(removed, kept);
     }
 
     private async Task DetachAsync(Guid bookId, CalibreBatchChange changes, CancellationToken ct)
     {
         var book = await db.Books
-            .Include(candidate => candidate.BookCollections)
             .FirstOrDefaultAsync(candidate => candidate.Id == bookId, ct);
         if (book is null)
             return;
@@ -890,86 +886,11 @@ public sealed class CalibreImportService(
 
         if (changes.AddedCollectionIds is { Count: > 0 } addedIds)
         {
-            var added = addedIds.ToHashSet();
-            db.BookCollections.RemoveRange(
-                book.BookCollections.Where(membership => added.Contains(membership.CollectionId)));
+            // Best effort: undo never fails on a book that is no longer there.
+            await library.ApplyBookCollectionChangesAsync(bookId, [], addedIds, ct);
         }
 
         await db.SaveChangesAsync(ct);
-    }
-
-    private async Task RemoveCreatedCollectionsAsync(IReadOnlySet<Guid> created, CancellationToken ct)
-    {
-        if (created.Count == 0)
-            return;
-
-        var empty = await db.Collections
-            .Where(collection => created.Contains(collection.Id))
-            .Where(collection => !db.BookCollections.Any(membership => membership.CollectionId == collection.Id))
-            .Where(collection => !db.Collections.Any(child => child.ParentId == collection.Id))
-            .ToListAsync(ct);
-        if (empty.Count > 0)
-        {
-            db.Collections.RemoveRange(empty);
-            await db.SaveChangesAsync(ct);
-        }
-    }
-
-    /// <summary>
-    /// A book this import added goes with it when nothing else has come to it:
-    /// no note, no reading progress, and still the file the import wrote.
-    /// </summary>
-    private async Task<int> RemoveCreatedBooksAsync(
-        IReadOnlyDictionary<Guid, CalibreBatchChange> created,
-        CancellationToken ct)
-    {
-        var kept = 0;
-        foreach (var (bookId, changes) in created)
-        {
-            var book = await db.Books
-                .AsNoTracking()
-                .Where(candidate => candidate.Id == bookId)
-                .Select(candidate => new
-                {
-                    candidate.Progress.ProgressPercent,
-                    candidate.Progress.LastLocation,
-                    candidate.Progress.LastReadAt,
-                    candidate.Progress.FinishedAt,
-                    HasNotes = db.Notes.Any(note => note.BookId == bookId),
-                })
-                .FirstOrDefaultAsync(ct);
-            if (book is null)
-                continue;
-
-            if (book.HasNotes
-                || book.ProgressPercent > 0
-                || book.LastLocation is not null
-                || book.LastReadAt is not null
-                || book.FinishedAt is not null)
-            {
-                kept++;
-                continue;
-            }
-
-            var info = await storage.GetBookFileInfoAsync(bookId, ct);
-            if (changes.EntityTag is not null
-                && !string.Equals(info?.EntityTag, changes.EntityTag, StringComparison.Ordinal))
-            {
-                kept++;
-                continue;
-            }
-
-            var deleted = await library.DeleteBookAsync(bookId, ct);
-            if (deleted.Data is null)
-            {
-                kept++;
-                continue;
-            }
-
-            await storage.DeleteBookFilesAsync(bookId, ct);
-        }
-
-        return kept;
     }
 
     private static CalibreBatchChange Deserialize(string json) =>
@@ -1064,7 +985,7 @@ public sealed class CalibreImportService(
         public Dictionary<Guid, LibraryEdition> ById { get; set; } = [];
         public Dictionary<Guid, List<LibraryEdition>> ByWork { get; set; } = [];
         public List<ImportLibraryBook> MatcherLibrary { get; set; } = [];
-        public required List<CollectionModel> Collections { get; set; }
+        public required ImportCollectionIndex Collections { get; set; }
         public required BookImportBatch Batch { get; init; }
         public bool BatchAdded { get; set; }
     }

@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Data;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Services.Library;
+using Nostos.Backend.Services.Library.Imports;
 using Nostos.Shared.Dtos;
 
 namespace Nostos.Backend.Services.Notes.Imports;
@@ -467,29 +468,25 @@ public sealed class HighlightImportService
 
     private async Task RemoveCreatedBooksAsync(IReadOnlyList<NoteImportBatchNote> entries, CancellationToken ct)
     {
-        // The notes are gone by now; each entry remembers the book its import added.
-        var bookIds = entries
-            .Where(entry => entry.CreatedBookId is not null)
-            .Select(entry => entry.CreatedBookId!.Value)
-            .Distinct()
-            .ToList();
-        foreach (var bookId in bookIds)
-        {
-            var book = await _db.Books
-                .AsNoTracking()
-                .Where(candidate => candidate.Id == bookId)
-                .Select(candidate => new { IsPhysical = candidate is PhysicalBookModel, candidate.FileDetails.FileName })
-                .FirstOrDefaultAsync(ct);
-            if (book is null || !book.IsPhysical || !string.IsNullOrEmpty(book.FileName))
-                continue;
-            if (await _db.Notes.AnyAsync(note => note.BookId == bookId, ct))
-                continue;
-
-            _db.NoteImportBookLinks.RemoveRange(
-                await _db.NoteImportBookLinks.Where(link => link.BookId == bookId).ToListAsync(ct));
-            await _db.SaveChangesAsync(ct);
-            await _library.DeleteBookAsync(bookId, ct);
-        }
+        // The notes are gone by now; each entry remembers the book its import
+        // added. One shared rule decides whether anything has come to it since.
+        await ImportBatchUndo.RemoveCreatedBooksAsync(
+            _db,
+            _library,
+            storage: null,
+            entries
+                .Where(entry => entry.CreatedBookId is not null)
+                .Select(entry => new ImportBatchUndo.CreatedBook(entry.CreatedBookId!.Value))
+                .ToList(),
+            ct,
+            beforeDelete: async (db, bookId, token) =>
+            {
+                // The remembered book links of a removed book go with it; the
+                // others stay, and the foreign key needs them gone first.
+                db.NoteImportBookLinks.RemoveRange(
+                    await db.NoteImportBookLinks.Where(link => link.BookId == bookId).ToListAsync(token));
+                await db.SaveChangesAsync(token);
+            });
     }
 
     /// <summary>
