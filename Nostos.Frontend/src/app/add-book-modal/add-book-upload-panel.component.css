@@ -1,0 +1,86 @@
+/* The focused upload view (#1275). A section inside the existing sheet, not a
+   second card: the mark, the file's identity, one bar and the way out. */
+/* A component host is inline by default; the panel is a body of the sheet. */
+:host {
+  display: block;
+}
+.upload-view {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 0.35rem 0 0.2rem;
+}
+.upload-view__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  min-width: 0;
+}
+.upload-view__copy {
+  min-width: 0;
+}
+.upload-view__copy h3 {
+  margin: 0.1rem 0 0;
+  color: var(--color-text-main);
+  font-family: 'Newsreader', serif;
+  font-size: 1.2rem;
+  font-weight: 600;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.upload-view__copy p {
+  margin: 0.2rem 0 0;
+  color: var(--color-text-light);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.upload-view__progress {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  gap: 0.5rem;
+}
+.upload-view__status {
+  margin: 0;
+  color: var(--color-text-main);
+  font-size: 0.9rem;
+  font-weight: var(--fw-medium);
+}
+.upload-view__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.upload-failure {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.upload-failure__message {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--color-danger);
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+/* The file step owns the same eyebrow in its summary; the upload view says the
+   same thing in the same place, so it carries the rule too (scoped CSS cannot
+   reach across the component boundary). */
+.review-eyebrow {
+  color: var(--color-text-light);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 768px) {
+  .upload-failure {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

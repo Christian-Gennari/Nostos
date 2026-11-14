@@ -639,7 +639,9 @@ export const PRODUCT_BUTTONS = new Map(Object.entries({
   'src/app/reader/reader-shell.component.html': ['reader-progress-toggle'],
 
   // --- Acquisition, Brain and Studio product rows (also in check-design RULE 15).
-  'src/app/add-book-modal/add-book-modal.component.html': ['source-result'],
+  // The acquisition result rows moved into the source picker when Add Book was
+  // split (#1639); the row is still the catalogue's product surface.
+  'src/app/add-book-modal/add-book-source-picker.component.html': ['source-result'],
   'src/app/brain/brain-topic-words.component.html': ['words-add'],
   // A related note is a full-width reading row under the open note, the same
   // shape as the Brain list's rows rather than a filled button.

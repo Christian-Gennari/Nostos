@@ -329,13 +329,6 @@ describe('AddBookModal', () => {
     const closeSpy = vi.fn();
     component.closeModal.subscribe(closeSpy);
 
-    component.providerList.set([
-      {
-        id: 'gutenberg',
-        displayName: 'Project Gutenberg',
-        capabilities: ['search', 'ebookAcquisition'],
-      } as any,
-    ]);
     fixture.componentRef.setInput('sourceFirst', true);
     fixture.detectChanges();
 
@@ -360,33 +353,20 @@ describe('AddBookModal', () => {
     objectUrlSpy.mockRestore();
   });
 
-  it('does not reinitialize a manual draft when provider state changes', () => {
-    component.providerList.set([
-      {
-        id: 'gutenberg',
-        displayName: 'Project Gutenberg',
-        capabilities: ['search', 'ebookAcquisition'],
-      } as any,
-    ]);
+  it('does not reinitialize a manual draft when internal state changes', () => {
     fixture.componentRef.setInput('sourceFirst', true);
     fixture.detectChanges();
 
     component.showManualMode();
     component.form.title = 'Keep this draft';
 
-    component.providersLoading.set(true);
-    component.providerList.set([
-      {
-        id: 'gutenberg',
-        displayName: 'Project Gutenberg',
-        capabilities: ['search', 'ebookAcquisition'],
-      } as any,
-      {
-        id: 'librivox',
-        displayName: 'LibriVox',
-        capabilities: ['search', 'audiobookAcquisition'],
-      } as any,
-    ]);
+    // Provider state now belongs to the source picker (a child of the source
+    // step), so the shell's effect cannot see it at all. These are the internal
+    // signals it still holds: none of them may re-read the external inputs.
+    component.isFetching.set(true);
+    component.existingWithFile.set({ id: 'b1', title: 'Meditations' } as unknown as Book);
+    component.uploadError.set('A failed run is in flight');
+    component.uploadProgress.set(42);
     fixture.detectChanges();
 
     expect(component.sourceMode()).toBe(false);

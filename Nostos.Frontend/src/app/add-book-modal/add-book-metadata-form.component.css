@@ -1,0 +1,140 @@
+/* The book record inside the sheet: essentials first, everything else behind
+   one shallow disclosure. The shell owns the frame; the file step owns the
+   arrival summary. */
+/* `display: block` because a component host defaults to inline; the form is a
+   body of the shell's flow, not a run of text inside it. */
+:host {
+  display: block;
+}
+.modal-form {
+  display: flex;
+  flex-direction: column;
+}
+
+.quick-identifier,
+.review-core {
+  padding: 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-surface);
+  background: var(--bg-surface);
+}
+.section-heading {
+  margin-bottom: 0.85rem;
+}
+.section-heading h3 {
+  margin: 0;
+  color: var(--color-text-main);
+  font-size: 0.96rem;
+  font-weight: 600;
+}
+.section-heading p {
+  margin: 0.2rem 0 0;
+  color: var(--color-text-light);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.metadata-disclosure {
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-surface);
+  background: var(--bg-surface);
+}
+.metadata-disclosure__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  min-height: 54px;
+  padding: 0.7rem 0.9rem;
+  cursor: pointer;
+  list-style: none;
+}
+.metadata-disclosure__summary::-webkit-details-marker {
+  display: none;
+}
+.metadata-disclosure__summary > span:first-child {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+.metadata-disclosure__summary strong {
+  color: var(--color-text-main);
+  font-size: 0.88rem;
+}
+.metadata-disclosure__summary small,
+.metadata-disclosure__state {
+  color: var(--color-text-light);
+  font-size: 0.74rem;
+}
+.metadata-disclosure__summary:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
+}
+.metadata-disclosure__state .when-open {
+  display: none;
+}
+.metadata-disclosure[open] .metadata-disclosure__state .when-closed {
+  display: none;
+}
+.metadata-disclosure[open] .metadata-disclosure__state .when-open {
+  display: inline;
+}
+.metadata-groups {
+  border-top: 1px solid var(--border-color);
+}
+.metadata-group {
+  padding: 1rem;
+}
+.metadata-group + .metadata-group {
+  border-top: 1px solid var(--border-color);
+}
+
+.asset-field,
+.collection-field {
+  margin-bottom: 1rem;
+}
+.asset-field__label {
+  display: block;
+  margin-bottom: 0.35rem;
+  color: var(--color-text-main);
+  font-size: 0.85rem;
+  font-weight: var(--fw-medium);
+}
+
+.cover-preview {
+  max-width: 100%;
+  max-height: 120px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  object-fit: contain;
+}
+
+.grid {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+.grid-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.input-group-fetch {
+  display: flex;
+  gap: 0.5rem;
+}
+.input-group-fetch .nostos-form-control {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.btn-fetch {
+  width: 100px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 768px) {
+  .grid-2 {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+}

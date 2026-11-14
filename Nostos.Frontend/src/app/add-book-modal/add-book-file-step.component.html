@@ -1,0 +1,175 @@
+@if (awaitingLocalFile()) {
+  <section class="acquisition-start" aria-labelledby="local-upload-heading">
+    <span appIconTile [size]="42" class="acquisition-start__icon" aria-hidden="true">
+      <nostos-icon name="upload-simple" [size]="24"></nostos-icon>
+    </span>
+    <div class="acquisition-start__copy">
+      <h3 id="local-upload-heading">Choose the book file</h3>
+      <p>
+        Start with the book itself. Nostos will ask only for the details needed to
+        recognize it before adding it to your library.
+      </p>
+    </div>
+    <label
+      appDropZone
+      class="file-drop-zone file-drop-zone--primary"
+      [active]="fileDragActive()"
+      (dragover)="dragOver.emit($event)"
+      (dragleave)="dragLeave.emit($event)"
+      (drop)="dragLeave.emit($event)"
+    >
+      <input
+        #localFileInput
+        type="file"
+        class="file-input"
+        (change)="fileChosen.emit($event)"
+        accept=".epub,.pdf,.txt,.mobi,.mp3,.m4a,.m4b"
+      />
+      <nostos-icon name="upload-simple" [size]="22" weight="light"></nostos-icon>
+      <span class="nostos-drop-zone__title">Choose a book file or drop it here</span>
+      <span class="nostos-drop-zone__hint">EPUB, PDF, MP3, M4A, M4B to read or play. TXT and MOBI are kept for download only.</span>
+    </label>
+  </section>
+} @else {
+  <section class="review-summary" aria-label="Book acquisition summary">
+    <div class="review-summary__visual" aria-hidden="true">
+      <nostos-book-cover
+        size="fill"
+        [iconSize]="22"
+        [decorative]="true"
+        [src]="sourceCoverUrl()"
+        [format]="formType() === 'audiobook' ? 'audiobook' : null"
+      />
+    </div>
+    <div class="review-summary__copy">
+      <span class="review-eyebrow">{{ isEditMode() ? 'Library record' : 'Ready to add' }}</span>
+      @if (seededFromSource()) {
+        <strong>From {{ seededSourceName() }}</strong>
+        <span>{{ selectedAssetLabel() || (formType() === 'audiobook' ? 'Audiobook' : 'Ebook') }}</span>
+      } @else if (flowIntent() === 'upload' || (flowIntent() === 'manual' && hasFile())) {
+        <strong>{{ fileSummary() }}</strong>
+        <span>{{ formType() === 'audiobook' ? 'Audiobook file' : 'Ebook file' }}</span>
+      } @else if (flowIntent() === 'physical') {
+        <strong>Physical book</strong>
+        <span>Identify it by ISBN or enter the essentials yourself.</span>
+      } @else {
+        <strong>{{ isEditMode() ? 'Edit metadata' : 'Manual entry' }}</strong>
+        <span>{{ isEditMode() ? 'Only change what needs changing.' : 'No file or source required.' }}</span>
+      }
+    </div>
+    @if (!isEditMode() && flowIntent() === 'upload') {
+      <label class="review-change-file">
+        <input
+          type="file"
+          class="review-change-file__input"
+          (change)="fileChosen.emit($event)"
+          accept=".epub,.pdf,.txt,.mobi,.mp3,.m4a,.m4b"
+        />
+        <nostos-icon name="upload-simple" [size]="14"></nostos-icon>
+        Change file
+      </label>
+    }
+  </section>
+
+  @if (uploadStatusText(); as status) {
+    <div appNotice tone="info" class="upload-status" role="status">{{ status }}</div>
+  }
+
+  @if (uploadError(); as err) {
+    <div appNotice tone="danger" class="upload-failure" role="alert">
+      <span class="upload-failure__message">
+        <nostos-icon name="warning-circle" [size]="14"></nostos-icon>
+        {{ err }}
+      </span>
+      @if (hasPendingUpload()) {
+        <button
+          appButton
+          type="button"
+          variant="secondary"
+          [disabled]="isSubmitting()"
+          (click)="retryUpload.emit()"
+        >
+          Try again
+        </button>
+      }
+    </div>
+  }
+
+  @if (existingNotice(); as notice) {
+    <div appNotice tone="info" class="existing-book" role="alert" data-testid="add-book-existing">
+      <span class="existing-book__message">
+        <nostos-icon name="info" [size]="14"></nostos-icon>
+        {{ notice }}
+      </span>
+      <span class="existing-book__actions">
+        <button
+          appButton
+          type="button"
+          variant="secondary"
+          data-testid="add-book-keep-existing"
+          (click)="keepExisting.emit()"
+        >
+          Keep existing file
+        </button>
+        <button
+          appButton
+          type="button"
+          variant="secondary"
+          data-testid="add-book-replace-existing"
+          [disabled]="isSubmitting()"
+          (click)="replaceExisting.emit()"
+        >
+          Replace it
+        </button>
+      </span>
+    </div>
+  }
+
+  @if (!isEditMode() && flowIntent() === 'manual') {
+    <section class="manual-file" aria-labelledby="manual-file-heading">
+      <div class="section-heading">
+        <div>
+          <h3 id="manual-file-heading">Book file (optional)</h3>
+          <p>EPUB, PDF or audiobook file. Choose several MP3 or M4A files to make one audiobook. TXT and MOBI files are kept for download; Nostos cannot read them.</p>
+        </div>
+      </div>
+      <label
+        appDropZone
+        density="compact"
+        class="file-drop-zone file-drop-zone--manual"
+        [active]="fileDragActive()"
+        (dragover)="dragOver.emit($event)"
+        (dragleave)="dragLeave.emit($event)"
+        (drop)="dragLeave.emit($event)"
+      >
+        <input
+          type="file"
+          multiple
+          class="file-input"
+          (change)="fileChosen.emit($event)"
+          accept=".epub,.pdf,.txt,.mobi,.mp3,.m4a,.m4b"
+        />
+        <nostos-icon name="upload-simple" [size]="20" weight="light"></nostos-icon>
+        @if (fileSummary(); as summary) {
+          <span class="nostos-drop-zone__title">{{ summary }}</span>
+          <span class="nostos-drop-zone__hint">Choose another file to replace it</span>
+        } @else {
+          <span class="nostos-drop-zone__title">Choose a book file or drop it here</span>
+          <span class="nostos-drop-zone__hint">EPUB, PDF, MP3, M4A, M4B to read or play. TXT and MOBI are kept for download only.</span>
+        }
+      </label>
+      <label class="review-change-file bulk-pick">
+        <input
+          type="file"
+          class="review-change-file__input"
+          multiple
+          accept=".epub,.pdf"
+          data-testid="bulk-file-input"
+          (change)="bulkChosen.emit($event)"
+        />
+        <nostos-icon name="upload-simple" [size]="14"></nostos-icon>
+        Add several EPUB or PDF files at once
+      </label>
+    </section>
+  }
+}
