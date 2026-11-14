@@ -22,7 +22,7 @@ import path from 'node:path';
 
 import { apiPost, loadFixture, newRunId } from './fixture';
 import { epubMarkCount } from './epub-marks';
-import { waitForLayoutSettled, waitForRenditionSize } from './waits';
+import { openEpubReader, waitForLayoutSettled } from './waits';
 
 const EPUB_BYTES = readFileSync(path.join(__dirname, '..', 'assets', 'tiny.epub'));
 const EVIDENCE_DIR = path.join(__dirname, '..', 'visual-evidence');
@@ -43,13 +43,11 @@ async function notes(baseUrl: string, bookId: string): Promise<any[]> {
 }
 
 async function openReader(page: Page, baseUrl: string, bookId: string) {
-  await page.goto(`${baseUrl}/read/${bookId}`, { waitUntil: 'domcontentloaded' });
-  const frame = page.frameLocator('#epub-viewer iframe');
-  await frame.locator('p').first().waitFor({ timeout: 45_000 });
-  await expect(page.locator('.loading-overlay')).toHaveClass(/is-hidden/, { timeout: 45_000 });
-  await waitForRenditionSize(page);
-  await waitForLayoutSettled(page, '#epub-viewer');
-  return frame;
+  // The reader restores the place and re-lays the page out after the first
+  // paint; `openEpubReader` waits until the text has stopped moving, so nothing
+  // below is measured against a page that is still being placed.
+  await openEpubReader(page, `${baseUrl}/read/${bookId}`);
+  return page.frameLocator('#epub-viewer iframe');
 }
 
 /** Page-viewport box of the first paragraph inside the book iframe. */
@@ -181,6 +179,9 @@ export function desktopSelectionSpecs() {
     const { p, y } = await rightClickText(page);
     const menu = page.locator('[data-testid="selection-menu"]');
     await expect(menu).toBeVisible();
+    // The menu is placed once epub.js reports the selection, and re-placed by
+    // its debounced event: read the box once it has stopped moving.
+    await waitForLayoutSettled(page, '[data-testid="selection-menu"]');
     const menuBox = (await menu.boundingBox())!;
     // Anchored at the text: just below the selected line, not covering it.
     expect(menuBox.y).toBeGreaterThan(y);
@@ -298,9 +299,14 @@ export function desktopSelectionSpecs() {
     await expect(page.locator('[data-testid="selection-bar"]')).toHaveCount(0);
     // Far more than the old 60-character slice is visible.
     await expect(menu.locator('.selected-text')).toContainText(selected.trim().slice(0, 100));
+    // The menu is placed and re-placed while epub.js settles the selection, so
+    // measure it only once it has stopped moving.
+    await waitForLayoutSettled(page, '[data-testid="selection-menu"]');
     // Desktop density: the menu's actions are 32px controls, not 44px touch targets.
     for (const id of ['selection-copy', 'selection-cancel', 'selection-add-note', 'selection-highlight']) {
-      const b = (await page.locator(`[data-testid="${id}"]`).boundingBox())!;
+      const control = page.locator(`[data-testid="${id}"]`);
+      await expect(control, `${id} is laid out`).toBeVisible();
+      const b = (await control.boundingBox())!;
       expect(b.height, `${id} desktop height`).toBeLessThan(40);
     }
     await snap(page, 'desktop-mouseup-menu');
@@ -368,6 +374,8 @@ export function mobileSelectionSpecs() {
     expect(await iframeSelection(page)).toBe(selected);
 
     const viewport = page.viewportSize()!;
+    // The bar follows the selection as it changes; measure it at rest.
+    await waitForLayoutSettled(page, '[data-testid="selection-bar"]');
     for (const id of [
       'selection-copy',
       'selection-cancel',
@@ -376,7 +384,9 @@ export function mobileSelectionSpecs() {
       'selection-pen-sage',
       'selection-pen-rose',
     ]) {
-      const b = (await page.locator(`[data-testid="${id}"]`).boundingBox())!;
+      const control = page.locator(`[data-testid="${id}"]`);
+      await expect(control, `${id} is laid out`).toBeVisible();
+      const b = (await control.boundingBox())!;
       expect(b.x).toBeGreaterThanOrEqual(0);
       expect(b.x + b.width, `${id} inside the viewport`).toBeLessThanOrEqual(viewport.width);
       expect(b.y + b.height).toBeLessThanOrEqual(viewport.height);
