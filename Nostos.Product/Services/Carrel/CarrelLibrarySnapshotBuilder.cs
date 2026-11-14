@@ -21,9 +21,11 @@ namespace Nostos.Backend.Services.Carrel;
 /// that cached it.</para>
 ///
 /// <para>Text a device quotes is the text the person reads: a
-/// <c>[[Topic]]</c> reference becomes its name.</para>
+/// <c>[[Topic]]</c> reference becomes its name, by the same rules as
+/// <see cref="TopicReferences"/>, and text that only looks like a reference
+/// (<c>[[a|b]]</c>, an unclosed <c>[[</c>) stays exactly as typed.</para>
 /// </summary>
-public static partial class CarrelLibrarySnapshotBuilder
+public static class CarrelLibrarySnapshotBuilder
 {
     /// <summary>
     /// The page a device pulls: the books its live items name, the items changed
@@ -265,9 +267,9 @@ public static partial class CarrelLibrarySnapshotBuilder
         var kind = note.Kind == NoteKinds.Passage
             ? "passage"
             : string.IsNullOrWhiteSpace(note.SelectedText) ? "note" : "highlight";
-        var thought = AsWords(MarkdownNotesRenderer.Thought(note.Content));
+        var thought = TopicReferences.AsPlainWords(MarkdownNotesRenderer.Thought(note.Content));
         var text = kind == "note"
-            ? thought ?? AsWords(Clean(note.Content)) ?? string.Empty
+            ? thought ?? TopicReferences.AsPlainWords(Clean(note.Content)) ?? string.Empty
             : (note.SelectedText ?? string.Empty).Trim();
 
         var located = MarkdownNotesRenderer.Locate(new MarkdownNote(
@@ -341,22 +343,5 @@ public static partial class CarrelLibrarySnapshotBuilder
     {
         var text = (value ?? string.Empty).Trim();
         return text.Length == 0 ? null : text;
-    }
-
-    // The app shows [[Target]] or [[Target|shown words]] as the words, so a
-    // device quoting the note sees what the person sees, not the link syntax.
-    [System.Text.RegularExpressions.GeneratedRegex(
-        @"\[\[((?:(?!\[\[|\]\])[^\r\n|])*)(?:\|([^\[\]\r\n]*))?\]\]")]
-    private static partial System.Text.RegularExpressions.Regex TopicLinkRegex();
-
-    private static string? AsWords(string? text)
-    {
-        if (string.IsNullOrEmpty(text) || !text.Contains("[[", StringComparison.Ordinal))
-            return text;
-        return TopicLinkRegex().Replace(text, match =>
-        {
-            var shown = match.Groups[2].Success ? match.Groups[2].Value : match.Groups[1].Value;
-            return shown.Trim();
-        });
     }
 }

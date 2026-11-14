@@ -87,9 +87,9 @@ public sealed class CarrelProtocolJsonContractTests
             """);
 
         var approved = new CarrelPairStatusResponse(
-            CarrelPairStatus.Approved, "stl_token", null, null);
+            CarrelPairStatus.Approved, "crl_token", null, null);
         ShouldBeJson(Serialize(approved), """
-            {"status":"approved","token":"stl_token"}
+            {"status":"approved","token":"crl_token"}
             """);
     }
 

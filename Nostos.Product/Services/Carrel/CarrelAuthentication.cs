@@ -7,10 +7,11 @@ using Microsoft.Extensions.Options;
 namespace Nostos.Backend.Services.Carrel;
 
 /// <summary>
-/// <c>Authorization: Bearer stl_…</c> for the <c>/carrel/v1</c> endpoints. A
+/// <c>Authorization: Bearer crl_…</c> for the <c>/carrel/v1</c> endpoints. A
 /// token names its device and that device's owner; the endpoints never take a
 /// user id from the request. The scheme is not the host's default, so the rest
-/// of the API keeps its own access model.
+/// of the API keeps its own access model. Tokens issued before the rename
+/// (<c>stl_…</c>) authenticate the same way.
 ///
 /// Failure messages never contain the token: ASP.NET logs them.
 /// </summary>

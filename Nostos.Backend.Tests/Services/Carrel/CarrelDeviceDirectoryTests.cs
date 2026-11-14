@@ -106,7 +106,7 @@ public sealed class CarrelDeviceDirectoryTests : IDisposable
         // The device collects its token by polling, then uses it.
         var status = await pairing.StatusAsync(Guid.Parse(started.PairId));
         status!.Status.Should().Be("approved");
-        status.Token.Should().StartWith("stl_");
+        status.Token.Should().StartWith("crl_");
         var identity = await pairing.AuthenticateAsync(status.Token!);
         identity!.OwnerKey.Should().Be("a");
     }

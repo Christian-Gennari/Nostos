@@ -71,7 +71,7 @@ public sealed class CarrelSyncEndpointTests : IClassFixture<LibraryEndpointFacto
         var pair = await StartPairingAsync("Approved Device");
         var token = await ApproveAndCollectAsync(pair);
 
-        token.Should().StartWith("stl_").And.HaveLength(47);
+        token.Should().StartWith("crl_").And.HaveLength(47);
 
         var listed = await Client.GetFromJsonAsync<JsonElement>("/api/carrel/devices");
         var listedDevice = listed.GetProperty("devices").EnumerateArray()
@@ -102,6 +102,30 @@ public sealed class CarrelSyncEndpointTests : IClassFixture<LibraryEndpointFacto
         pairing.Status.Should().Be(CarrelPairingStatus.Approved);
         pairing.DeviceId.Should().Be(device.Id);
         pairing.TokenEncrypted.Should().NotBeNull().And.NotContain(token);
+    }
+
+    [Fact]
+    public async Task A_token_issued_before_the_prefix_change_still_authenticates()
+    {
+        var pair = await StartPairingAsync("Legacy Device");
+        var issued = await ApproveAndCollectAsync(pair);
+        issued.Should().StartWith("crl_");
+
+        // What a device paired before the rename holds: the same 256 random
+        // bits, the old prefix. The server keeps only the hash, so rewriting
+        // the row is all that differs from a real pre-rename pairing.
+        var legacy = CarrelTokens.LegacyPrefix + new string('L', 43);
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<NostosDbContext>();
+            var device = await db.CarrelDevices.SingleAsync(d => d.Name == "Legacy Device");
+            device.TokenHash = CarrelTokens.Hash(legacy);
+            await db.SaveChangesAsync();
+        }
+
+        var authed = AuthedClient(legacy);
+        (await authed.GetAsync("/carrel/v1/files")).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await authed.GetAsync("/carrel/v1/library?since=0")).StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [Fact]
@@ -713,6 +737,27 @@ public sealed class CarrelSyncEndpointTests : IClassFixture<LibraryEndpointFacto
             .Should().Be("It is about Attention and how Habits form.");
         item.GetProperty("topics").EnumerateArray().Select(t => t.GetString())
             .Should().BeEquivalentTo("Attention", "Habit");
+    }
+
+    [Fact]
+    public async Task The_library_leaves_text_that_only_looks_like_a_reference_as_typed()
+    {
+        var token = await PairedTokenAsync();
+        var client = AuthedClient(token);
+        var book = await CreateBookAsync("No Alias Syntax", "An Author");
+        var note = await CreateNoteAsync(book.Id, new
+        {
+            content = "Compare [[a|b]] with [[Attention]].\n\n[[]] and [[unclosed",
+        });
+
+        var page = await client.GetFromJsonAsync<JsonElement>("/carrel/v1/library?since=0");
+        var item = page.GetProperty("items").EnumerateArray()
+            .Single(i => i.GetProperty("id").GetGuid() == note.Id);
+
+        // There is no alias syntax: `[[a|b]]` is plain text everywhere else in
+        // Nostos, so a device is handed the words the person typed, not "b".
+        item.GetProperty("text").GetString()
+            .Should().Be("Compare [[a|b]] with Attention. [[]] and [[unclosed");
     }
 
     [Fact]
