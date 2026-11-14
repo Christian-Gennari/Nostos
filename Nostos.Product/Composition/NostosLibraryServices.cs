@@ -40,8 +40,11 @@ internal static class NostosLibraryServices
         services.TryAddScoped<LibraryWorkService>();
         services.TryAddScoped<LibraryCollectionService>();
         services.TryAddScoped<LibraryChangesetService>();
-        services.AddScoped<ILibraryService, LibraryService>();
-        services.AddScoped<ILibraryChangesetService, LibraryService>();
+        // A factory, not AddScoped<ILibraryService, LibraryService>(): the facade
+        // also keeps a two-argument constructor for hosts that build it by hand,
+        // and the container would find both constructors satisfiable (ambiguous).
+        services.AddScoped<ILibraryService>(CreateLibraryFacade);
+        services.AddScoped<ILibraryChangesetService>(CreateLibraryFacade);
         services.AddScoped<LibraryReceiptRetentionService>();
         services.AddScoped<MediaMetadataService>();
         services.AddScoped<AudiobookPackageService>();
@@ -73,4 +76,13 @@ internal static class NostosLibraryServices
 
         return services;
     }
+
+    private static LibraryService CreateLibraryFacade(IServiceProvider sp) =>
+        new(
+            sp.GetRequiredService<LibraryReadService>(),
+            sp.GetRequiredService<LibraryBookCommandService>(),
+            sp.GetRequiredService<LibraryProgressService>(),
+            sp.GetRequiredService<LibraryWorkService>(),
+            sp.GetRequiredService<LibraryCollectionService>(),
+            sp.GetRequiredService<LibraryChangesetService>());
 }

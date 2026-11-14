@@ -1,5 +1,4 @@
 using Nostos.Backend.Data;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using Nostos.Shared.Dtos;
 using Nostos.Shared.Enums;
@@ -39,8 +38,10 @@ public sealed class LibraryService : ILibraryService, ILibraryChangesetService
     /// <summary>
     /// Builds the whole collaborator graph over one context factory. Hosts that
     /// construct the service by hand (Nostos-Cloud's tests, focused unit tests)
-    /// keep the constructor they had before the decomposition (#1611); the DI
-    /// container uses the collaborator constructor below.
+    /// keep the constructor they had before the decomposition (#1611). The
+    /// product composition registers the facade with a factory over the
+    /// collaborator constructor below (two satisfiable constructors would be
+    /// ambiguous to the container).
     /// </summary>
     public LibraryService(IDbContextFactory<NostosDbContext> contexts, BookLookupService lookup)
         : this(CreateGraph(contexts, lookup))
@@ -71,7 +72,6 @@ public sealed class LibraryService : ILibraryService, ILibraryChangesetService
             new LibraryChangesetService(mutations, books, collections));
     }
 
-    [ActivatorUtilitiesConstructor]
     public LibraryService(
         LibraryReadService reads,
         LibraryBookCommandService books,
