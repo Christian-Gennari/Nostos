@@ -205,8 +205,16 @@ public sealed class ActivationCoordinatorFailureTests
             populated: true, drainTimeout: TimeSpan.FromMilliseconds(150));
         await using var held = await bed.Maintenance.EnterOperationAsync(default);
 
+        // The drain deadline runs on the test's clock, so nothing expires until
+        // the test passes the deadline it armed; waiting is not time passing.
+        var activation = bed.ActivateAsync(confirm: true);
+        while (!bed.Clock.ArmedDueTimes.Contains(TimeSpan.FromMilliseconds(150)))
+            await bed.Clock.WaitForTimerCountAsync(bed.Clock.CreatedTimerCount + 1);
+
+        bed.Clock.Advance(TimeSpan.FromMilliseconds(150));
+
         var failure = await FluentActions
-            .Awaiting(() => bed.ActivateAsync(confirm: true))
+            .Awaiting(() => activation)
             .Should().ThrowAsync<MigrationActivationException>();
         failure.Which.Code.Should().Be(MigrationActivationErrorCodes.Busy);
 
