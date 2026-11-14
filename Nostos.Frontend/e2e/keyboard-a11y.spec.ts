@@ -43,16 +43,26 @@ test.describe('keyboard a11y (#1376)', () => {
     const bookId = await seedEpubWithNote(baseUrl, title);
     await page.goto(`${baseUrl}/library`, { waitUntil: 'domcontentloaded' });
 
-    const link = page.getByRole('link', { name: title });
-    await expect(link).toBeVisible({ timeout: 30_000 });
+    // The fixture is shared by the whole suite and holds more books than the
+    // library's first page (20), sorted by last read, so the new card is not
+    // guaranteed to be on it. Narrow the grid to the card instead.
+    const search = page.getByRole('searchbox', { name: 'Search books' });
+    const findCard = async () => {
+      await search.fill(title);
+      const card = page.getByRole('link', { name: title });
+      await expect(card).toBeVisible({ timeout: 30_000 });
+      return card;
+    };
+
+    const link = await findCard();
     await link.focus();
     await page.screenshot({ path: path.join(SHOTS, 'library-card-focus.png') });
     await page.keyboard.press('Enter');
     await expect(page).toHaveURL(new RegExp(`/library/${bookId}`));
 
     await page.goBack();
-    await expect(link).toBeVisible();
-    await link.focus();
+    const again = await findCard();
+    await again.focus();
     await page.keyboard.press('Space');
     await expect(page).toHaveURL(new RegExp(`/library/${bookId}`));
   });

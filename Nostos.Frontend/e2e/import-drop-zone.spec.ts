@@ -56,6 +56,57 @@ async function drop(page: Page, files: Upload[]): Promise<void> {
 }
 
 /**
+ * Drops a file the browser reads from disk instead of one whose bytes are
+ * handed to the page.
+ *
+ * `drop()` passes each file in as base64, which is right for the fixture
+ * exports (a few hundred kilobytes) and wrong for the whole-library archive:
+ * `book-upload-resume` puts a 200 MB book into the shared fixture first, so the
+ * export is a 210 MB copy of it and the base64 string alone exhausted the
+ * renderer. A detached input is only a way to get a real `File` into the
+ * DataTransfer the drop needs — the app never sees it.
+ */
+async function dropFromDisk(page: Page, filePath: string): Promise<void> {
+  const source = await page.evaluateHandle(() => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.id = 'e2e-drop-source';
+    document.body.append(input);
+    return input;
+  });
+  await source.asElement()!.setInputFiles(filePath);
+  const transfer = await page.evaluateHandle(() => {
+    const input = document.querySelector<HTMLInputElement>('#e2e-drop-source');
+    const data = new DataTransfer();
+    for (const file of Array.from(input?.files ?? [])) data.items.add(file);
+    input?.remove();
+    return data;
+  });
+  await page.dispatchEvent('[data-testid="import-drop-zone-button"]', 'drop', { dataTransfer: transfer });
+}
+
+/**
+ * Answers every row the review asks about — a suggested match, or a book that
+ * is not in the library yet — until nothing is asking.
+ *
+ * A decision only leaves the screen when Angular renders it, so each click is
+ * followed by the rendered count dropping. A count taken straight after a click
+ * can still list the button that is being removed; the click that follows it
+ * then resolves against nothing and waits until the action times out.
+ */
+async function answerHighlightReview(page: Page): Promise<void> {
+  const actions = page.locator(
+    '[data-testid="highlight-confirm"], [data-testid="highlight-add"]',
+  );
+  for (;;) {
+    const pending = await actions.count();
+    if (pending === 0) return;
+    await actions.first().click();
+    await expect(actions).toHaveCount(pending - 1);
+  }
+}
+
+/**
  * Every row the library does not know is added; a resemblance is confirmed.
  * The import then runs for real and its result is asserted.
  */
@@ -63,14 +114,9 @@ async function importHighlights(page: Page, files: Upload[]): Promise<void> {
   await drop(page, files);
   await expect(page.getByTestId('highlight-review-row').first()).toBeVisible({ timeout: 30_000 });
 
-  // A suggested match is a question; say yes so the row has a destination.
-  while (await page.getByTestId('highlight-confirm').count()) {
-    await page.getByTestId('highlight-confirm').first().click();
-  }
-  // Everything still left out is a new book: add it.
-  while (await page.getByTestId('highlight-add').count()) {
-    await page.getByTestId('highlight-add').first().click();
-  }
+  // A suggested match is a question; say yes so the row has a destination, and
+  // add every book that is still left out.
+  await answerHighlightReview(page);
 
   await page.getByTestId('highlight-import-commit').click();
   await expect(page.getByTestId('highlight-import-summary')).toBeVisible({ timeout: 60_000 });
@@ -85,11 +131,20 @@ async function importHistory(page: Page, file: Upload): Promise<void> {
   await drop(page, [file]);
   await expect(page.getByTestId('reading-history-counts')).toBeVisible({ timeout: 30_000 });
 
-  while (await page.getByTestId('reading-history-confirm').count()) {
-    await page.getByTestId('reading-history-confirm').first().click();
+  // Confirming a suggestion removes that row's button when it renders, so wait
+  // for the count to drop before asking the next question. The remaining
+  // books then go in together.
+  const confirms = page.getByTestId('reading-history-confirm');
+  for (;;) {
+    const pending = await confirms.count();
+    if (pending === 0) break;
+    await confirms.first().click();
+    await expect(confirms).toHaveCount(pending - 1);
   }
-  if (await page.getByTestId('reading-history-add-all').count()) {
-    await page.getByTestId('reading-history-add-all').click();
+  const addAll = page.getByTestId('reading-history-add-all');
+  if (await addAll.count()) {
+    await addAll.click();
+    await expect(addAll).toHaveCount(0);
   }
 
   await page.getByTestId('reading-history-commit').click();
@@ -165,8 +220,13 @@ test.describe('one import drop zone', () => {
     await expect(palette).toBeVisible();
     await page.getByTestId('palette-input').fill('import');
     await page.getByTestId('palette-item-action').filter({ hasText: 'Import highlights' }).click();
-    await expect(page.getByTestId('import-drop-zone-button')).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Import highlights' })).toBeVisible();
+    // The Settings → Import page stays mounted behind the dialog and carries a
+    // drop zone of its own, so this assertion belongs to the dialog: an
+    // unscoped one matches both the moment the dialog has rendered.
+    const dialog = page.getByRole('dialog', { name: 'Import highlights' });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole('heading', { name: 'Import highlights' })).toBeVisible();
+    await expect(dialog.getByTestId('import-drop-zone-button')).toBeVisible();
   });
 
   test('hands a dropped .nostos archive to the whole-library import', async ({ page }) => {
@@ -196,7 +256,7 @@ test.describe('one import drop zone', () => {
     const archive = test.info().outputPath('import-drop-zone.nostos');
     writeFileSync(archive, Buffer.from(await download.arrayBuffer()));
 
-    await drop(page, [{ name: 'library.nostos', path: archive }]);
+    await dropFromDisk(page, archive);
 
     await expect(page).toHaveURL(/\/settings\/library\?action=import/, { timeout: 30_000 });
     await expect(
