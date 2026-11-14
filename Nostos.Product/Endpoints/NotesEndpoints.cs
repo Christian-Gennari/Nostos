@@ -4,6 +4,7 @@ using Nostos.Backend.Services;
 using Nostos.Backend.Services.Notes;
 using Nostos.Backend.Services.Notes.Imports;
 using Nostos.Product.Http;
+using Nostos.Product.Storage;
 using Nostos.Shared.Dtos;
 
 namespace Nostos.Backend.Endpoints;
@@ -26,8 +27,8 @@ public static class NotesEndpoints
         // first section; a book with no contents, or another format, has none.
         group.MapGet(
             "/books/{bookId:guid}/sections",
-            async (Guid bookId, IBookAssetStorage storage, CancellationToken ct) =>
-                Results.Ok(new { titles = await EpubSections.ReadAsync(storage, bookId, ct) })
+            async (Guid bookId, IBookAssetStorage storage, IProductScratchStorage scratchStorage, CancellationToken ct) =>
+                Results.Ok(new { titles = await EpubSections.ReadAsync(storage, bookId, ct, scratchStorage) })
         );
 
         // GET one canonical note for exact note/evidence deep-links.

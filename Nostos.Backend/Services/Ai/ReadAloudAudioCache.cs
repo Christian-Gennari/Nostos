@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Nostos.Backend.Configuration;
 using Nostos.Product.Services.Ai;
+using Nostos.Product.Storage;
 
 namespace Nostos.Backend.Services.Ai;
 
@@ -16,14 +17,23 @@ namespace Nostos.Backend.Services.Ai;
 /// it loses nothing; every failure here is swallowed and the sentence is
 /// simply rendered again.
 /// </summary>
-public sealed class ReadAloudAudioCache(ReadAloudOptions options, ILogger<ReadAloudAudioCache> logger)
+public sealed class ReadAloudAudioCache(
+    ReadAloudOptions options,
+    ILogger<ReadAloudAudioCache> logger,
+    IProductScratchStorage? scratchStorage = null)
 {
     private const string Extension = ".audio";
     private readonly SemaphoreSlim trimGate = new(1, 1);
+
+    // A host that names no cache directory keeps this cache on the host's
+    // scratch root (issue #1596): /tmp is frequently a RAM-backed tmpfs, and a
+    // bounded 512 MiB cache there is 512 MiB of memory. A configured
+    // ReadAloud:CacheDirectory still wins.
+    private readonly IProductScratchStorage _scratch = scratchStorage ?? ProductScratchStorage.TempPath;
     private long bytesSinceTrim;
 
     private string Directory => string.IsNullOrWhiteSpace(options.CacheDirectory)
-        ? Path.Combine(Path.GetTempPath(), "nostos-read-aloud-cache")
+        ? Path.Combine(_scratch.Root, "nostos-read-aloud-cache")
         : options.CacheDirectory;
 
     private bool Enabled => options.CacheMaxBytes > 0;
