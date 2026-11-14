@@ -56,6 +56,7 @@
       [suggestionState]="suggestionState()"
       (pickerOpened)="pickerOpened.emit()"
       (pickerClosed)="pickerClosed.emit()"
+      (suggestionRetry)="suggestionRetry.emit()"
       (submitted)="saveEdit()"
     />
 
@@ -125,6 +126,7 @@
     (removed)="topicRemoved.emit($event)"
     (pickerOpened)="pickerOpened.emit()"
     (pickerClosed)="pickerClosed.emit()"
+    (suggestionRetry)="suggestionRetry.emit()"
   />
 
   <app-note-capture-details [note]="note()" (restored)="restored.emit($event)" />

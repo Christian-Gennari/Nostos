@@ -129,4 +129,33 @@ describe('TopicPickerPopoverComponent', () => {
     expect(closed).toHaveBeenCalledTimes(1);
     fixture.destroy();
   });
+
+  it('says a finished turn found nothing, not that suggestions are unavailable', async () => {
+    phone(false);
+    const fixture = await create();
+    fixture.componentRef.setInput('suggestionState', 'empty');
+    await fixture.whenStable();
+    const el = fixture.nativeElement as HTMLElement;
+
+    expect(el.textContent).toContain('No topics suggest themselves for this note.');
+    expect(el.textContent).not.toContain('Suggestions are unavailable right now.');
+  });
+
+  it('offers Try again in the failure state, and emits the retry once', async () => {
+    phone(false);
+    const fixture = await create();
+    const retried = vi.fn();
+    fixture.componentInstance.suggestionRetry.subscribe(retried);
+    fixture.componentRef.setInput('suggestionState', 'error');
+    await fixture.whenStable();
+    const el = fixture.nativeElement as HTMLElement;
+
+    expect(el.textContent).toContain('Could not get suggestions.');
+    expect(el.textContent).not.toContain('Suggestions are unavailable right now.');
+    const retry = el.querySelector('.picker-status button') as HTMLButtonElement;
+    expect(retry.textContent?.trim()).toBe('Try again');
+
+    retry.click();
+    expect(retried).toHaveBeenCalledTimes(1);
+  });
 });

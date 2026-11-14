@@ -22,7 +22,7 @@ import { AssistantService } from '../ui/assistant/assistant.service';
 import { ButtonComponent } from '../ui/button/button.component';
 import { ChipComponent } from '../ui/chip/chip.component';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
-import { EmptyStateComponent } from '../ui/empty-state/empty-state.component';
+import { EmptyStateComponent, TRY_AGAIN } from '../ui/empty-state/empty-state.component';
 import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indicator.component';
 import { NoteFormatPipe } from '../ui/pipes/note-format.pipe';
 import { ProgressComponent } from '../ui/progress/progress.component';
@@ -49,6 +49,7 @@ import { BrainStateService } from './brain-state.service';
 import { BrainTopicSuggestionsService } from './brain-topic-suggestions.service';
 import { isOrder, stillBelongs } from './brain.helpers';
 import { UNKNOWN_BOOK } from '../core/book-format';
+import { NO_TOPIC_SUGGESTIONS, TOPIC_SUGGESTIONS_FAILED } from '../ui/topic-picker-popover/topic-suggestion-copy';
 
 const PAGE_SIZE = 25;
 const RECENT_SHOWN = 6;
@@ -94,6 +95,9 @@ interface Choice {
 })
 export class BrainSortPage {
   protected readonly unknownBook = UNKNOWN_BOOK;
+  protected readonly noSuggestions = NO_TOPIC_SUGGESTIONS;
+  protected readonly suggestionsFailed = TOPIC_SUGGESTIONS_FAILED;
+  protected readonly tryAgain = TRY_AGAIN;
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly notes = inject(NotesService);

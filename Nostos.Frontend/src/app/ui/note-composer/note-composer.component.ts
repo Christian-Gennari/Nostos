@@ -96,6 +96,7 @@ export function draftIsEmpty(draft: NoteDraft): boolean {
       (removed)="removeTopic($event)"
       (pickerOpened)="pickerOpened.emit()"
       (pickerClosed)="pickerClosed.emit()"
+      (suggestionRetry)="suggestionRetry.emit()"
     />
   `,
   styles: `
@@ -155,6 +156,8 @@ export class NoteComposerComponent {
   readonly submitted = output<void>();
   readonly pickerOpened = output<void>();
   readonly pickerClosed = output<void>();
+  /** Try again in the picker's failure state: ask the same note again. */
+  readonly suggestionRetry = output<void>();
 
   private readonly input = viewChild.required(TopicInputComponent);
 

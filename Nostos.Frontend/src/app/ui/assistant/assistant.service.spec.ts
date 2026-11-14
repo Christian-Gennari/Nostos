@@ -8,6 +8,7 @@ import {
   AssistantChangesetDto,
   AssistantHistoryMessage,
   AssistantService,
+  AssistantTurnFinishedEvent,
   AssistantTurnResponse,
   TRANSCRIPT_AUTO_SEND_DELAY_MS,
   TRANSCRIPT_SEND_POLICY,
@@ -210,6 +211,38 @@ describe('AssistantService voice transcript alignment', () => {
       retryable: false,
       state: 'cancelled',
     });
+  });
+
+  it('carries the terminal failure code to focused surfaces', () => {
+    service.open();
+    service.updateDraft('Suggest topics for this note');
+    service.submit();
+
+    const request = http.expectOne('/api/assistant/turn/stream');
+    const turnId = request.request.body.turnId as string;
+    const finished: AssistantTurnFinishedEvent[] = [];
+    service.turnFinished.subscribe((event) => finished.push(event));
+
+    const message = 'I could not find usable evidence for that in your Nostos material.';
+    const failedLine = JSON.stringify({
+      turnId,
+      sequence: 1,
+      kind: 'failed',
+      failure: { code: 'assistant_no_evidence', message, retryable: false },
+      response: turn({
+        reply: '',
+        suggestions: [],
+        error: { code: 'assistant_no_evidence', message },
+      }),
+    }) + '\n';
+
+    request.flush(failedLine);
+
+    // The picker needs the code, not just the sentence: it decides "nothing
+    // fits" (#840) from `assistant_no_evidence` alone.
+    expect(finished).toHaveLength(1);
+    expect(finished[0].code).toBe('assistant_no_evidence');
+    expect(finished[0].error).toBe(message);
   });
 
   it('defaults to auto-send', () => {

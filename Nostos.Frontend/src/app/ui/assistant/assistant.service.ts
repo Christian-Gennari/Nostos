@@ -345,6 +345,15 @@ export interface AssistantTurnResponse {
   resolvedBook?: AssistantResolvedBookDto | null;
 }
 
+/** A turn's terminal result as the focused surfaces receive it. */
+export interface AssistantTurnFinishedEvent {
+  turnId: string;
+  response: AssistantTurnResponse | null;
+  error: string | null;
+  /** The terminal failure's machine code; `error` is its sentence. */
+  code: string | null;
+}
+
 /** Shape exposed on `globalThis.__nostosAssistant` for live verification. */
 export interface NostosAssistantDiagnostics {
   context: AssistantContext;
@@ -457,11 +466,7 @@ export class AssistantService {
    */
   readonly actionExecuted = new Subject<{ capability: string; context: AssistantContext }>();
   /** A terminal result keyed to the originating turn, for focused surfaces such as Brain. */
-  readonly turnFinished = new Subject<{
-    turnId: string;
-    response: AssistantTurnResponse | null;
-    error: string | null;
-  }>();
+  readonly turnFinished = new Subject<AssistantTurnFinishedEvent>();
 
   /** True while an auto transcript is waiting out its Undo window. */
   readonly autoSendPending = this.autoSend.pending;
@@ -1152,7 +1157,12 @@ export class AssistantService {
         terminalHandled = true;
         this.applyTurnResponse(turn, value);
         this.finishTurnUi(turn.turnId);
-        this.turnFinished.next({ turnId: turn.turnId, response: value, error: value.error?.message ?? null });
+        this.turnFinished.next({
+          turnId: turn.turnId,
+          response: value,
+          error: value.error?.message ?? null,
+          code: value.error?.code ?? null,
+        });
         return;
       }
 
@@ -1178,7 +1188,12 @@ export class AssistantService {
         terminalHandled = true;
         this.applyTurnResponse(turn, value.response);
         this.finishTurnUi(turn.turnId);
-        this.turnFinished.next({ turnId: turn.turnId, response: value.response, error: value.response.error?.message ?? null });
+        this.turnFinished.next({
+          turnId: turn.turnId,
+          response: value.response,
+          error: value.response.error?.message ?? null,
+          code: value.response.error?.code ?? null,
+        });
         return;
       }
 
@@ -1344,7 +1359,7 @@ export class AssistantService {
     );
     this.finishTurnUi(turn.turnId);
     this.persistSession();
-    this.turnFinished.next({ turnId: turn.turnId, response, error: message });
+    this.turnFinished.next({ turnId: turn.turnId, response, error: message, code });
   }
 
   private handleTerminalCancellation(
@@ -1366,6 +1381,10 @@ export class AssistantService {
       response?.error?.message
       ?? failure?.message
       ?? 'Stopped.';
+    const cancelledCode =
+      failure?.code
+      ?? response?.error?.code
+      ?? 'assistant_turn_cancelled';
     this.pushEntry(
       turn.turnId,
       'assistant',
@@ -1379,14 +1398,14 @@ export class AssistantService {
     this.replaceTurnArtifacts(
       turn.turnId,
       artifactsFromTurnResponse(response, {
-        code: failure?.code ?? response?.error?.code ?? 'assistant_turn_cancelled',
+        code: cancelledCode,
         message: stoppedMessage,
         retryable: false,
       }, 'cancelled'),
     );
     this.finishTurnUi(turn.turnId);
     this.persistSession();
-    this.turnFinished.next({ turnId: turn.turnId, response, error: stoppedMessage });
+    this.turnFinished.next({ turnId: turn.turnId, response, error: stoppedMessage, code: cancelledCode });
   }
 
   private handleTransportFailure(
@@ -1416,7 +1435,7 @@ export class AssistantService {
       state: 'failed',
     }]);
     this.persistSession();
-    this.turnFinished.next({ turnId: turn.turnId, response: null, error: message });
+    this.turnFinished.next({ turnId: turn.turnId, response: null, error: message, code });
   }
 
   private applyTurnResponse(
