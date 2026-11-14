@@ -337,40 +337,84 @@ public sealed class WritingsEndpointTests : IClassFixture<LibraryEndpointFactory
     }
 
     [Fact]
-    public async Task Move_RejectsSelfAndDescendant_AndAllowsOrdinaryValidParent()
+    public async Task Move_IntoItself_IsRefusedWithTheExistingBody()
     {
-        var root = await SeedWritingAsync(
-            name: "Root",
-            content: null,
-            type: WritingType.Folder);
-        var child = await SeedWritingAsync(
-            name: "Child",
-            content: null,
-            type: WritingType.Folder,
-            parentId: root.Id);
-        var otherParent = await SeedWritingAsync(
-            name: "Other Parent",
-            content: null,
-            type: WritingType.Folder);
+        var folder = await SeedWritingAsync("Self Move", null, WritingType.Folder);
 
-        var selfResponse = await Client.PutAsJsonAsync(
-            $"/api/writings/{root.Id}/move",
-            new MoveWritingDto(root.Id));
-        selfResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var response = await Client.PutAsJsonAsync(
+            $"/api/writings/{folder.Id}/move",
+            new MoveWritingDto(folder.Id));
 
-        var descendantResponse = await Client.PutAsJsonAsync(
-            $"/api/writings/{root.Id}/move",
-            new MoveWritingDto(child.Id));
-        descendantResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync())
+            .Should().Be("\"Cannot move a folder into itself.\"");
+    }
 
-        var validResponse = await Client.PutAsJsonAsync(
+    [Fact]
+    public async Task Move_IntoADeepDescendant_IsRefused_AndChangesNothing()
+    {
+        // A → B → C; moving A under C (two levels down) would close the loop.
+        var a = await SeedWritingAsync("Chain A", null, WritingType.Folder);
+        var b = await SeedWritingAsync("Chain B", null, WritingType.Folder, a.Id);
+        var c = await SeedWritingAsync("Chain C", null, WritingType.Folder, b.Id);
+
+        var response = await Client.PutAsJsonAsync(
+            $"/api/writings/{a.Id}/move",
+            new MoveWritingDto(c.Id));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync())
+            .Should().Be("\"Cannot move a folder into its own descendant.\"");
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<NostosDbContext>();
+        (await db.Writings.FindAsync(a.Id))!.ParentId.Should().BeNull("the refused move wrote nothing");
+    }
+
+    [Fact]
+    public async Task Move_ToTheRoot_ClearsTheParent()
+    {
+        var root = await SeedWritingAsync("Root", null, WritingType.Folder);
+        var child = await SeedWritingAsync("Rooted Child", null, WritingType.Folder, root.Id);
+
+        var response = await Client.PutAsJsonAsync(
             $"/api/writings/{child.Id}/move",
-            new MoveWritingDto(otherParent.Id));
-        validResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            new MoveWritingDto(null));
 
-        var moved = await validResponse.Content.ReadFromJsonAsync<WritingDto>();
-        moved.Should().NotBeNull();
-        moved!.Id.Should().Be(child.Id);
-        moved.ParentId.Should().Be(otherParent.Id);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var moved = (await response.Content.ReadFromJsonAsync<WritingDto>())!;
+        moved.ParentId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Move_IntoASiblingFolder_IsAllowed()
+    {
+        var parent = await SeedWritingAsync("Sibling Parent", null, WritingType.Folder);
+        var left = await SeedWritingAsync("Left", null, WritingType.Folder, parent.Id);
+        var right = await SeedWritingAsync("Right", null, WritingType.Folder, parent.Id);
+
+        var response = await Client.PutAsJsonAsync(
+            $"/api/writings/{left.Id}/move",
+            new MoveWritingDto(right.Id));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await response.Content.ReadFromJsonAsync<WritingDto>())!.ParentId.Should().Be(right.Id);
+    }
+
+    [Fact]
+    public async Task Move_IntoAnUnknownFolder_IsNotFound_AndChangesNothing()
+    {
+        var folder = await SeedWritingAsync("Orphan Move", null, WritingType.Folder);
+
+        var response = await Client.PutAsJsonAsync(
+            $"/api/writings/{folder.Id}/move",
+            new MoveWritingDto(Guid.NewGuid()));
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<NostosDbContext>();
+        (await db.Writings.FindAsync(folder.Id))!.ParentId.Should().BeNull(
+            "a target the library does not have is refused before the foreign key would fail");
     }
 }

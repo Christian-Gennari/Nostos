@@ -98,7 +98,7 @@ public sealed class RepositoryCancellationTests : IClassFixture<SqliteTestFixtur
         await AssertCanceledAsync(() => repo.UpdateAsync(writing, canceled));
         await AssertCanceledAsync(() => repo.SaveContentAsync(writing, canceled));
         await AssertCanceledAsync(() => repo.DeleteAsync(writing, canceled));
-        await AssertCanceledAsync(() => repo.GetParentIdAsync(writing.Id, canceled));
+        await AssertCanceledAsync(() => repo.GetParentMapAsync(canceled));
         await AssertCanceledAsync(() => repo.GetKeptNotesAsync(writing.Id, canceled));
         await AssertCanceledAsync(() => repo.AddKeptNoteAsync(writing.Id, noteId, canceled));
         await AssertCanceledAsync(() => repo.RemoveKeptNoteAsync(writing.Id, noteId, canceled));
