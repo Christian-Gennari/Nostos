@@ -511,7 +511,7 @@ public sealed class BookReadShapesTests : IClassFixture<SqliteTestFixture>
         {
             Factory = new ContextFactory(options);
             Commands = commands;
-            Library = new LibraryService(
+            Library = LibraryServiceGraph.Create(
                 Factory,
                 new BookLookupService(new NoHttp(), NullLogger<BookLookupService>.Instance));
         }

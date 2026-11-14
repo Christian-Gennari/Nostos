@@ -259,6 +259,15 @@ public sealed class NostosProductCompositionTests
         AssertRegistered(services, typeof(BookLookupService), typeof(BookLookupService), ServiceLifetime.Scoped);
         AssertRegistered(services, typeof(ILibraryService), typeof(LibraryService), ServiceLifetime.Scoped);
         AssertRegistered(services, typeof(ILibraryChangesetService), typeof(LibraryService), ServiceLifetime.Scoped);
+        // LibraryService is a facade; its focused collaborators are resolved
+        // from the container too (issue #1611).
+        AssertRegistered(services, typeof(LibraryMutationExecutor), typeof(LibraryMutationExecutor), ServiceLifetime.Scoped);
+        AssertRegistered(services, typeof(LibraryReadService), typeof(LibraryReadService), ServiceLifetime.Scoped);
+        AssertRegistered(services, typeof(LibraryBookCommandService), typeof(LibraryBookCommandService), ServiceLifetime.Scoped);
+        AssertRegistered(services, typeof(LibraryProgressService), typeof(LibraryProgressService), ServiceLifetime.Scoped);
+        AssertRegistered(services, typeof(LibraryWorkService), typeof(LibraryWorkService), ServiceLifetime.Scoped);
+        AssertRegistered(services, typeof(LibraryCollectionService), typeof(LibraryCollectionService), ServiceLifetime.Scoped);
+        AssertRegistered(services, typeof(LibraryChangesetService), typeof(LibraryChangesetService), ServiceLifetime.Scoped);
         AssertRegistered(services, typeof(LibraryReceiptRetentionService), typeof(LibraryReceiptRetentionService), ServiceLifetime.Scoped);
         AssertRegistered(services, typeof(MediaMetadataService), typeof(MediaMetadataService), ServiceLifetime.Scoped);
         AssertRegistered(services, typeof(AudiobookPackageService), typeof(AudiobookPackageService), ServiceLifetime.Scoped);

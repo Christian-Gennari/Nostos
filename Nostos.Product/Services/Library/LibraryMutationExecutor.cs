@@ -6,12 +6,14 @@ using Nostos.Shared.Dtos;
 
 namespace Nostos.Backend.Services.Library;
 
+using static LibraryCommandResults;
+
 /// <summary>
 /// Owns exact-once execution for receipt-guarded library mutations. Commands
 /// provide their domain operation; this coordinator owns serialization,
 /// idempotency replay, version bumping and the process-local mutation gate.
 /// </summary>
-internal sealed class LibraryMutationExecutor(IDbContextFactory<NostosDbContext> contexts)
+public sealed class LibraryMutationExecutor(IDbContextFactory<NostosDbContext> contexts)
 {
     private static readonly SemaphoreSlim CommandGate = new(1, 1);
     private static readonly JsonSerializerOptions ReceiptJson = new(JsonSerializerDefaults.Web)
@@ -146,21 +148,6 @@ internal sealed class LibraryMutationExecutor(IDbContextFactory<NostosDbContext>
         {
             CommandGate.Release();
         }
-    }
-
-    private static LibraryCommandResultDto Failure(
-        string code,
-        string reply,
-        string version = "0",
-        IReadOnlyList<LibraryCandidate>? candidates = null)
-    {
-        if (candidates is not null)
-            return new LibraryCommandResultDto(
-                reply,
-                new LibraryConfirmationErrorDto(code, candidates),
-                version);
-
-        return new LibraryCommandResultDto(reply, new LibraryErrorDto(code), version);
     }
 
     private static string Serialize(LibraryCommandResultDto result) =>

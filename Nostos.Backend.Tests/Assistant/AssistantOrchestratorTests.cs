@@ -4267,7 +4267,7 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
     private static async Task<string> FindQuoteRefAsync(
         Harness h, Guid bookId, string startsWith, string endsWith, int? choice = null)
     {
-        var library = new LibraryService(
+        var library = LibraryServiceGraph.Create(
             h.Factory,
             new BookLookupService(new NoopHttpClientFactory(), new SilentLogger<BookLookupService>()));
         var finder = new BookTextQuoteFinder(new SqliteBookTextIndex(h.Factory), library);
@@ -4328,7 +4328,7 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         var topics = new TopicRepository(db);
         var noteService = NoteServiceGraph.Create(db, thoughts ?? new FakeThoughtProcessor());
 
-        var libraryService = new LibraryService(
+        var libraryService = LibraryServiceGraph.Create(
             factory,
             new BookLookupService(new NoopHttpClientFactory(), new SilentLogger<BookLookupService>()));
 

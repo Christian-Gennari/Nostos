@@ -285,7 +285,7 @@ public sealed class AssistantGateAEvidenceTests : IClassFixture<SqliteTestFixtur
         var noteRepository = new NoteRepository(db);
         var noteService = NoteServiceGraph.Create(db, new FakeThoughtProcessor());
 
-        var library = new LibraryService(
+        var library = LibraryServiceGraph.Create(
             factory,
             new BookLookupService(
                 new StubHttpClientFactory(),

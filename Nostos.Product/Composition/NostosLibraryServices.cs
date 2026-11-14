@@ -30,6 +30,16 @@ internal static class NostosLibraryServices
         services.TryAddScoped<BookTrackUpload>();
 
         services.AddScoped<BookLookupService>();
+        // LibraryService is the public facade; reads, book commands, progress,
+        // edition grouping, collections and changesets are focused collaborators
+        // (issue #1611). TryAdd keeps a host's own registration authoritative.
+        services.TryAddScoped<LibraryMutationExecutor>();
+        services.TryAddScoped<LibraryReadService>();
+        services.TryAddScoped<LibraryBookCommandService>();
+        services.TryAddScoped<LibraryProgressService>();
+        services.TryAddScoped<LibraryWorkService>();
+        services.TryAddScoped<LibraryCollectionService>();
+        services.TryAddScoped<LibraryChangesetService>();
         services.AddScoped<ILibraryService, LibraryService>();
         services.AddScoped<ILibraryChangesetService, LibraryService>();
         services.AddScoped<LibraryReceiptRetentionService>();

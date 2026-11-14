@@ -190,7 +190,7 @@ public sealed class BookTextSearchQueryCountTests(ITestOutputHelper output) : ID
             (await sqlite.ReplaceReadyAsync(revision, chunks, 100, work.Attempt)).Should().BeTrue();
         }
 
-        var library = new LibraryService(
+        var library = LibraryServiceGraph.Create(
             factory,
             new BookLookupService(new NoopHttpClientFactory(), new NullLogger<BookLookupService>()));
         var options2 = new BookTextOptions();

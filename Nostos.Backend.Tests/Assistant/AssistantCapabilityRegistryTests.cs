@@ -682,7 +682,7 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
         var noteRepository = new NoteRepository(db);
         var noteService = NoteServiceGraph.Create(db, new FakeThoughtProcessor());
 
-        var libraryService = new LibraryService(
+        var libraryService = LibraryServiceGraph.Create(
             factory,
             new BookLookupService(new NoopHttpClientFactory(), new SilentLogger<BookLookupService>()));
 

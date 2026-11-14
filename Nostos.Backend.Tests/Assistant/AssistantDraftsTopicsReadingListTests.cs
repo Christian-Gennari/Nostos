@@ -349,7 +349,7 @@ public sealed class AssistantDraftsTopicsReadingListTests : IClassFixture<Sqlite
         var db = new NostosDbContext(options);
         var topics = new TopicRepository(db);
         var noteService = NoteServiceGraph.Create(db, new FakeThoughtProcessor());
-        var libraryService = new LibraryService(
+        var libraryService = LibraryServiceGraph.Create(
             factory,
             new BookLookupService(new NoopHttpClientFactory(), new SilentLogger<BookLookupService>()));
 

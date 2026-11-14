@@ -262,7 +262,7 @@ public sealed class LibraryReceiptRetentionServiceTests : IClassFixture<SqliteTe
 
         var factory = new TestContextFactory(options);
         var lookup = new BookLookupService(new NoopHttpClientFactory(), new SilentLogger<BookLookupService>());
-        var service = new LibraryService(factory, lookup);
+        var service = LibraryServiceGraph.Create(factory, lookup);
         var retentionOptions = new LibraryReceiptRetentionOptions
         {
             RetentionDays = 90,
