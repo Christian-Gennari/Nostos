@@ -24,15 +24,10 @@ internal enum SelfHostedActivationRunState
 /// for a bounded time, and a new POST is only admitted after re-validating the
 /// durable job state.
 /// </summary>
-internal sealed class SelfHostedActivationRunSlot(Guid jobId) : SelfHostedLibrarySwitchRunSlot(jobId)
+internal sealed class SelfHostedActivationRunSlot(Guid jobId)
+    : SelfHostedLibrarySwitchRunSlot<MigrationActivateRequest?, MigrationActivationStatusResponse>(jobId)
 {
     internal Guid JobId => Key;
-
-    internal MigrationActivateRequest? Request { get; private set; }
-
-    internal MigrationActivationPhase Phase { get; private set; } = MigrationActivationPhase.Queued;
-
-    internal MigrationActivationStatusResponse? LastStatus { get; private set; }
 
     internal string? DestinationRevision { get; set; }
 
@@ -45,40 +40,14 @@ internal sealed class SelfHostedActivationRunSlot(Guid jobId) : SelfHostedLibrar
     /// <paramref name="request"/> is <see langword="null"/> for a resume of a
     /// durably admitted run, whose binding comes from the activation journal.
     /// </summary>
-    internal bool TryAdmit(MigrationActivateRequest? request)
-    {
-        if (!TryAdmitCore()) return false;
-        Request = request;
-        Phase = MigrationActivationPhase.Queued;
-        LastStatus = null;
-        return true;
-    }
+    internal bool TryAdmit(MigrationActivateRequest? request) => Admit(request);
 
-    internal bool TryMarkRunning()
-    {
-        if (!TryMarkRunningCore()) return false;
-        SetPhase(MigrationActivationPhase.Preparing);
-        return true;
-    }
+    internal bool TryMarkRunning() => BeginRunning();
 
-    /// <summary>Monotonic phase update: the cutover never moves backwards.</summary>
-    internal void SetPhase(MigrationActivationPhase phase)
-    {
-        if (phase > Phase) Phase = phase;
-    }
+    internal void MarkFinished(MigrationActivationStatusResponse status, DateTimeOffset now) =>
+        Finish(status, now);
 
-    internal void MarkFinished(MigrationActivationStatusResponse status, DateTimeOffset now)
-    {
-        LastStatus = status;
-        MarkFinishedCore(now);
-    }
-
-    /// <summary>A queued run dropped at shutdown: no run remains and the durable job still decides.</summary>
-    internal void MarkDropped(DateTimeOffset now)
-    {
-        LastStatus = null;
-        MarkDroppedCore(now);
-    }
+    internal void MarkDropped(DateTimeOffset now) => Drop(now);
 }
 
 /// <summary>Activation's view of the shared bounded run registry.</summary>

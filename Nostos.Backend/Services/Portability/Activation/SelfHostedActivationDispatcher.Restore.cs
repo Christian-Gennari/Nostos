@@ -530,15 +530,10 @@ internal sealed partial class SelfHostedActivationDispatcher
 /// database is closed.
 /// </summary>
 internal sealed class SelfHostedRecoveryRestoreRunSlot(Guid recoveryId)
-    : SelfHostedLibrarySwitchRunSlot(recoveryId)
+    : SelfHostedLibrarySwitchRunSlot<MigrationRecoveryRestoreRequest?, MigrationRecoveryRestoreStatusResponse>(
+        recoveryId)
 {
     internal Guid RecoveryId => Key;
-
-    internal MigrationRecoveryRestoreRequest? Request { get; private set; }
-
-    internal MigrationActivationPhase Phase { get; private set; } = MigrationActivationPhase.Queued;
-
-    internal MigrationRecoveryRestoreStatusResponse? LastStatus { get; private set; }
 
     internal MigrationRecoveryStatus DurableStatus { get; set; } = MigrationRecoveryStatus.Restoring;
 
@@ -550,46 +545,14 @@ internal sealed class SelfHostedRecoveryRestoreRunSlot(Guid recoveryId)
 
     internal MigrationExistingCounts? Counts { get; set; }
 
-    internal bool TryAdmit(MigrationRecoveryRestoreRequest request)
-    {
-        if (!TryAdmitCore()) return false;
-        Request = request;
-        Phase = MigrationActivationPhase.Queued;
-        LastStatus = null;
-        return true;
-    }
+    internal bool TryAdmit(MigrationRecoveryRestoreRequest request) => Admit(request);
 
-    internal bool TryAdmitResume()
-    {
-        if (!TryAdmitCore()) return false;
-        Request = null;
-        Phase = MigrationActivationPhase.Queued;
-        LastStatus = null;
-        return true;
-    }
+    internal bool TryAdmitResume() => Admit(request: null);
 
-    internal bool TryMarkRunning()
-    {
-        if (!TryMarkRunningCore()) return false;
-        SetPhase(MigrationActivationPhase.Preparing);
-        return true;
-    }
+    internal bool TryMarkRunning() => BeginRunning();
 
-    /// <summary>Monotonic phase update: the restore never moves backwards.</summary>
-    internal void SetPhase(MigrationActivationPhase phase)
-    {
-        if (phase > Phase) Phase = phase;
-    }
+    internal void MarkFinished(MigrationRecoveryRestoreStatusResponse status, DateTimeOffset now) =>
+        Finish(status, now);
 
-    internal void MarkFinished(MigrationRecoveryRestoreStatusResponse status, DateTimeOffset now)
-    {
-        LastStatus = status;
-        MarkFinishedCore(now);
-    }
-
-    internal void MarkDropped(DateTimeOffset now)
-    {
-        LastStatus = null;
-        MarkDroppedCore(now);
-    }
+    internal void MarkDropped(DateTimeOffset now) => Drop(now);
 }
