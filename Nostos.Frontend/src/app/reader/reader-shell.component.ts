@@ -1,4 +1,5 @@
-import { afterRenderEffect, DestroyRef, ChangeDetectorRef, Component, inject, Injector, OnInit, OnDestroy, signal, computed, effect, untracked, viewChild, ViewChild, HostListener, ElementRef, ChangeDetectionStrategy } from '@angular/core';
+import { afterRenderEffect, DestroyRef, ChangeDetectorRef, Component, inject, Injector, OnInit, OnDestroy, signal, computed, effect, untracked, viewChild, ViewChild, ElementRef, ChangeDetectionStrategy } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indicator.component';
 import { PHONE_OR_TOUCH_QUERY } from '../ui/breakpoints';
 import { ActivatedRoute, ParamMap, Router } from '@angular/router';
@@ -17,11 +18,12 @@ import {
   Note,
   formatAudioTime,
   importedNoteLocation,
-  noteAudioSeconds,
   noteHasText,
   noteNavigationTarget,
 } from '../core/dtos/note.dtos';
 import { IReader, ReaderSearchState, ReaderSourceTarget, TocItem } from './reader.interface';
+import { ReaderTimers } from './reader-timers';
+import { ReaderOverlayFocus } from './reader-overlay-focus';
 import { isInteractiveTarget, isTypingTarget, pageActionForKey } from './reader-keyboard';
 import { overlayKeyboardWhileReading } from './reader-keyboard-viewport';
 import {
@@ -32,7 +34,6 @@ import {
   writeHighlightColour,
 } from './highlight-colours';
 import type { HighlightHit } from './highlight-hit';
-import { NoteFormatPipe } from '../ui/pipes/note-format.pipe';
 
 // Components
 import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
@@ -44,7 +45,6 @@ import {
   MenuTriggerDirective,
 } from '../ui/menu/menu.component';
 import { CdkMenuTrigger } from '@angular/cdk/menu';
-import type { ScrollModeType } from 'ngx-extended-pdf-viewer';
 import { PdfReader } from './pdf-reader/pdf-reader.component';
 import { EpubReader } from './epub-reader/epub-reader.component';
 import type { SelectionAnchor } from './selection-anchor';
@@ -54,16 +54,13 @@ import { SwitchEditionDialog } from './switch-edition/switch-edition-dialog.comp
 import { EditionPlaceKeeper, KeeperPlace } from './switch-edition/edition-place-keeper';
 import { AlignmentService } from '../core/services/alignment.service';
 import {
-  NoteComposerComponent,
   draftChanged,
   draftForNote,
   draftIsEmpty,
   draftToSave,
 } from '../ui/note-composer/note-composer.component';
-import { TopicRowComponent } from '../ui/topic-row/topic-row.component';
 import { thoughtForDisplay } from '../ui/note-item/note-item.helpers';
-import { NoteItemComponent, type NoteItemEdit } from '../ui/note-item/note-item.component';
-import { noteAsItem } from '../ui/note-item/note-item.helpers';
+import type { NoteItemEdit } from '../ui/note-item/note-item.component';
 import { BrainNoteActionsService } from '../brain/brain-note-actions.service';
 import { BrainNoteDialogsComponent } from '../brain/brain-note-dialogs.component';
 import { BrainStateService } from '../brain/brain-state.service';
@@ -71,13 +68,9 @@ import { RecentItemsService } from '../ui/command-palette/recent-items.service';
 import { BrainTopicSuggestionsService } from '../brain/brain-topic-suggestions.service';
 import { ModalStack } from '../ui/modal-shell/modal-stack.service';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
-import { InputDirective } from '../ui/form-control/form-control.directive';
 import { readReaderReturnOrigin } from '../core/navigation/studio-reader-navigation';
-import { ThemePickerComponent } from '../ui/theme-picker/theme-picker.component';
 import { ToastService } from '../core/services/toast.service';
-import { ModalShell } from '../ui/modal-shell/modal-shell.component';
-import { formatOf, formatOfConcept } from '../core/book-format';
-import { NoteSearchHit, Passage, passageReadingMinutes, passageSizeLabel } from '../core/dtos/note.dtos';
+import { Passage } from '../core/dtos/note.dtos';
 import { PassageViewerRequest } from '../ui/passage-viewer/passage-viewer.service';
 import {
   PassageDraft,
@@ -108,9 +101,6 @@ export function selectionPreview(text: string | null, max = SELECTION_PREVIEW_MA
   return `${(space > max * 0.6 ? cut.slice(0, space) : cut).trimEnd()}…`;
 }
 
-/** Viewport placement of a menu anchored at text; see `ReaderShell.menuPlacement`. */
-type MenuPlacement = { left: number; width: number; top: number | null; bottom: number | null };
-
 /** A note's creation time for ordering; an unreadable date sorts first. */
 function createdAtOf(note: Note): number {
   const time = Date.parse(note.createdAt);
@@ -119,9 +109,14 @@ function createdAtOf(note: Note): number {
 
 import { BrowserVoice } from './read-aloud/browser-voice';
 import { ReadAloudBarComponent } from './read-aloud/read-aloud-bar.component';
-import { SegmentedComponent } from '../ui/segmented/segmented.component';
-import { SettingsPopoverComponent } from '../ui/settings-popover/settings-popover.component';
-import { EPUB_LINE_OPTIONS } from './epub-reader/epub-typography';
+import { ReaderViewSettings } from './reader-view-settings.component';
+import { ReaderPassageSheet } from './reader-passage-sheet.component';
+import { ReaderNotesPanel } from './reader-notes-panel.component';
+import { ReaderNotesSession } from './reader-notes-session';
+import { ReaderTocPanel } from './reader-toc-panel.component';
+import { ReaderSearchPanel } from './reader-search-panel.component';
+import { ReaderSelectionSurface, type MenuPlacement } from './reader-selection-surface.component';
+import { ReaderHighlightCard } from './reader-highlight-card.component';
 import { ReadAloudController } from './read-aloud/read-aloud-controller';
 import { ServerVoice } from './read-aloud/server-voice';
 import {
@@ -130,23 +125,13 @@ import {
   ReadAloudStatus,
 } from '../core/services/read-aloud.service';
 import { firstValueFrom } from 'rxjs';
-import { SearchFieldComponent } from '../ui/search-field/search-field.component';
 
 const READ_ALOUD_VOICE_KEY = 'nostos.readAloud.voice';
 
-/** What the EPUB/PDF progress bar measures, reader-wide (#1269). */
-export type ProgressScope = 'book' | 'chapter';
-export const PROGRESS_SCOPE_KEY = 'nostos.reader-progress-scope';
-/** How long "Chapter progress" / "Book progress" stays in the label slot after a flip. */
-const PROGRESS_SCOPE_FLASH_MS = 1200;
-
-function readStoredProgressScope(): ProgressScope {
-  try {
-    return localStorage.getItem(PROGRESS_SCOPE_KEY) === 'chapter' ? 'chapter' : 'book';
-  } catch {
-    return 'book';
-  }
-}
+// The pager's book/chapter choice lives in its own shell-scoped service, so the
+// flash timer is no longer one of the shell's hand-managed handles (#1607).
+export { PROGRESS_SCOPE_KEY, type ProgressScope } from './reader-progress-scope';
+import { ReaderProgressScope } from './reader-progress-scope';
 
 function readStoredReadAloudVoice(): string | null {
   try {
@@ -188,15 +173,12 @@ function readAloudFallbackNotice(code: string | null): string {
   }
 }
 
-import { PenSwatchesComponent } from '../ui/pen-swatches/pen-swatches.component';
-import { QuoteBlockComponent } from '../ui/quote-block/quote-block.component';
 import { EmptyStateComponent } from '../ui/empty-state/empty-state.component';
 @Component({
   selector: 'app-reader-shell',
   standalone: true,
   imports: [
     LoadingIndicatorComponent,
-    SearchFieldComponent,
     CommonModule,
     FormsModule,
     NostosIconComponent,
@@ -204,30 +186,34 @@ import { EmptyStateComponent } from '../ui/empty-state/empty-state.component';
     EpubReader,
     AudioReader,
     SwitchEditionDialog,
-    NoteComposerComponent,
-    TopicRowComponent,
-    NoteItemComponent,
     BrainNoteDialogsComponent,
     IconButtonComponent,
     ButtonComponent,
-    InputDirective,
     ReadAloudBarComponent,
-    SegmentedComponent,
-    NoteFormatPipe,
+    ReaderViewSettings,
+    ReaderPassageSheet,
+    ReaderNotesPanel,
+    ReaderTocPanel,
+    ReaderSearchPanel,
+    ReaderSelectionSurface,
+    ReaderHighlightCard,
     MenuComponent,
     MenuItemComponent,
     MenuSeparatorDirective,
     MenuTriggerDirective,
-    ModalShell,
-    ThemePickerComponent,
-    PenSwatchesComponent,
-    QuoteBlockComponent,
-    SettingsPopoverComponent,
     EmptyStateComponent,
   ],
-  providers: [ReadAloudController, BrainNoteActionsService, BrainTopicSuggestionsService],
+  providers: [
+    ReadAloudController,
+    BrainNoteActionsService,
+    BrainTopicSuggestionsService,
+    ReaderTimers,
+    ReaderProgressScope,
+    ReaderOverlayFocus,
+    ReaderNotesSession,
+  ],
   templateUrl: './reader-shell.component.html',
-  changeDetection: ChangeDetectionStrategy.Eager,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   styleUrl: './reader-shell.component.css',
 })
 export class ReaderShell implements OnInit, OnDestroy {
@@ -239,7 +225,7 @@ export class ReaderShell implements OnInit, OnDestroy {
     // The [[ autocomplete offers the same topics, kept current by every change.
     effect(() => this.autocompleteService.setTopics(this.brain.topics()));
     this.noteActions.attach({
-      replace: (hit) => this.replaceNoteFromHit(hit),
+      replace: (hit) => this.notesSession.replaceFromHit(hit),
       remove: (noteId) => this.noteRemoved(noteId),
       edited: (saved, edit) => this.noteEdited(saved, edit),
     });
@@ -251,6 +237,9 @@ export class ReaderShell implements OnInit, OnDestroy {
         audio: this.audioQuery(),
       });
     });
+
+    // The pager's service follows the mounted reader's report as it changes.
+    effect(() => this.progress.update(this.progressState()));
 
     // The Ask Nostos capsule rests with the reader chrome (#1345). The hold is
     // released when chrome shows and when the reader goes, so other routes
@@ -287,7 +276,10 @@ export class ReaderShell implements OnInit, OnDestroy {
     effect(() => {
       const noteId = this.assistant.capturedNoteId();
       if (!noteId || !this.notesLoaded()) return;
-      untracked(() => this.addCapturedNote(noteId));
+      untracked(() => {
+        const bookId = this.book()?.id;
+        if (bookId) this.notesSession.addCaptured(bookId, noteId);
+      });
     });
 
     // Read aloud follows whichever text reader is mounted.
@@ -478,6 +470,13 @@ export class ReaderShell implements OnInit, OnDestroy {
   private host = inject<ElementRef<HTMLElement>>(ElementRef);
   private stopKeyboardOverlay: (() => void) | null = null;
   private readonly injector = inject(Injector);
+  private readonly destroyRef = inject(DestroyRef);
+  /** Every deferred callback the shell starts, cancelled with the reader. */
+  private readonly timers = inject(ReaderTimers);
+  /** Focus bookkeeping for drawers and popovers. */
+  private readonly overlayFocus = inject(ReaderOverlayFocus);
+  /** The pager's book/chapter choice and its brief confirmation label. */
+  private readonly progress = inject(ReaderProgressScope);
   private route = inject(ActivatedRoute);
   private router = inject(Router);
   private location = inject(Location);
@@ -815,15 +814,6 @@ export class ReaderShell implements OnInit, OnDestroy {
    */
   chromeVisible = signal(false);
 
-  /** Line heights as segmented options; the label is the value at one decimal. */
-  readonly lineHeightOptions = EPUB_LINE_OPTIONS.map((value) => ({ value, label: value.toFixed(1) }));
-
-  /** The PDF page-colour choice, as the two values the segmented control emits. */
-  readonly pageColourOptions = [
-    { value: 'inverted', label: 'Inverted' },
-    { value: 'printed', label: 'As printed' },
-  ] as const;
-
   /** Focus moves in and back out with the shared settings popover itself. */
   toggleTypo(): void {
     const opening = !this.typoOpen();
@@ -886,7 +876,7 @@ export class ReaderShell implements OnInit, OnDestroy {
 
   closeSearch(restoreFocus = true): void {
     if (this.searchDebounce) {
-      clearTimeout(this.searchDebounce);
+      this.timers.clear(this.searchDebounce);
       this.searchDebounce = null;
     }
     const wasOpen = this.searchPanelOpen();
@@ -897,13 +887,19 @@ export class ReaderShell implements OnInit, OnDestroy {
   }
 
   onSearchInput(event: Event): void {
-    const query = (event.target as HTMLInputElement).value;
+    this.onSearchInputValue((event.target as HTMLInputElement).value);
+  }
+
+  onSearchInputValue(query: string): void {
     this.searchQuery.set(query);
-    if (this.searchDebounce) clearTimeout(this.searchDebounce);
-    this.searchDebounce = setTimeout(() => {
+    if (this.searchDebounce) {
+      this.timers.clear(this.searchDebounce);
+      this.searchDebounce = null;
+    }
+    this.searchDebounce = this.timers.after(150, () => {
       this.searchDebounce = null;
       void this.activeReader()?.search?.(query);
-    }, 150);
+    });
   }
 
   nextSearchResult(): void {
@@ -912,49 +908,6 @@ export class ReaderShell implements OnInit, OnDestroy {
 
   previousSearchResult(): void {
     void this.activeReader()?.previousSearchResult?.();
-  }
-
-  /**
-   * Fixed-layout view controls, driven by the shell's Aa panel. These delegate to
-   * the PDF reader so the render scale lives with the document that owns it, and
-   * so the panel can show which fit is in effect.
-   */
-  pdfZoomPresets(): { value: string | number; label: string }[] {
-    return this.pdfReader()?.zoomPresets ?? [];
-  }
-
-  pdfZoomLabel(): string {
-    return this.pdfReader()?.zoomLabel() ?? '';
-  }
-
-  /** The preset currently in effect, or null when the zoom is a free value. */
-  pdfZoomPreset(): string | number | null {
-    return this.pdfZoomPresets().find((preset) => this.isZoomPreset(preset.value))?.value ?? null;
-  }
-
-  pdfScrollMode(): ScrollModeType | null {
-    return this.pdfReader()?.scrollMode() ?? null;
-  }
-
-  isZoomPreset(value: string | number): boolean {
-    return this.pdfReader()?.isZoomPreset(value) ?? false;
-  }
-
-  setZoomPreset(value: string | number): void {
-    this.pdfReader()?.setZoom(value);
-  }
-
-  /** Reading mode (continuous vs page-by-page), driven by the same view panel. */
-  pdfReadingModes(): { value: ScrollModeType; label: string }[] {
-    return this.pdfReader()?.readingModes ?? [];
-  }
-
-  isScrollMode(mode: ScrollModeType): boolean {
-    return this.pdfReader()?.isScrollMode(mode) ?? false;
-  }
-
-  setScrollMode(mode: ScrollModeType): void {
-    this.pdfReader()?.setScrollMode(mode);
   }
 
   book = signal<any>(null);
@@ -971,7 +924,6 @@ export class ReaderShell implements OnInit, OnDestroy {
   private bookNavigationSubscription: { unsubscribe(): void } | null = null;
   private currentRouteBookId: string | null = null;
   private bookLoadGeneration = 0;
-  private overlayReturnFocus: HTMLElement | null = null;
   private saveFeedbackTimer: ReturnType<typeof setTimeout> | null = null;
   /**
    * The book's highlighter pen (issue #208). Remembered per BOOK, like the
@@ -983,45 +935,27 @@ export class ReaderShell implements OnInit, OnDestroy {
   readonly selectionPreview = computed(() => selectionPreview(this.pendingSelectionText()));
   highlightSaving = signal(false);
 
-  dbNotes = signal<Note[]>([]);
   /**
-   * The book's notes have been read once. The page readers draw their saved
-   * highlights from `dbNotes` instead of fetching the list again.
+   * The open book's notes, their topics and the other editions' group. The
+   * session owns the reads and the list (issue #1607); these keep the names the
+   * shell, its template and its specs already use.
    */
-  readonly notesLoaded = signal(false);
+  private readonly notesSession = inject(ReaderNotesSession);
+  readonly dbNotes = this.notesSession.notes;
+  /** The book's notes have been read once; the page readers draw from them. */
+  readonly notesLoaded = this.notesSession.loaded;
   /** What the page readers draw from: null until the book's notes are in. */
-  readonly readerNotes = computed(() => (this.notesLoaded() ? this.dbNotes() : null));
+  readonly readerNotes = this.notesSession.readerNotes;
   /** The book's notes could not be read; the panel offers Try again. */
-  notesFailed = signal(false);
-  /**
-   * Each note's topics, by note id. The reader's own list of notes does not
-   * carry them, so they are read from the Brain's listing of this book.
-   */
-  readonly noteTopicNames = signal<ReadonlyMap<string, readonly string[]>>(new Map());
+  readonly notesFailed = this.notesSession.failed;
+  /** Each note's topics, by note id. */
+  readonly noteTopicNames = this.notesSession.topicNames;
   /** The notes panel's rows: each note, and the same note as its item shows it. */
-  readonly noteRows = computed(() => {
-    const topics = this.noteTopicNames();
-    return this.dbNotes().map((note) => ({ note, item: noteAsItem(note, topics.get(note.id)) }));
-  });
-  /**
-   * The notes made in the book's other editions. Listed below this edition's
-   * own, never painted on the page or in the audio timeline: their places
-   * belong to another copy.
-   */
-  readonly otherEditionNotes = signal<NoteSearchHit[]>([]);
-  readonly otherNotesOpen = signal(false);
-  /** "4 from the audiobook", or "6 from other editions"; null when there are none. */
-  readonly otherNotesLabel = computed(() => {
-    const notes = this.otherEditionNotes();
-    if (!notes.length) return null;
-    const editions = new Set(notes.map((note) => note.bookId.toLowerCase()));
-    const format = formatOfConcept(notes[0].bookFormat);
-    const own = this.book() ? formatOf(this.book()!).format : null;
-    const kind = editions.size === 1 && format && format.format !== own
-      ? ` the ${format.concept === 'physical' ? 'physical copy' : format.format === 'PDF' ? 'PDF' : format.format.toLowerCase()}`
-      : null;
-    return `${notes.length} from${kind ?? (editions.size === 1 ? ' another edition' : ' other editions')}`;
-  });
+  readonly noteRows = this.notesSession.rows;
+  /** The notes made in the book's other editions, never painted on this page. */
+  readonly otherEditionNotes = this.notesSession.otherEditionNotes;
+  readonly otherNotesOpen = this.notesSession.otherNotesOpen;
+  readonly otherNotesLabel = this.notesSession.otherNotesLabel;
   quickNoteContent = signal('');
   quickNoteTopics = signal<readonly string[]>([]);
   quickNoteSaving = signal(false);
@@ -1111,7 +1045,7 @@ export class ReaderShell implements OnInit, OnDestroy {
       this.selectionShift.set(0);
       return;
     }
-    setTimeout(() => {
+    this.timers.after(0, () => {
       const bar = this.host.nativeElement.querySelector<HTMLElement>('[data-testid="selection-bar"]');
       if (!bar || this.touchSelectionTop === null) {
         this.selectionShift.set(0);
@@ -1120,7 +1054,7 @@ export class ReaderShell implements OnInit, OnDestroy {
       const gap = 12;
       const needed = bar.getBoundingClientRect().bottom + gap - this.touchSelectionTop;
       this.selectionShift.set(needed > 0 ? Math.ceil(needed) : 0);
-    }, 0);
+    });
   }
 
   handleSurfaceInteraction(): void {
@@ -1196,66 +1130,26 @@ export class ReaderShell implements OnInit, OnDestroy {
 
   toc = computed(() => this.activeReader()?.toc() ?? []);
   progressState = computed(() => this.activeReader()?.progress());
-  /**
-   * Book or chapter progress on the bar (#1269). The choice is presentation
-   * only and remembered for every book; the readers always report both, and
-   * the saved progress stays book-relative.
-   */
-  readonly progressScope = signal<ProgressScope>(readStoredProgressScope());
-  /** "Chapter progress" / "Book progress", briefly, after a flip. */
-  readonly progressScopeFlash = signal<string | null>(null);
-  private progressScopeFlashTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // The book/chapter choice and its flash label live in ReaderProgressScope
+  // (#1607); these keep the template's names, now reading the service.
+  /** The chosen scope; the service falls back to the book when a chapter cannot be placed. */
+  readonly progressScope = this.progress.scope;
+  readonly progressScopeFlash = this.progress.flash;
   /** The toggle exists only when the reader can place a chapter. */
-  chapterProgressAvailable = computed(() => this.progressState()?.chapterPercentage != null);
+  readonly chapterProgressAvailable = this.progress.chapterAvailable;
   /** Chapter only when chosen AND available; otherwise silently the book bar. */
-  effectiveProgressScope = computed<ProgressScope>(() =>
-    this.progressScope() === 'chapter' && this.chapterProgressAvailable() ? 'chapter' : 'book',
-  );
-  progressFillPercent = computed(() => {
-    const state = this.progressState();
-    if (!state) return 0;
-    return this.effectiveProgressScope() === 'chapter'
-      ? (state.chapterPercentage ?? 0)
-      : state.percentage;
-  });
-  progressScopeToggleLabel = computed(() =>
-    this.effectiveProgressScope() === 'chapter' ? 'Show book progress' : 'Show chapter progress',
-  );
-  progressScopeTitle = computed(() =>
-    this.effectiveProgressScope() === 'chapter'
-      ? 'Chapter progress: tap for book progress'
-      : 'Book progress: tap for chapter progress',
-  );
-
-  progressLabel = computed(() => {
-    const flash = this.progressScopeFlash();
-    if (flash) return flash;
-    const state = this.progressState();
-    if (!state) return '';
-    if (this.effectiveProgressScope() === 'chapter') {
-      return `${state.chapterPercentage}% of ${state.chapterLabel || 'chapter'}`;
-    }
-    return state.label ?? '';
-  });
-  progressTooltip = computed(() => this.progressState()?.tooltip ?? '');
+  readonly effectiveProgressScope = this.progress.effective;
+  readonly progressFillPercent = this.progress.fillPercent;
+  readonly progressScopeToggleLabel = this.progress.toggleLabel;
+  readonly progressScopeTitle = this.progress.title;
+  readonly progressLabel = this.progress.label;
+  readonly progressTooltip = this.progress.tooltip;
 
   toggleProgressScope(): void {
-    if (!this.chapterProgressAvailable()) return;
-    const next: ProgressScope = this.effectiveProgressScope() === 'chapter' ? 'book' : 'chapter';
-    this.progressScope.set(next);
-    try {
-      localStorage.setItem(PROGRESS_SCOPE_KEY, next);
-    } catch {
-      // The choice still applies for this session.
-    }
-    if (this.progressScopeFlashTimer) clearTimeout(this.progressScopeFlashTimer);
-    this.progressScopeFlash.set(next === 'chapter' ? 'Chapter progress' : 'Book progress');
-    this.progressScopeFlashTimer = setTimeout(() => {
-      this.progressScopeFlashTimer = null;
-      this.progressScopeFlash.set(null);
-    }, PROGRESS_SCOPE_FLASH_MS);
+    this.progress.toggle();
   }
+
 
   nextPage() {
     this.activeReader()?.next();
@@ -1274,11 +1168,6 @@ export class ReaderShell implements OnInit, OnDestroy {
     this.activeReader()?.goTo(item.target);
     this.tocOpen.set(false);
     this.restoreOverlayFocus();
-  }
-
-  isActive(item: TocItem): boolean {
-    const activeTarget = this.activeReader()?.currentLocationTarget?.();
-    return activeTarget != null && item.target === activeTarget;
   }
 
   // --- INITIALIZATION ---
@@ -1300,12 +1189,15 @@ export class ReaderShell implements OnInit, OnDestroy {
     if (typeof window !== 'undefined') {
       this.stopKeyboardOverlay = overlayKeyboardWhileReading(this.host.nativeElement);
     }
+    if (typeof document !== 'undefined') {
+      document.addEventListener('keydown', this.onDocumentKeydown);
+    }
   }
 
   ngOnDestroy(): void {
-    if (this.progressScopeFlashTimer) clearTimeout(this.progressScopeFlashTimer);
+    this.timers.clear(this.searchDebounce);
+    this.searchDebounce = null;
     this.placeKeeper.stop();
-    if (this.searchDebounce) clearTimeout(this.searchDebounce);
     this.activeReader()?.clearSearch?.();
     this.bookNavigationSubscription?.unsubscribe();
     this.sourceNavigationSubscription?.unsubscribe();
@@ -1314,20 +1206,25 @@ export class ReaderShell implements OnInit, OnDestroy {
     this.pendingGroundedSourceTarget = null;
     this.unregisterSelectionAssistantContext?.();
     this.unregisterSelectionAssistantContext = null;
-    if (this.saveFeedbackTimer) clearTimeout(this.saveFeedbackTimer);
-    if (this.flashTimer) clearTimeout(this.flashTimer);
+    this.timers.clear(this.saveFeedbackTimer);
+    this.timers.clear(this.flashTimer);
     this.dockQuery?.removeEventListener?.('change', this.onDockQueryChange);
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('keydown', this.onDocumentKeydown);
+    }
     this.stopKeyboardOverlay?.();
     this.stopKeyboardOverlay = null;
   }
 
   private watchBookNavigation(): void {
     const paramMap = this.route.paramMap;
-    if (paramMap?.subscribe) {
-      this.bookNavigationSubscription = paramMap.subscribe((params) => {
-        const id = params.get('id');
-        if (id && id !== this.currentRouteBookId) this.loadBook(id);
-      });
+    if (typeof paramMap?.subscribe === 'function') {
+      this.bookNavigationSubscription = paramMap
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe((params) => {
+          const id = params.get('id');
+          if (id && id !== this.currentRouteBookId) this.loadBook(id);
+        });
       return;
     }
 
@@ -1350,9 +1247,7 @@ export class ReaderShell implements OnInit, OnDestroy {
     this.loading.set(true);
     this.loadError.set(null);
     this.book.set(null);
-    this.dbNotes.set([]);
-    this.notesLoaded.set(false);
-    this.notesFailed.set(false);
+    this.notesSession.reset();
     this.pendingSelectionText.set(null);
     this.closeHighlightCard();
     this.highlightSaving.set(false);
@@ -1372,18 +1267,18 @@ export class ReaderShell implements OnInit, OnDestroy {
     // book's source query into the new reader if query params are also changing.
     this.onGroundedSourceParams(this.route.snapshot.queryParamMap);
 
-    this.booksService.get(id).subscribe({
+    this.booksService.get(id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (b) => {
         if (generation !== this.bookLoadGeneration) return;
         this.book.set(b);
         this.recentItems.recordBook(b);
         this.loading.set(false);
-        this.loadNotes(b.id);
-        setTimeout(() => {
+        this.notesSession.load(b);
+        this.timers.after(100, () => {
           if (generation !== this.bookLoadGeneration) return;
           this.ready.set(true);
           this.navigateGroundedSource(this.sourceNavigationGeneration);
-        }, 100);
+        });
       },
       error: (err: unknown) => {
         if (generation !== this.bookLoadGeneration) return;
@@ -1414,10 +1309,12 @@ export class ReaderShell implements OnInit, OnDestroy {
     // snapshot fallback for lightweight embedded/test hosts that only provide
     // a minimal ActivatedRoute shape.
     const queryParamMap = this.route.queryParamMap;
-    if (queryParamMap?.subscribe) {
-      this.sourceNavigationSubscription = queryParamMap.subscribe((params) => {
-        this.onGroundedSourceParams(params);
-      });
+    if (typeof queryParamMap?.subscribe === 'function') {
+      this.sourceNavigationSubscription = queryParamMap
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe((params) => {
+          this.onGroundedSourceParams(params);
+        });
       return;
     }
 
@@ -1445,11 +1342,11 @@ export class ReaderShell implements OnInit, OnDestroy {
       const generation = this.sourceNavigationGeneration;
       // Route reuse can emit query params just before the new :id. Defer one
       // turn so a cross-book citation never navigates the old mounted reader.
-      setTimeout(() => {
+      this.timers.after(0, () => {
         if (generation !== this.sourceNavigationGeneration) return;
         if (!this.isLoadedBookForCurrentRoute()) return;
         this.navigateGroundedSource(generation);
-      }, 0);
+      });
     }
   }
 
@@ -1554,39 +1451,7 @@ export class ReaderShell implements OnInit, OnDestroy {
   readonly passageNote = signal('');
   readonly passageTopics = signal<readonly string[]>([]);
   private passageBuildSeq = 0;
-  readonly readingMinutes = passageReadingMinutes;
   readonly formatAudioTime = formatAudioTime;
-
-  /** The draft's size as its card will show it: words, pages or a time range. */
-  readonly passageDraftSize = computed(() => {
-    const draft = this.passageDraft();
-    return draft
-      ? passageSizeLabel({
-          kind: 'passage',
-          sourceAnchorKind: draft.anchorKind,
-          sourceAnchorValue: draft.start,
-          passageEnd: draft.end,
-          passageWordCount: draft.words,
-        })
-      : '';
-  });
-
-  /** A clip's ends move by 15 seconds on the save sheet, never past each other. */
-  nudgePassage(which: 'start' | 'end', delta: number): void {
-    const draft = this.passageDraft();
-    if (!draft || draft.anchorKind !== 'audio_timestamp') return;
-    let start = Number(draft.start);
-    let end = Number(draft.end);
-    if (which === 'start') start = Math.min(end - 1, Math.max(0, start + delta));
-    else end = Math.min(draft.limit ?? Infinity, Math.max(start + 1, end + delta));
-    this.passageDraft.set({
-      ...draft,
-      start: String(start),
-      end: String(end),
-      opening: formatAudioTime(start),
-      closing: formatAudioTime(end),
-    });
-  }
 
   /** The reader in use can mark passages. */
   readonly canMarkPassage = computed(() => !!this.activeReader()?.passageMarkFromSelection);
@@ -1702,12 +1567,13 @@ export class ReaderShell implements OnInit, OnDestroy {
         passageHtml: draft.html ?? undefined,
         highlightColour: this.highlightColour(),
       })
+      .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (created) => {
           this.passageSaving.set(false);
           this.cancelPassageMark();
           this.closePassageSheet();
-          this.addCreatedNote(bookId, created);
+          this.notesSession.addCreated(bookId, created);
           this.showSaveFeedback('Passage saved');
         },
         error: () => {
@@ -1717,103 +1583,9 @@ export class ReaderShell implements OnInit, OnDestroy {
       });
   }
 
-  loadNotes(bookId: string) {
-    this.notesFailed.set(false);
-    this.notesService.list(bookId).subscribe({
-      next: (notes) => {
-        this.dbNotes.set(notes.reverse());
-        this.notesLoaded.set(true);
-      },
-      error: () => this.notesFailed.set(true),
-    });
-    this.loadNoteTopics(bookId);
-  }
-
-  /**
-   * A note this reader just wrote joins the list where it was made, with no
-   * second read of the book's notes. The save already answered with the note;
-   * only its topics (a [[link]] in its text) are asked for, and only when it
-   * has text to link from.
-   */
-  private addCreatedNote(bookId: string, created: Note): void {
-    if (this.book()?.id !== bookId) return;
-    this.dbNotes.update((notes) => (notes.some((n) => n.id === created.id) ? notes : [created, ...notes]));
-    if (created.content?.trim()) this.refreshNoteTopics(created.id);
-  }
-
-  private addCapturedNote(noteId: string): void {
-    const bookId = this.book()?.id;
-    const same = (a: string | null | undefined, b: string) => a?.toLowerCase() === b.toLowerCase();
-    if (!bookId || this.dbNotes().some((note) => same(note.id, noteId))) return;
-    this.notesService.get(noteId).subscribe({
-      next: (hit) => {
-        if (!same(hit.bookId, bookId)) return;
-        this.addCreatedNote(bookId, {
-          ...hit,
-          bookTitle: hit.bookTitle ?? undefined,
-          selectedText: hit.selectedText ?? undefined,
-          cfiRange: hit.cfiRange ?? undefined,
-        });
-      },
-      // The note was saved; it is in the list at the next opening.
-      error: () => undefined,
-    });
-  }
-
-  private noteTopicsSeq = 0;
-
-  /**
-   * Every note's topics in this book, read 200 at a time until all are in. A
-   * book with several editions is read as the whole work in the same pass: the
-   * other editions' notes are kept apart, for the collapsed group below the list.
-   */
-  private loadNoteTopics(bookId: string): void {
-    const seq = ++this.noteTopicsSeq;
-    const workId = this.book()?.workId;
-    const manyEditions = !!workId && (this.book()?.otherEditions?.length ?? 0) > 0;
-    const filter = manyEditions ? { workId } : { bookId };
-    const others: NoteSearchHit[] = [];
-    const page = (held: Map<string, readonly string[]>, offset: number) =>
-      this.notesService.browse({ ...filter, limit: 200, offset }).subscribe({
-        next: (result) => {
-          if (seq !== this.noteTopicsSeq) return;
-          for (const hit of result.items) {
-            if (!manyEditions || hit.bookId?.toLowerCase() === bookId.toLowerCase()) held.set(hit.id, hit.topicNames ?? []);
-            else others.push(hit);
-          }
-          const read = offset + result.items.length;
-          if (result.items.length && read < result.totalCount) page(held, read);
-          else {
-            this.noteTopicNames.set(held);
-            this.otherEditionNotes.set(others);
-          }
-        },
-      });
-    if (!manyEditions) this.otherEditionNotes.set([]);
-    page(new Map(), 0);
-  }
-
-  /** A note as the Brain's actions now have it: its topics and its words. */
-  private replaceNoteFromHit(hit: NoteSearchHit): void {
-    this.noteTopicNames.update((current) => new Map(current).set(hit.id, hit.topicNames ?? []));
-    this.dbNotes.update((notes) =>
-      notes.map((note) => (note.id === hit.id ? { ...note, content: hit.content } : note)),
-    );
-  }
-
-  /** A [[link]] written in a note links a topic: show the note's topics as saved. */
-  private refreshNoteTopics(noteId: string): void {
-    this.notesService.get(noteId).subscribe({
-      next: (hit) =>
-        this.noteTopicNames.update((current) => new Map(current).set(hit.id, hit.topicNames ?? [])),
-    });
-  }
-
   /** The reader found a note's text in the book; keep the list in step. */
   handleNoteLocated(located: Note) {
-    this.dbNotes.update((notes) =>
-      notes.map((note) => (note.id === located.id ? { ...note, cfiRange: located.cfiRange } : note)),
-    );
+    this.notesSession.noteLocated(located);
   }
 
   /**
@@ -1836,7 +1608,7 @@ export class ReaderShell implements OnInit, OnDestroy {
 
   handleNoteCreated(created: Note) {
     const id = this.book()?.id;
-    if (id) this.addCreatedNote(id, created);
+    if (id) this.notesSession.addCreated(id, created);
     // Saving a mark must leave the passage visible. Notes only opens when the
     // reader explicitly asks for it.
     this.pendingSelectionText.set(null);
@@ -1884,11 +1656,11 @@ export class ReaderShell implements OnInit, OnDestroy {
   openNoteDraft(): void {
     this.noteDraftOpen.set(true);
     this.updateSelectionShift();
-    setTimeout(() => {
+    this.timers.after(0, () => {
       this.host.nativeElement
         .querySelector<HTMLTextAreaElement>('#selection-note-input')
         ?.focus({ preventScroll: true });
-    }, 0);
+    });
   }
 
   /** Saves the mark together with the typed note, through the same commit. */
@@ -1975,11 +1747,11 @@ export class ReaderShell implements OnInit, OnDestroy {
   handleSelectionAnchored(anchor: SelectionAnchor | null) {
     this.selectionAnchor.set(anchor);
     if (!this.selectionMenuPlacement()) return;
-    setTimeout(() => {
+    this.timers.after(0, () => {
       this.host.nativeElement
         .querySelector<HTMLButtonElement>('.selection-menu .selection-primary')
         ?.focus({ preventScroll: true });
-    }, 0);
+    });
   }
 
   private resetSelectionMenu(): void {
@@ -2029,11 +1801,11 @@ export class ReaderShell implements OnInit, OnDestroy {
       this.clearSaveFeedback();
       return;
     }
-    setTimeout(() => {
+    this.timers.after(0, () => {
       this.host.nativeElement
         .querySelector<HTMLElement>('.highlight-card [data-autofocus]')
         ?.focus({ preventScroll: true });
-    }, 0);
+    });
   }
 
   /**
@@ -2062,11 +1834,11 @@ export class ReaderShell implements OnInit, OnDestroy {
     this.highlightNoteDraft.set(draft.words);
     this.highlightNoteTopics.set(draft.topics);
     this.highlightNoteEditing.set(true);
-    setTimeout(() => {
+    this.timers.after(0, () => {
       const input = this.host.nativeElement.querySelector<HTMLTextAreaElement>('#highlight-card-input');
       input?.focus({ preventScroll: true });
       input?.setSelectionRange(input.value.length, input.value.length);
-    }, 0);
+    });
   }
 
   cancelHighlightNoteEdit(): void {
@@ -2099,10 +1871,9 @@ export class ReaderShell implements OnInit, OnDestroy {
     const removing = draftIsEmpty(draft);
     this.highlightNoteSaving.set(true);
 
-    this.notesService.update(note.id, { content: draft.words, topics: draft.topics }).subscribe({
+    this.notesService.update(note.id, { content: draft.words, topics: draft.topics }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (updated) => {
-        this.dbNotes.update((notes) => notes.map((n) => (n.id === updated.id ? updated : n)));
-        this.refreshNoteTopics(updated.id);
+        this.notesSession.replace(updated);
         // The dotted rule under the mark follows whether it now has a note.
         this.activeReader()?.recolourHighlight?.(updated, noteHighlightColour(updated));
         this.highlightNoteSaving.set(false);
@@ -2161,18 +1932,18 @@ export class ReaderShell implements OnInit, OnDestroy {
     this.closeHighlightCard();
     if (!this.notesOpen()) this.toggleNotes();
 
-    if (this.flashTimer) clearTimeout(this.flashTimer);
+    this.timers.clear(this.flashTimer);
     this.flashedNoteId.set(note.id);
-    this.flashTimer = setTimeout(() => {
+    this.flashTimer = this.timers.after(2400, () => {
       this.flashedNoteId.set(null);
       this.flashTimer = null;
-    }, 2400);
-    setTimeout(() => {
+    });
+    this.timers.after(0, () => {
       const card = Array.from(
         this.host.nativeElement.querySelectorAll<HTMLElement>('.notes-panel [data-note-id]'),
       ).find((candidate) => candidate.getAttribute('data-note-id') === note.id);
       card?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
-    }, 0);
+    });
   }
 
   toggleToc() {
@@ -2191,7 +1962,7 @@ export class ReaderShell implements OnInit, OnDestroy {
     this.tocOpen.set(true);
     this.focusOverlay('.toc-panel.open .panel-header button');
     if (this.fileType() === 'epub' || this.fileType() === 'audio') {
-      setTimeout(() => this.scrollActiveTocItemIntoView(), 0);
+      this.timers.after(0, () => this.scrollActiveTocItemIntoView());
     }
   }
 
@@ -2224,11 +1995,6 @@ export class ReaderShell implements OnInit, OnDestroy {
     }
   }
 
-  /** The time to show on a note's card: audiobooks only. */
-  noteAudioTime(note: Note): number | null {
-    return this.fileType() === 'audio' ? noteAudioSeconds(note) : null;
-  }
-
   saveQuickNote() {
     if (this.quickNoteSaving() || !this.quickNoteReady()) return;
     const draft = draftToSave({ words: this.quickNoteContent(), topics: [...this.quickNoteTopics()] });
@@ -2252,7 +2018,7 @@ export class ReaderShell implements OnInit, OnDestroy {
     }
     this.quickNoteSaving.set(true);
 
-    this.notesService.create(bookId, dto).subscribe({
+    this.notesService.create(bookId, dto).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (created) => {
         // Do not erase text typed while the request was in flight.
         if (this.quickNoteContent().trim() === content) {
@@ -2261,7 +2027,7 @@ export class ReaderShell implements OnInit, OnDestroy {
           this.quickNotePinnedLocation.set(null);
         }
         this.quickNoteSaving.set(false);
-        this.addCreatedNote(bookId, created);
+        this.notesSession.addCreated(bookId, created);
         this.loadTopics();
         this.showSaveFeedback('Note saved');
       },
@@ -2274,9 +2040,14 @@ export class ReaderShell implements OnInit, OnDestroy {
 
   // --- HANDLERS FOR NOTE CARD ---
 
+  /** Reads the open book's notes again, e.g. after a failed read. */
+  loadNotes(): void {
+    const book = this.book();
+    if (book) this.notesSession.load(book);
+  }
+
   retryNotes(): void {
-    const bookId = this.book()?.id;
-    if (bookId) this.loadNotes(bookId);
+    this.loadNotes();
   }
 
   onUpdateNote(event: NoteItemEdit, options: { quiet?: boolean } = {}) {
@@ -2285,8 +2056,7 @@ export class ReaderShell implements OnInit, OnDestroy {
 
   /** An edit saved: repaint the list now and redraw a changed pen on the page. */
   private noteEdited(updated: Note, event: NoteItemEdit): void {
-    this.dbNotes.update((notes) => notes.map((n) => (n.id === updated.id ? updated : n)));
-    this.refreshNoteTopics(updated.id);
+    this.notesSession.replace(updated);
     this.loadTopics();
     // A changed pen, or a note added to or cleared from a highlight, is
     // redrawn on the page now, not at the next open.
@@ -2306,11 +2076,10 @@ export class ReaderShell implements OnInit, OnDestroy {
 
   /** A note is gone: take its highlight off the page and out of the list. */
   private noteRemoved(noteId: string): void {
-    const removed = this.dbNotes().find((n) => n.id === noteId);
+    const removed = this.notesSession.remove(noteId);
     if (this.highlightCard()?.noteId === noteId) this.closeHighlightCard();
     if (this.fileType() === 'epub' && removed?.cfiRange) this.activeReader()?.removeHighlight(removed.cfiRange);
     if (this.fileType() === 'pdf') this.activeReader()?.removeHighlight(noteId);
-    this.dbNotes.update((notes) => notes.filter((n) => n.id !== noteId));
   }
 
   onJumpToNote(note: Note) {
@@ -2429,39 +2198,38 @@ export class ReaderShell implements OnInit, OnDestroy {
    * text-entry targets are left alone.
    */
   private rememberOverlayFocus(): void {
-    const active = document.activeElement;
-    this.overlayReturnFocus = active instanceof HTMLElement ? active : null;
+    this.overlayFocus.remember();
   }
 
   private focusOverlay(selector: string): void {
-    setTimeout(() => {
-      this.host.nativeElement.querySelector<HTMLElement>(selector)?.focus();
-    }, 0);
+    this.overlayFocus.focus(this.host.nativeElement, selector);
   }
 
   private restoreOverlayFocus(): void {
-    const target = this.overlayReturnFocus;
-    this.overlayReturnFocus = null;
-    if (target?.isConnected) setTimeout(() => target.focus(), 0);
+    this.overlayFocus.restore();
   }
 
   private clearSaveFeedback(): void {
-    if (this.saveFeedbackTimer) clearTimeout(this.saveFeedbackTimer);
+    this.timers.clear(this.saveFeedbackTimer);
     this.saveFeedbackTimer = null;
     this.saveFeedback.set(null);
   }
 
   private showSaveFeedback(message: string): void {
-    if (this.saveFeedbackTimer) clearTimeout(this.saveFeedbackTimer);
+    this.timers.clear(this.saveFeedbackTimer);
     this.saveFeedback.set(message);
-    this.saveFeedbackTimer = setTimeout(() => {
+    this.saveFeedbackTimer = this.timers.after(1800, () => {
       this.saveFeedback.set(null);
       this.saveFeedbackTimer = null;
-    }, 1800);
+    });
   }
 
-  @HostListener('document:keydown', ['$event'])
-  onDocumentKeydown(event: KeyboardEvent): void {
+  /**
+   * Registered on the document in `ngOnInit` and removed in `ngOnDestroy`, so
+   * the listener cannot outlive the reader (issue #1607). The arrow field is a
+   * stable reference for both calls, and is what `removeEventListener` needs.
+   */
+  readonly onDocumentKeydown = (event: KeyboardEvent): void => {
     // Ctrl/Cmd+C while the anchored menu is open copies the captured passage
     // (#657): the native selection it came from has already been replaced by
     // the pending mark. The note field keeps its own copy behaviour.

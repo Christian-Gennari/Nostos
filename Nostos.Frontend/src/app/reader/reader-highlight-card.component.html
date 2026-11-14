@@ -1,0 +1,176 @@
+@if (note(); as hl) {
+<!-- A saved highlight opened from the page. The same body is placed the
+     two ways the selection actions are: anchored at the mark on a
+     fine-pointer desktop, docked at the top on phones (#1344). -->
+<ng-template #highlightCardBody>
+  @let anchoredCard = !!placement();
+  <blockquote appQuote size="sm" [lines]="3" [pen]="pen()"
+    class="selection-quote highlight-card-quote selected-text"
+    [title]="preview()">{{ preview() }}</blockquote>
+
+  @if (editing()) {
+    <div class="selection-note">
+      <app-note-composer
+        [compact]="true"
+        [words]="noteDraft()"
+        (wordsChange)="noteWordsChange.emit($event)"
+        [topics]="noteDraftTopics()"
+        (topicsChange)="noteTopicsChange.emit($event)"
+        inputId="highlight-card-input"
+        ariaLabel="Note for this highlight"
+        testId="highlight-card-input"
+        [rows]="3"
+        [disabled]="noteDraftSaving()"
+        (submitted)="saveNote.emit()"
+      />
+    </div>
+  } @else if (hasNote()) {
+    @if (words()) {
+    <div
+      class="highlight-card-note"
+      [innerHTML]="words() | noteFormat : topicMap()"
+      data-testid="highlight-card-note"
+    ></div>
+    }
+    @if (topics().length) {
+    <app-topic-row
+      class="highlight-card-topics"
+      [names]="topics()"
+      [topicMap]="topicMap()"
+      [editable]="false"
+    />
+    }
+  }
+
+  @if (!editing()) {
+  <div class="highlight-card-tools">
+    <app-pen-swatches
+      class="hl-pens selection-pens"
+      [value]="pen()"
+      testIdPrefix="highlight-card-pen-"
+      (chosen)="colourChosen.emit($event)"
+    />
+    <div class="highlight-card-utilities">
+      <button
+        appIconButton
+        icon="copy"
+        type="button"
+        (click)="copy.emit()"
+        aria-label="Copy text"
+        title="Copy text"
+        data-testid="highlight-card-copy"
+      ></button>
+      @if (askNostosAvailable()) {
+        <button
+          appIconButton
+          icon="sparkle"
+          type="button"
+          (click)="askNostos.emit()"
+          aria-label="Ask Nostos about this"
+          title="Ask Nostos about this"
+          data-testid="highlight-card-ask-nostos"
+        ></button>
+      }
+      <button
+        appIconButton
+        icon="notebook"
+        type="button"
+        (click)="showInNotes.emit()"
+        aria-label="Show in notes & highlights"
+        title="Show in notes & highlights"
+        data-testid="highlight-card-show-in-notes"
+      ></button>
+      <button
+        appIconButton
+        icon="trash"
+        type="button"
+        class="highlight-card-delete"
+        (click)="deleteHighlight.emit()"
+        [disabled]="noteDraftSaving()"
+        aria-label="Delete highlight"
+        title="Delete highlight"
+        data-testid="highlight-card-delete"
+      ></button>
+    </div>
+  </div>
+  }
+
+  <div class="highlight-card-actions">
+    @if (editing()) {
+      <button
+        appButton
+        type="button"
+        [variant]="anchoredCard ? 'ghost' : 'secondary'"
+        class="reader-confirm-action"
+        (click)="cancelEdit.emit()"
+        [disabled]="noteDraftSaving()"
+        data-testid="highlight-card-cancel"
+      >
+        Cancel
+      </button>
+      <button
+        appButton
+        type="button"
+        variant="primary"
+        class="reader-confirm-action"
+        (click)="saveNote.emit()"
+        [disabled]="noteDraftSaving() || !noteChanged()"
+        [busy]="noteDraftSaving()"
+        data-testid="highlight-card-save"
+      >
+        <nostos-icon name="check" [size]="16"></nostos-icon>
+        {{ noteDraftSaving() ? 'Saving…' : hasNote() && noteEmpty() ? 'Remove note' : 'Save note' }}
+      </button>
+    } @else {
+      <button
+        appButton
+        type="button"
+        [variant]="anchoredCard ? 'ghost' : 'secondary'"
+        class="reader-confirm-action"
+        (click)="closed.emit()"
+        data-testid="highlight-card-close"
+      >
+        Close
+      </button>
+      <button
+        appButton
+        type="button"
+        [variant]="hasNote() ? 'secondary' : 'primary'"
+        class="reader-confirm-action"
+        (click)="editNote.emit()"
+        data-autofocus
+        data-testid="highlight-card-edit"
+      >
+        <nostos-icon [name]="hasNote() ? 'pencil-simple' : 'note'" [size]="16"></nostos-icon>
+        {{ hasNote() ? 'Edit note' : 'Add note' }}
+      </button>
+    }
+  </div>
+</ng-template>
+
+@if (placement(); as place) {
+<div
+  class="selection-menu highlight-card"
+  role="dialog"
+  aria-label="Highlight"
+  data-testid="highlight-card"
+  [style.left.px]="place.left"
+  [style.width.px]="place.width"
+  [style.top.px]="place.top"
+  [style.bottom.px]="place.bottom"
+>
+  <ng-container [ngTemplateOutlet]="highlightCardBody"></ng-container>
+</div>
+} @else {
+<div
+  class="highlight-confirmation highlight-card highlight-card-docked"
+  role="dialog"
+  aria-label="Highlight"
+  data-testid="highlight-card"
+>
+  <div class="highlight-card-sheet">
+    <ng-container [ngTemplateOutlet]="highlightCardBody"></ng-container>
+  </div>
+</div>
+}
+}

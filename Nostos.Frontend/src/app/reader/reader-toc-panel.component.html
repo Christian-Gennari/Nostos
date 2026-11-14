@@ -1,0 +1,41 @@
+<aside class="toc-panel" [class.open]="open() && fileType() !== 'pdf'">
+  <div class="panel-header">
+    <h2>Contents</h2>
+    <button appIconButton icon="x" [glyphSize]="20" (click)="closed.emit()" aria-label="Close contents"></button>
+  </div>
+
+  <div class="toc-list">
+    <ng-template #tocTemplate let-items>
+      @for (item of items; track $index) {
+      <div class="toc-item-wrapper">
+        <button
+          appButton
+          variant="ghost"
+          type="button"
+          class="toc-item"
+          [class.toc-item--group]="item.children && item.children.length > 0"
+          [class.active]="isActive(item)"
+          [class.nostos-accent-rail]="isActive(item)"
+          (click)="itemSelected.emit(item)"
+        >
+          {{ item.label }}
+        </button>
+
+        @if (item.children && item.children.length > 0) {
+        <div class="toc-subitems">
+          <ng-container
+            *ngTemplateOutlet="tocTemplate; context: { $implicit: item.children }"
+          ></ng-container>
+        </div>
+        }
+      </div>
+      }
+    </ng-template>
+
+    <ng-container *ngTemplateOutlet="tocTemplate; context: { $implicit: items() }"></ng-container>
+
+    @if (items().length === 0) {
+    <nostos-empty-state compact message="No contents available." />
+    }
+  </div>
+</aside>

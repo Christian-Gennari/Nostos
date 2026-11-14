@@ -1,0 +1,138 @@
+/* The floating surface recipe, shared in shape with the selection surface:
+   surface fill, hairline, popover corner, shadow-md. Kept here as well because
+   the card is its own component and docked at the top like the selection bar. */
+
+.selected-text {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+.highlight-confirmation .selected-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.highlight-confirmation .reader-confirm-action {
+  min-height: var(--control-h-touch);
+}
+
+.selection-menu {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-popover);
+  box-shadow: var(--shadow-md);
+  animation: selection-menu-in var(--motion-fast) var(--ease-out);
+}
+
+@keyframes selection-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .selection-menu {
+    animation: none;
+  }
+}
+
+.selection-note {
+  display: flex;
+  width: 100%;
+}
+
+.selection-note app-note-composer {
+  flex: 1 1 auto;
+}
+
+.hl-pens.selection-pens {
+  margin: 0;
+  flex-shrink: 0;
+}
+
+/* --- Highlight card ----------------------------------------------------------
+   A saved highlight opened from the page: its passage, its note, its pen and
+   what can be done with it. Anchored, it is the selection menu's surface (the
+   same placement, floating-panel recipe and quote); docked, it is the
+   selection bar's. The quote rule is drawn in the highlight's own pen, as the
+   note card's is. */
+.highlight-card-note {
+  margin: 0;
+  max-height: min(40vh, 18rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  color: var(--color-text-main);
+  font-size: 0.94rem;
+  line-height: 1.55;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.highlight-card-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 32px;
+}
+
+/* The pens lead; with none (while writing) the utilities keep to the right. */
+.highlight-card-utilities {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.highlight-card-delete:not(:disabled):hover {
+  color: var(--color-danger);
+}
+
+.highlight-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+/* Docked, the card is a short sheet: the passage on one line, the note below
+   it scrolling on its own, and full-height touch targets. */
+.highlight-card-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0.75rem 1.25rem;
+}
+
+.highlight-card-docked .highlight-card-note {
+  max-height: 30vh;
+}
+
+.highlight-card-docked .highlight-card-tools {
+  min-height: 44px;
+}
+
+.highlight-card-docked .highlight-card-actions {
+  gap: 0.5rem;
+}
+
+.highlight-card-docked .highlight-card-actions .reader-confirm-action {
+  flex: 1 1 0;
+  min-height: var(--control-h-touch);
+}
+
+@media (max-width: 768px) {
+  .highlight-card-sheet {
+    padding: 0.625rem 0.75rem;
+  }
+}
+

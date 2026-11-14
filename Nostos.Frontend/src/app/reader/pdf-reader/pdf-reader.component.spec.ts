@@ -1068,12 +1068,14 @@ describe('PdfReader reading mode', () => {
   });
 
   it('exposes left, reset, and right rotation controls in PDF View settings', () => {
-    const shell = readSource('../reader-shell.component.html');
+    // The panel is its own component since #1607; it drives the PDF reader the
+    // shell hands it, so the controls still reach these three methods.
+    const panel = readSource('../reader-view-settings.component.html');
 
-    expect(shell).toContain('id="pdf-rotation"');
-    expect(shell).toContain('(click)="pdfReader()?.rotateCounterclockwise()"');
-    expect(shell).toContain('(click)="pdfReader()?.resetRotation()"');
-    expect(shell).toContain('(click)="pdfReader()?.rotateClockwise()"');
+    expect(panel).toContain('id="pdf-rotation"');
+    expect(panel).toContain('(click)="pdf()?.rotateCounterclockwise()"');
+    expect(panel).toContain('(click)="pdf()?.resetRotation()"');
+    expect(panel).toContain('(click)="pdf()?.rotateClockwise()"');
   });
 
   it('offers the three fits the acceptance criteria ask for', () => {
