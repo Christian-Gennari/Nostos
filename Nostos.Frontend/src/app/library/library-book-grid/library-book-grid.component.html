@@ -1,0 +1,146 @@
+@for (book of books(); track book.id) {
+<div class="book-card" [class.is-importing]="book.status === 1 || book.status === 2" [class.is-failed]="book.status === 3" [class.is-selected]="selected().has(book.id)" (click)="bookPressed.emit(book)" [attr.draggable]="isSelectable(book)" (dragstart)="dragStarted.emit({ book, event: $event })" (mouseenter)="hoverStarted.emit(book)" (mouseleave)="hoverEnded.emit()">
+  <div class="cover-wrapper">
+    @if (selecting() && isSelectable(book)) {
+    <input type="checkbox" appCheckbox class="select-check" [checked]="selected().has(book.id)"
+      [attr.aria-label]="'Select ' + book.title" (click)="$event.stopPropagation()"
+      (change)="onSelection(book, $any($event.target).checked)" />
+    }
+    @if (book.status === 1 || book.status === 2) {
+      <!-- In flight: the progress lives ON the card, at the top of the cover
+           so it never collides with the format badge (bottom-right) and so
+           it costs the card no height — this box is the finished card too. -->
+      <div
+        class="cover-progress"
+        role="progressbar"
+        aria-valuemin="0"
+        aria-valuemax="100"
+        [attr.aria-valuenow]="bookProgress(book)?.percent ?? 0"
+        [attr.aria-label]="bookProgressLabel(book)"
+      >
+        <div class="cover-progress-row">
+          <span class="import-status-label">{{ bookStageLabel(book) }}</span>
+          @if (bookProgress(book); as progress) {
+          <span class="cover-progress-percent">{{ progress.percent }}%</span>
+          }
+        </div>
+        <nostos-progress class="cover-progress-track" decorative size="md" surface="overlay" [value]="bookProgress(book)?.percent ?? 0" />
+      </div>
+    } @else if (book.status === 3) {
+      <div class="import-status-overlay is-failed-overlay">
+        <nostos-icon name="warning-circle" [size]="24"></nostos-icon>
+        <span class="import-status-label">Failed</span>
+      </div>
+    }
+
+    <nostos-book-cover
+      class="cover-image"
+      size="fill"
+      reveal="bloom"
+      [src]="book.coverUrl ? coverUrl(book) : null"
+      [bookTitle]="book.title"
+      [format]="coverFormat(book)"
+    />
+
+    @if (book.otherEditions && book.otherEditions.length > 0) {
+    <span class="format-badge micro-glyphs" [attr.title]="formatsTooltip(book)">
+      @for (glyph of formatGlyphs(book); track glyph.type) {
+        <nostos-icon [name]="glyph.icon" [size]="11"></nostos-icon>
+      }
+    </span>
+    } @else {
+    <span
+      class="format-badge single"
+      [class.audiobook]="book.type === 'audiobook'"
+      [attr.data-type]="book.type"
+    >
+      <nostos-icon [concept]="formatConcept(book)" [size]="11"></nostos-icon>
+      {{ formatLabel(book) }}
+    </span>
+    }
+
+    <button
+      type="button"
+      appIconButton
+      surface="overlay"
+      class="finished-btn-grid"
+      icon="check-circle"
+      [glyphSize]="18"
+      [weight]="book.finishedAt ? 'fill' : 'regular'"
+      [pressed]="!!book.finishedAt"
+      [class.active]="book.finishedAt"
+      (click)="onFinished(book, $event)"
+      [attr.aria-label]="book.finishedAt ? 'Mark as not finished' : 'Mark as finished'"
+      [title]="book.finishedAt ? 'Mark as not finished' : 'Mark as finished'"
+    ></button>
+
+    <button
+      type="button"
+      appIconButton
+      surface="overlay"
+      class="fav-btn-grid"
+      icon="heart"
+      [glyphSize]="18"
+      [weight]="book.isFavorite ? 'fill' : 'regular'"
+      [pressed]="!!book.isFavorite"
+      [class.active]="book.isFavorite"
+      (click)="onFavorite(book, $event)"
+      aria-label="Favourite"
+      title="Toggle favourite"
+    ></button>
+
+    <div class="actions-overlay">
+      <button
+        type="button"
+        appIconButton
+        surface="overlay"
+        class="action-circle"
+        icon="pencil-simple"
+        (click)="onEdit(book, $event)"
+        aria-label="Edit"
+        title="Edit"
+      ></button>
+
+      <button
+        type="button"
+        appIconButton
+        surface="overlay"
+        tone="danger"
+        class="action-circle delete"
+        icon="trash"
+        (click)="onDelete(book, $event)"
+        aria-label="Delete"
+        title="Delete"
+      ></button>
+    </div>
+  </div>
+
+  <!-- The title is the card's one real link; its ::after stretches over the
+       whole card, so a click anywhere opens the book and Tab/Enter reach it. -->
+  <div class="meta-title"><a class="card-link" (keydown.space)="$event.preventDefault(); $any($event.currentTarget).click()" [routerLink]="bookLink(book)">{{ book.title }}</a></div>
+  <!-- The shelf shows title and author only. Reading state lives on the
+       book page; the toggles on the cover appear on hover. -->
+  <div class="meta-author">
+    <span class="meta-author-name">{{ book.author || unknownAuthor }}</span>
+  </div>
+
+  <!-- A failed import explains itself on the card, not in a `title`
+       tooltip: no phone can show a tooltip, and "Failed" alone says
+       nothing about what broke. The MESSAGE comes from the book row (it
+       survives a reload); the ACTIONS need the feed, which is the only
+       place the provider/item ids still exist. -->
+  @if (book.status === 3) {
+  <app-library-item-failure [message]="book.statusMessage || 'The import did not finish.'" [failure]="bookProgress(book)" />
+  }
+
+</div>
+
+} @empty {
+<app-library-empty-state
+  [search]="searchQuery()"
+  [hasFilters]="hasFilters()"
+  (clearSearch)="clearSearch.emit()"
+  (clearFilters)="clearFilters.emit()"
+  (addBook)="addBook.emit()"
+/>
+}

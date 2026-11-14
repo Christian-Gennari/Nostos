@@ -1,4 +1,4 @@
-import { afterNextRender, Component, effect, untracked, inject, Injector, OnDestroy, OnInit, signal, model, computed, ViewChild, ElementRef, ChangeDetectionStrategy } from '@angular/core';
+import { afterNextRender, Component, DestroyRef, effect, untracked, inject, Injector, OnDestroy, OnInit, signal, model, computed, ViewChild, ElementRef, ChangeDetectionStrategy } from '@angular/core';
 import { TopicChipComponent } from '../ui/topic-chip/topic-chip.component';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { InputDirective } from '../ui/form-control/form-control.directive';
@@ -145,6 +145,8 @@ export class BookDetail implements OnInit, OnDestroy {
   private readonly recentItems = inject(RecentItemsService);
   private router = inject(Router);
   private injector = inject(Injector);
+  /** Every stream and listener this page opens dies with the page. */
+  private readonly destroyRef = inject(DestroyRef);
 
   // Inject the Store
   /** The header's Library link is Back: it returns to the list as it was left. */
@@ -494,7 +496,10 @@ export class BookDetail implements OnInit, OnDestroy {
   });
 
   ngOnInit(): void {
-    this.route.paramMap.subscribe((params) => {
+    // Scoped to this page's lifetime: `paramMap` is a replaying stream on the
+    // router's own subject, so an unsubscribed binding survives the page and
+    // keeps loading books into a destroyed store as the person moves on.
+    this.route.paramMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((params) => {
       const id = params.get('id');
       if (id) {
         this.routeBookId = id;
@@ -983,17 +988,20 @@ export class BookDetail implements OnInit, OnDestroy {
     if (!b || this.deleting()) return;
 
     this.deleting.set(true);
-    this.booksService.delete(b.id).subscribe({
-      next: () => {
-        this.toast.success(bookDeletedToast(b.title, this.isLinkedExternally()));
-        this.showDeleteConfirm.set(false);
-        void this.router.navigate(['/library']);
-      },
-      error: () => {
-        this.deleting.set(false);
-        this.toast.error('Could not delete the book');
-      },
-    });
+    this.booksService
+      .delete(b.id)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this.toast.success(bookDeletedToast(b.title, this.isLinkedExternally()));
+          this.showDeleteConfirm.set(false);
+          void this.router.navigate(['/library']);
+        },
+        error: () => {
+          this.deleting.set(false);
+          this.toast.error('Could not delete the book');
+        },
+      });
   }
 
   deleteBook(): void {
@@ -1106,7 +1114,9 @@ export class BookDetail implements OnInit, OnDestroy {
 
   downloadFile() {
     const id = this.store.book()?.id;
-    if (id) window.open(bookFileDownloadUrl(id), '_blank');
+    // `noopener,noreferrer`: the opened document must not get a handle on this
+    // one (or send it a referrer) just because the app asked for a download.
+    if (id) window.open(bookFileDownloadUrl(id), '_blank', 'noopener,noreferrer');
   }
 
   openReader() {

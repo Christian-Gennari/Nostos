@@ -1,0 +1,479 @@
+/* The host IS the table: it carries `.table-view`, and the shelf's results stage
+   animates this element (a direct child) exactly as it did the div before. */
+:host {
+  --table-grid-cols: minmax(260px, 3.2fr) minmax(130px, 1.6fr) 90px 90px minmax(90px, 110px);
+  display: block;
+  width: 100%;
+}
+
+.table-header {
+  display: grid;
+  grid-template-columns: var(--table-grid-cols);
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--color-text-light);
+  font-size: var(--text-xs);
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.table-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--table-grid-cols);
+  align-items: center;
+  padding: 0.6rem 1rem;
+  /* A lighter rule than the header's: the rows are one list, the header is
+     where it starts. */
+  border-bottom: 1px solid color-mix(in srgb, var(--border-color) 55%, transparent);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.12s ease;
+  font-size: 0.95rem;
+  color: var(--color-text-main);
+}
+
+.table-row:hover {
+  background: var(--bg-hover);
+}
+
+.table-row:active {
+  background: var(--bg-hover);
+}
+
+/* The hover cluster, revealed by the row's hover. It hangs off the row's right
+   edge on purpose: it floats over the Date column, so it costs the grid nothing.
+
+   The rest state is a hard `visibility: hidden` (and `display: none` on touch,
+   below), not the `opacity: 0` + `pointer-events: none` it used to be. Two
+   reasons, both about the tips: a `visibility: hidden` subtree can never show
+   one, so a tip cannot leak out of an un-hovered row; and `opacity: 0` would
+   fade a tip *through* the very container it paints behind.
+
+   Opaque surface + hairline, so the date it floats over can no longer bleed
+   through the controls — that bleed-through is what made the old cluster read
+   as a smudge. */
+.table-row .actions-cell {
+  position: absolute;
+  right: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px;
+  visibility: hidden;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-action);
+}
+
+.table-row:hover .actions-cell,
+.table-row:focus-within .actions-cell {
+  visibility: visible;
+}
+
+/* The cover discs are appIconButton overlays (`.icon-btn--overlay`), which own
+   their round, frosted shape. These rules tie with that `:host` rule at (0,2,0),
+   so without the exclusion whichever stylesheet Angular inserted last won: open
+   another screen with an icon button first and the discs became transparent 6px
+   squares until a reload (#1267). */
+.icon-btn:not(.icon-btn--overlay) {
+  /* `position: relative` is what makes the BUTTON the containing block for the
+     tip below, not the absolutely positioned cluster, so the tip tracks the
+     button it belongs to. */
+  position: relative;
+  /* Size moved to appIconButton (`size="xs"`), which owns the rungs. Leaving it
+     here would tie with the component's `:host(.icon-btn--xs)` rule at (0,2,0)
+     and let stylesheet order decide the painted size. The radius is the
+     global icon button's (6px); it was a 4px per-surface literal. */
+  border-radius: var(--radius-lg);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-muted);
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.icon-btn:not(.icon-btn--overlay):hover {
+  background: var(--bg-hover);
+  color: var(--color-text-main);
+}
+
+/* Destructive hover: --color-danger mixed 55% toward --color-text-main, so it
+   resolves to a light red on dark (#ffb4ab) and a deep one on light (#8C2A24).
+   --color-danger itself is a red meant to be read on light: on dark it lands
+   near 3.2:1 and fails as an icon ink. The fill stays the neutral --bg-hover,
+   matching the card's delete disc, which also avoids a danger-tinted surface. */
+.icon-btn.delete:not(.icon-btn--overlay):hover {
+  color: color-mix(in srgb, var(--color-danger) 55%, var(--color-text-main));
+}
+
+/* THEMED TIP. Replaces the native `title=` tooltip, which browsers paint as a
+   white, square-cornered box regardless of theme — a jarring rectangle on a
+   dark, rounded, warm-paper UI. Driven by `data-tip`, so the markup cost is one
+   attribute, and it resolves through the same token graph in both themes. */
+.icon-btn[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 7px);
+  right: 0;
+  padding: 0.3rem 0.55rem;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-md);
+  color: var(--color-text-main);
+  font-size: var(--text-xs);
+  font-weight: var(--fw-medium);
+  line-height: 1.35;
+  white-space: nowrap;
+  /* Decorative AND non-interactive: a tip that accepted pointer events would be
+     a 1x1 target defect, and at this size it would swallow the row's click. */
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  /* Delay and fade both run --transition-fast, so the tip never trails the
+     pointer. */
+  transition:
+    opacity var(--transition-fast),
+    visibility 0s linear var(--transition-fast);
+}
+
+.icon-btn[data-tip]:hover::after,
+.icon-btn[data-tip]:focus-visible::after {
+  opacity: 1;
+  visibility: visible;
+  transition-delay: 0s;
+}
+
+/* Keyboard reveal carries the app's own ring. The tip's right edge is pinned to
+   the button's right edge — still 12px inside the row — so the ring's 2px can
+   never leave the row's box. */
+.icon-btn[data-tip]:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .icon-btn[data-tip]::after {
+    transition: none;
+  }
+}
+
+.col.title {
+  font-weight: var(--fw-medium);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+/* Cover thumbnail in the list/title column */
+.list-title-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.list-book-title {
+  font-weight: var(--fw-semibold, 600);
+  color: var(--color-text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.88rem;
+}
+
+/* The row's one real link, stretched over the whole row exactly as it was while
+   the row lived in the shelf's own template: its ::after is the click target for
+   the entire row (the containing block is `.table-row`), so "click the row" opens
+   the book. The anchor must not draw the UA's underline on top of that. */
+.card-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.card-link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.card-link:focus-visible {
+  outline: none;
+}
+
+.list-book-author {
+  /* Phones only: the Author column is hidden there (see the phone block). */
+  display: none;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.list-book-subtitle {
+  font-size: var(--text-xs);
+  color: var(--color-text-light);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.col.author {
+  color: var(--color-text-muted);
+}
+
+.col.rating {
+  display: flex;
+  align-items: center;
+}
+
+.col.date {
+  font-size: 0.82rem;
+  color: var(--color-text-light);
+}
+
+/* Buttons (List)
+   ------------------------------------------------------------------
+   A row's own status — read / favourite — trailing the title. Hidden at
+   rest and revealed on the row's hover, exactly like the row's edit and
+   delete overlay; always visible in their active state, so a finished or
+   favourite book still reads at a glance without hovering.
+
+   The hit box is 26x26 around the 16px glyph. It was `padding: 0` before,
+   which left a 16x20 tap target — under the 24px minimum and visibly
+   cramped against the cover. The colour is `currentColor` throughout
+   (active states set it), rather than the old `var(--border-color)`: that
+   token is the hairline colour, so at rest these buttons resolved to
+   #E5E7EB on paper and #2a2d37 on dark — a hair above invisible. */
+.list-row-status {
+  /* Right after the title, not pushed to the column's far edge: a check and a
+     heart 400px from the name they describe read as stray marks. */
+  margin-left: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  /* Symmetric breathing room, so the pair reads as its own group at the end of
+     the title column. Without the right pad the favourite's edge lands exactly
+     on the author column's start and the heart reads as a prefix to the author
+     name rather than as the row's own status. */
+  padding: 0 0.75rem;
+}
+
+/* The box, radius and focus ring come from appIconButton (size xs). Only the
+   row-specific ink and the reveal-on-hover live here. */
+.fav-btn-list,
+.finished-btn-list {
+  color: var(--color-text-muted);
+}
+
+/* At rest no toggle is drawn, active or not: the shelf does not show reading
+   state (that lives on the book page). The pair waits for the row's hover
+   with the edit/delete pair. */
+.fav-btn-list,
+.finished-btn-list {
+  opacity: 0;
+}
+
+.table-row:hover .fav-btn-list,
+.table-row:hover .finished-btn-list,
+.table-row:focus-within .fav-btn-list,
+.table-row:focus-within .finished-btn-list {
+  opacity: 1;
+}
+
+.table-row:hover .fav-btn-list.active,
+.table-row:focus-within .fav-btn-list.active,
+.table-row:hover .fav-btn-list:hover,
+.table-row:focus-within .fav-btn-list:focus-visible {
+  color: var(--color-danger-vivid);
+  opacity: 1;
+}
+
+.table-row:hover .finished-btn-list.active,
+.table-row:focus-within .finished-btn-list.active,
+.table-row:hover .finished-btn-list:hover,
+.table-row:focus-within .finished-btn-list:focus-visible {
+  color: var(--color-success);
+  opacity: 1;
+}
+
+.fav-btn-list:hover,
+.finished-btn-list:hover {
+  background: var(--bg-hover);
+}
+
+/* --- FORMAT CELL (LIST/TABLE) ---
+   Plain muted text with its glyph. The grid's `.format-badge` is a frosted
+   capsule over cover art; the list has no art behind it, so it no longer
+   reuses that class (and so no row carries a backdrop-filter layer). */
+.list-format {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.8rem;
+  color: var(--color-text-light);
+  white-space: nowrap;
+}
+
+.list-format nostos-icon {
+  display: inline-flex;
+  flex: none;
+}
+
+/* The row's progress carries its own caption, inline under the title, inside
+   the row's own height — the row that finishes is the same row, with no shift. */
+.list-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 5px;
+  max-width: 260px;
+}
+
+.list-progress-track {
+  flex: 1;
+  min-width: 0;
+}
+
+.list-progress-caption {
+  flex: none;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-light);
+}
+
+.list-progress-percent {
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-main);
+}
+
+.list-row-status,
+.col.rating {
+  position: relative;
+  z-index: 1;
+}
+
+.table-row .actions-cell {
+  z-index: 1;
+}
+
+.table-row .card-link:focus-visible::after {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+  border-radius: 0;
+}
+
+/* --- SELECT MODE --------------------------------------------------------- */
+.select-check {
+  flex: none;
+}
+
+.table-row img {
+  -webkit-user-drag: none;
+}
+
+:host(.is-selecting) .table-row .list-row-status,
+:host(.is-selecting) .table-row .actions-cell {
+  display: none;
+}
+
+.table-row.is-selected {
+  background: var(--bg-hover);
+}
+
+@media (max-width: 768px) {
+  /* NOTE: list rows deliberately do NOT get `content-visibility: auto`.
+     It sizes an unrendered row from `contain-intrinsic-size` until it is
+     painted, and a row's height is not a constant here — the mobile
+     breakpoint's `padding: 1rem` plus a wrapping title makes it ~79px against
+     the 63px desktop row. Whenever a placeholder disagrees with the real height
+     (and whenever lazy covers land and resize a row), every following row
+     shifts, and because the list is infinite-scrolled the error compounds:
+     measured at 390x844 it displaced the scroll position by up to 4421px for a
+     requested step, against 693px with the containment forced off. The grid's
+     cards are a fixed aspect-ratio box, so its rule is safe; the row's own
+     paint is cheap (no blur, no shadow) so there is nothing here worth that
+     price. */
+
+  /* 6. List/Table Tweaks */
+  :host {
+    --table-grid-cols: 1fr;
+  }
+  /* One column on a phone: cover, then title over author. The format and
+     the lone "Title" header said little for the room they took. */
+  .table-header,
+  .col.format {
+    display: none !important;
+  }
+  .table-row {
+    padding: 0.75rem 0.25rem;
+  }
+  .list-book-author {
+    display: block;
+  }
+  .list-book-subtitle {
+    display: none;
+  }
+
+  /* A phone has no hover to reveal the toggles with, so the pair behaves as
+     the grid's does on touch: hidden, and changed from the book page. */
+  .list-row-status {
+    display: none;
+  }
+
+  /* Hide columns. `display: none` on the actions cluster is also what disables
+     the hover tips on touch: a phone has no hover, a tip is decoration, and
+     removing the buttons removes the anchors the tips hang off. */
+  #author-header,
+  #date-header,
+  #rating-header,
+  .col.actions-cell,
+  .col.author,
+  .col.rating,
+  .col.date {
+    display: none !important;
+  }
+
+  .list-progress {
+    max-width: 100%;
+  }
+
+  .list-progress-caption {
+    font-size: var(--text-xs);
+    gap: 6px;
+  }
+}
+
+/* --- REDUCED MOTION --- */
+@media (prefers-reduced-motion: reduce) {
+  .fav-btn-list,
+  .finished-btn-list {
+    transition: none;
+  }
+
+  /* Press feedback is an acknowledgement, not an animation: under this
+     preference the row surface must land in the same frame as the
+     pointer-down instead of easing in behind the hover transition. */
+  .table-row {
+    transition-duration: 1ms;
+  }
+}

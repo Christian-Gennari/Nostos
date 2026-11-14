@@ -16,54 +16,45 @@ import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indic
 import { PHONE_QUERY, isPhoneViewport } from '../ui/breakpoints';
 import { lockScrollWhile } from '../ui/scroll-lock/scroll-lock.service';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, NavigationStart, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, NavigationStart, Router } from '@angular/router';
 import { BooksService, type BookListOptions } from '../core/services/books.service';
 import { CollectionsService } from '../core/services/collections.service';
 import { Collection } from '../core/dtos/collection.dtos';
-import { CommonModule, DOCUMENT } from '@angular/common';
-import { NostosDatePipe } from '../ui/pipes/nostos-date.pipe';
+import { DOCUMENT } from '@angular/common';
 import { AddBookModal } from '../add-book-modal/add-book-modal.component';
 import { ConfirmModal } from '../ui/confirm-modal/confirm-modal.component';
-import { StarRatingComponent } from '../ui/star-rating/star-rating.component';
-import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
-import { ButtonComponent } from '../ui/button/button.component';
-import { ChipComponent } from '../ui/chip/chip.component';
-import { InputDirective } from '../ui/form-control/form-control.directive';
-import { DropdownComponent, type DropdownOption } from '../ui/dropdown/dropdown.component';
+import { DropdownOption } from '../ui/dropdown/dropdown.component';
 import { DrawerFocusDirective } from '../core/directives/drawer-focus.directive';
 import { SidebarCollections } from './sidebar-collections/sidebar-collections.component';
 import { Book, EditionSummaryDto, PaginatedResponse } from '../core/dtos/book.dtos';
-import { Observable, Subject, Subscription, forkJoin, from, of } from 'rxjs';
-import { catchError, debounceTime, distinctUntilChanged, map, mergeMap, tap, toArray } from 'rxjs/operators';
-import { EBOOK_CATEGORY_LABEL_PLURAL, BOOK_FORMAT_LABEL, UNKNOWN_AUTHOR, formatOf, type BookFormatConcept } from '../core/book-format';
+import { forkJoin, Subject, Subscription } from 'rxjs';
+import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
+import { EBOOK_CATEGORY_LABEL_PLURAL, formatOf } from '../core/book-format';
 import { EmptyStateComponent } from '../ui/empty-state/empty-state.component';
 import { PagingStatusComponent } from '../ui/paging-status/paging-status.component';
-import { SelectionBarComponent } from '../ui/selection-bar/selection-bar.component';
 import { BookSort } from '../core/dtos/book.enums';
-import { ImportActivity, importStageLabel } from '../core/dtos/import.dtos';
+import { ImportActivity } from '../core/dtos/import.dtos';
 import { LibraryFilterService } from './library-filter.service';
 import { LibraryListCacheService } from './library-list-cache.service';
 import { LibraryPreferencesService } from '../core/services/library-preferences.service';
 import { ImportService } from '../core/services/import.service';
 import { LibraryChangesService } from '../core/services/library-changes.service';
 import { ToastService } from '../core/services/toast.service';
-import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
-import { ViewToggleComponent, type ViewToggleOption } from '../ui/view-toggle/view-toggle.component';
-import { NOSTOS_CONCEPTS } from '../ui/icon/nostos-concepts';
-import type { NostosIconName } from '../ui/icon/nostos-icons';
-import { ProgressComponent } from '../ui/progress/progress.component';
-import { coverImageUrl } from '../core/cover-url';
-import { SearchFieldComponent } from '../ui/search-field/search-field.component';
-import { BookCoverComponent, bookCoverFormat, type BookCoverFormat } from '../ui/book-cover/book-cover.component';
+import { ViewToggleOption } from '../ui/view-toggle/view-toggle.component';
 import { bookDeleteCopy, bookDeletedToast } from '../core/book-delete-copy';
 import { READING_STATUS_LABEL } from '../core/reading-status';
 import { DeploymentCapabilitiesService } from '../core/services/deployment-capabilities.service';
 import { ExternalMediaService } from '../core/services/external-media.service';
-import { CheckboxDirective } from '../ui/check/check.directive';
-import { NOSTOS_MENU } from '../ui/menu/menu.component';
-import { buildFlatTree } from '../ui/flat-tree/flat-tree.helper';
-import { plural } from '../core/format';
-import { BOOKS_DRAG_TYPE } from './library-drag';
+import { LibraryToolbar } from './library-toolbar/library-toolbar.component';
+import { LibraryBookGrid } from './library-book-grid/library-book-grid.component';
+import { LibraryBookList } from './library-book-list/library-book-list.component';
+import { LibrarySelectionBar } from './library-selection-bar/library-selection-bar.component';
+import { LibraryCoverPrefetcher } from './library-cover-prefetch';
+import { libraryBookLink } from './library-book-link';
+import {
+  LibrarySelectionController,
+  type LibrarySelectionPort,
+} from './library-selection.controller';
 
 function statusFilterLabel(value: string | null | undefined): string | null {
   switch ((value ?? '').toLowerCase()) {
@@ -109,14 +100,6 @@ function formatFilterLabel(value: string | null | undefined): string | null {
  */
 const SWAP_OUT_MS = 200;
 
-/** How long the pointer rests on a card before its hero art is prefetched. */
-const HERO_PREFETCH_INTENT_MS = 120;
-
-/** True when the primary input can hover; a touch screen's mouseenter is only a tap. */
-function canHover(): boolean {
-  return typeof matchMedia === 'function' && matchMedia('(hover: hover)').matches;
-}
-
 /** The largest page GET /api/books serves (LibraryReadService clamps to it). */
 const MAX_SERVER_PAGE_SIZE = 100;
 
@@ -134,50 +117,46 @@ function prefersReducedMotion(): boolean {
   );
 }
 
-type WorkFormatType = 'audio' | 'epub' | 'pdf' | 'physical';
-
-interface WorkFormatGlyph {
-  type: WorkFormatType;
-  /** A Nostos glyph NAME, not icon data: the badge asks for an icon, it does not own one. */
-  icon: NostosIconName;
-  label: string;
-}
-
+/**
+ * The Library page: one shelf, read a page at a time, in two views.
+ *
+ * It owns the QUERY (filters, sort, search, paging), the list cache that makes
+ * Back instant, and the import feed's patches. Everything a person sees is drawn
+ * by a focused child that takes signal inputs and reports intents:
+ *
+ *   app-library-toolbar      heading, search, sort, view, Select, Add book, chips
+ *   app-library-book-list    the rows            (list view)
+ *   app-library-book-grid    the covers          (grid view)
+ *   app-library-selection-bar  the Select-mode bar and its collection menu
+ *   app-library-empty-state  what the shelf says when it has nothing to show
+ *   app-library-item-failure an import that failed, on the item it belongs to
+ *
+ * Two units that used to live in this class are now their own files and are
+ * exercised on their own: `LibrarySelectionController` (tick, drag, batch writes
+ * and the undo toast) and `LibraryCoverPrefetcher` (hover-intent hero art). The
+ * work-format badge's mapping is `library-work-format.ts`.
+ */
 @Component({
   selector: 'app-library',
   standalone: true,
   imports: [
     LoadingIndicatorComponent,
-    SearchFieldComponent,
-    ProgressComponent,
-    CommonModule,
-    NostosDatePipe,
-    RouterLink,
-    NostosIconComponent,
-    ViewToggleComponent,
     AddBookModal,
     ConfirmModal,
-    StarRatingComponent,
-    IconButtonComponent,
-    ButtonComponent,
-    ChipComponent,
-    InputDirective,
-    DropdownComponent,
     DrawerFocusDirective,
     SidebarCollections,
     EmptyStateComponent,
     PagingStatusComponent,
-    SelectionBarComponent,
-    BookCoverComponent,
-    CheckboxDirective,
-    ...NOSTOS_MENU,
+    LibraryToolbar,
+    LibraryBookList,
+    LibraryBookGrid,
+    LibrarySelectionBar,
   ],
   templateUrl: './library.component.html',
   styleUrls: ['./library.component.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class Library implements OnInit, OnDestroy {
-  protected readonly unknownAuthor = UNKNOWN_AUTHOR;
   readonly sortOptions = [
     { value: BookSort.LastRead, label: 'Last read' },
     { value: BookSort.RecentlyFinished, label: 'Recently finished' },
@@ -359,6 +338,42 @@ export class Library implements OnInit, OnDestroy {
   private constructed = false;
   private readonly router = inject(Router);
 
+  /** Hero art, warmed on hover so the detail page's band paints at once. */
+  private readonly coverPrefetch = new LibraryCoverPrefetcher();
+
+  /**
+   * What the selection controller needs from this page. The controller owns the
+   * ticked set and the batch writes; the list, the counts and the cache stay here.
+   */
+  private readonly selectionPort: LibrarySelectionPort = {
+    books: () => this.rawBooks(),
+    collections: () => this.collections(),
+    activeCollectionId: () => this.filters.collectionId(),
+    unsortedActive: () => this.filters.status() === 'unsorted',
+    supportsExternalMedia: () => this.capabilities.supportsExternalMediaLibraries(),
+    updateBooks: (update) => this.rawBooks.update(update),
+    updateTotal: (update) => this.totalItems.update(update),
+    syncToggledBook: (book, refreshCounts) => this.syncToggledBook(book, refreshCounts),
+    refreshStatusCounts: () => this.refreshStatusCounts(),
+    refreshCollectionCounts: () => this.sidebar?.loadCounts(),
+    refreshAfterMembershipChange: () => this.refreshBooks(true, false),
+  };
+
+  /** Select mode: what is ticked, and the writes the bar performs. */
+  private readonly selection = new LibrarySelectionController(
+    this.booksService,
+    this.toast,
+    this.selectionPort,
+  );
+  readonly selecting = this.selection.selecting;
+  readonly selected = this.selection.selected;
+  readonly selectedBooks = this.selection.selectedBooks;
+  readonly collectionChoices = this.selection.collectionChoices;
+  readonly bulkDeleteOpen = this.selection.bulkDeleteOpen;
+  readonly bulkDeleting = this.selection.bulkDeleting;
+  readonly bulkDeleteHeading = this.selection.bulkDeleteHeading;
+  readonly bulkDeleteDescription = this.selection.bulkDeleteDescription;
+
   constructor() {
     // The phone drawer owns the screen while open.
     lockScrollWhile(() => this.sidebarExpanded(), PHONE_QUERY);
@@ -502,7 +517,7 @@ export class Library implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.deleteLookup?.unsubscribe();
-    this.cancelHeroCoverPrefetch();
+    this.coverPrefetch.destroy();
     this.document.body?.classList.remove('nostos-library');
     this.keepList();
   }
@@ -875,35 +890,6 @@ export class Library implements OnInit, OnDestroy {
   }
 
   /**
-   * The stage word for an in-flight book. Falls back to the book's own status
-   * when the feed has not reported it yet (a page load mid-import, for the
-   * fraction of a second before the first frame lands) — the card then looks
-   * exactly as it did before this change, never wrong.
-   */
-  bookStageLabel(book: Book): string {
-    const progress = this.bookProgress(book);
-    return progress ? importStageLabel(progress) : book.status === 2 ? 'Transcoding' : 'Downloading';
-  }
-
-  /** Screen-reader text for the item's bar. */
-  bookProgressLabel(book: Book): string {
-    const progress = this.bookProgress(book);
-    const stage = this.bookStageLabel(book);
-    return progress ? `${stage}, ${progress.percent} percent` : stage;
-  }
-
-  /** Retry or dismiss a failed import, from the item it belongs to. */
-  retryImport(activity: ImportActivity, event: Event): void {
-    event.stopPropagation();
-    this.imports.retry(activity);
-  }
-
-  dismissImport(activity: ImportActivity, event: Event): void {
-    event.stopPropagation();
-    this.imports.dismiss(activity);
-  }
-
-  /**
    * Replace ONE book in the visible page, in place.
    *
    * A book that is not in the current page is left alone: it is not in the page
@@ -956,122 +942,24 @@ export class Library implements OnInit, OnDestroy {
     }
   }
 
-  /** The list's plain-text format: the one shared name, "Audiobook", "EPUB", "PDF", "Physical". */
+  /** The item's route, or none while Select mode owns the press. */
+  bookLink(book: Book): string[] | null {
+    return libraryBookLink(book, this.selecting(), this.preferences);
+  }
+
+  /** The list's plain-text format: the one shared name, "Audiobook", "Ebook", "PDF", "Physical". */
   listFormatLabel(book: Book | EditionSummaryDto): string {
     return formatOf(book).format;
   }
 
-  /** The format icon's concept for one edition, drawn the way its label reads. */
-  formatConcept(book: Book): BookFormatConcept {
-    return formatOf(book).concept;
-  }
-
-  /** The grid badge sets the same name in capitals. */
-  getFormatLabel(book: Book | EditionSummaryDto): string {
-    return this.listFormatLabel(book).toUpperCase();
-  }
-
-  getLibraryCoverUrl(book: Book): string | null {
-    return coverImageUrl(book, 320);
-  }
-
-  /** Hero art in flight, keyed by URL, so a hover does not re-request it. */
-  private readonly prefetchedCovers = new Map<string, HTMLImageElement>();
-
-  /** The hover-intent timer of the card the pointer is on, if its delay has not run out. */
-  private heroPrefetchTimer: ReturnType<typeof setTimeout> | null = null;
-
-  /**
-   * Warm the HTTP cache for a book's hero art once the pointer signals intent,
-   * so opening the detail page does not flash an empty dark band.
-   *
-   * The hero cannot start its own fetch until the book JSON arrives, because
-   * `heroArtUrl` is derived from `coverUrl` — the two requests are serialised.
-   * Prefetching on hover overlaps them, so by the time the click lands the 640px
-   * thumbnail is in flight or already cached and the band paints on its first
-   * frame.
-   *
-   * With a mouse the fetch waits for HERO_PREFETCH_INTENT_MS of resting on the
-   * card (`cancelHeroCoverPrefetch` on leave drops it), so sweeping across the
-   * grid does not start one 640px download per card passed. A touch screen has
-   * no hover: its only `mouseenter` is the one emulated by a tap, right before
-   * the click, so it fetches at once.
-   */
+  /** The hero art's warm-up on hover; the cards and rows report the intent. */
   prefetchHeroCover(book: Book): void {
-    const url = coverImageUrl(book, 640);
-    if (!url || this.prefetchedCovers.has(url)) return;
-
-    this.cancelHeroCoverPrefetch();
-    if (!canHover()) {
-      this.startHeroPrefetch(url);
-      return;
-    }
-    this.heroPrefetchTimer = setTimeout(() => {
-      this.heroPrefetchTimer = null;
-      this.startHeroPrefetch(url);
-    }, HERO_PREFETCH_INTENT_MS);
+    this.coverPrefetch.prefetch(book);
   }
 
   /** The pointer left the card before the intent delay: no download. */
   cancelHeroCoverPrefetch(): void {
-    if (this.heroPrefetchTimer === null) return;
-    clearTimeout(this.heroPrefetchTimer);
-    this.heroPrefetchTimer = null;
-  }
-
-  private startHeroPrefetch(url: string): void {
-    if (this.prefetchedCovers.has(url)) return;
-    const img = new Image();
-    img.decoding = 'async';
-    const release = () => this.prefetchedCovers.delete(url);
-    img.addEventListener('load', release);
-    img.addEventListener('error', release);
-    img.src = url;
-    // Hold a reference while in flight — an Image collected mid-request can have
-    // the fetch cancelled before it reaches the cache.
-    this.prefetchedCovers.set(url, img);
-  }
-
-  getBookRouteId(book: Book): string {
-    return this.preferences.getActiveEditionId(book.workId, book.id);
-  }
-
-  getWorkFormatGlyphs(book: Book): WorkFormatGlyph[] {
-    const editions: (Book | EditionSummaryDto)[] = [book, ...(book.otherEditions || [])];
-    const presentFormats = new Set(editions.map((edition) => this.getWorkFormatType(edition)));
-    const formats: WorkFormatGlyph[] = [
-      // Format icons come from the semantic registry, so a format means the same
-      // glyph here, in the book row and in the audio reader.
-      { type: 'audio', icon: NOSTOS_CONCEPTS.audiobook, label: 'Audiobook' },
-      { type: 'epub', icon: NOSTOS_CONCEPTS.ebook, label: BOOK_FORMAT_LABEL.ebook },
-      { type: 'pdf', icon: NOSTOS_CONCEPTS.pdf, label: 'PDF' },
-      { type: 'physical', icon: NOSTOS_CONCEPTS.physical, label: 'Physical book' },
-    ];
-
-    return formats.filter((format) => presentFormats.has(format.type));
-  }
-
-  /** The format a cover-less book's placeholder names. */
-  coverFormat(book: Book): BookCoverFormat | null {
-    return bookCoverFormat(book);
-  }
-
-  getWorkFormatsTooltip(book: Book): string {
-    const labels = this.getWorkFormatGlyphs(book).map((glyph) => glyph.label);
-    return `Available in ${labels.join(', ')}`;
-  }
-
-  private getWorkFormatType(book: Book | EditionSummaryDto): WorkFormatType {
-    const type = book.type.toLowerCase();
-    const format = 'format' in book ? book.format?.trim().toLowerCase() : undefined;
-    const extension = book.fileName?.split('.').pop()?.trim().toLowerCase();
-
-    if (type === 'audiobook' || type === 'audio' || format === 'audiobook' || format === 'audio') {
-      return 'audio';
-    }
-    if (type === 'physical' || format === 'physical') return 'physical';
-    if (extension === 'pdf' || format === 'pdf' || type === 'pdf') return 'pdf';
-    return 'epub';
+    this.coverPrefetch.cancel();
   }
 
   openDeleteModal(book: Book, event?: Event): void {
@@ -1138,8 +1026,8 @@ export class Library implements OnInit, OnDestroy {
     }
   }
 
-  toggleFavorite(book: Book, event: Event): void {
-    event.stopPropagation();
+  toggleFavorite(book: Book, event?: Event): void {
+    event?.stopPropagation();
     const newStatus = !book.isFavorite;
 
     // Optimistic update via signal (creates new object reference for OnPush)
@@ -1158,8 +1046,8 @@ export class Library implements OnInit, OnDestroy {
     });
   }
 
-  toggleFinished(book: Book, event: Event): void {
-    event.stopPropagation();
+  toggleFinished(book: Book, event?: Event): void {
+    event?.stopPropagation();
     const isCurrentlyFinished = !!book.finishedAt;
     const newIsFinished = !isCurrentlyFinished;
     const oldFinishedAt = book.finishedAt;
@@ -1209,215 +1097,60 @@ export class Library implements OnInit, OnDestroy {
   }
 
   // --- Select several books, drag books onto collections ------------------
-  // The Brain's Select mode, on the Library: tick books, then act on all of
-  // them from one bar. A drag onto a sidebar collection is the same "add to
-  // collection" with the pointer. Membership is the full set per book, so each
-  // book's new set is worked out here (PUT /api/books/{id} with collectionIds).
+  // The ticked set, the batch writes and the bar's copy belong to
+  // `LibrarySelectionController`; these are the page's bindings to it, so the
+  // sidebar's drop target and the bar keep talking to the page they are part of.
 
-  readonly selecting = signal(false);
-  readonly selected = signal<ReadonlySet<string>>(new Set());
-  readonly bulkDeleteOpen = signal(false);
-  readonly bulkDeleting = signal(false);
-
-  /** The ticked books that are still in the list. */
-  readonly selectedBooks = computed(() => this.rawBooks().filter((b) => this.selected().has(b.id)));
-
-  /** Every collection in tree order with its depth, for the "Add to collection" menu. */
-  readonly collectionChoices = computed(() => {
-    const all = this.collections();
-    return buildFlatTree(all, new Set(all.map((c) => c.id)), true);
-  });
-
-  readonly bulkDeleteHeading = computed(() => `Delete ${plural(this.selectedBooks().length, 'book')}?`);
-  readonly bulkDeleteDescription = computed(
-    () =>
-      'This action cannot be undone. The book files, annotations, and all reading progress will be permanently deleted from your library.' +
-      (this.capabilities.supportsExternalMediaLibraries()
-        ? ' Books linked from an external media folder are only removed from Nostos; their original files stay.'
-        : ''),
-  );
-
-  /** A book still being imported has nothing to act on yet. */
   isSelectable(book: Book): boolean {
-    return book.status !== 1 && book.status !== 2;
+    return this.selection.isSelectable(book);
   }
 
   toggleSelecting(): void {
-    if (this.selecting()) this.leaveSelection();
-    else this.selecting.set(true);
+    this.selection.toggleSelecting();
   }
 
   leaveSelection(): void {
-    this.selecting.set(false);
-    this.selected.set(new Set());
+    this.selection.leaveSelection();
   }
 
   setSelected(bookId: string, on: boolean): void {
-    this.selected.update((current) => {
-      const next = new Set(current);
-      if (on) next.add(bookId);
-      else next.delete(bookId);
-      return next;
-    });
+    this.selection.setSelected(bookId, on);
   }
 
   /** In Select mode a press on the card ticks it instead of opening the book. */
   onBookPress(book: Book): void {
-    if (!this.selecting() || !this.isSelectable(book)) return;
-    this.setSelected(book.id, !this.selected().has(book.id));
-  }
-
-  /** The book's route, or none while Select mode owns the press. */
-  bookLink(book: Book): string[] | null {
-    return this.selecting() ? null : ['/library', this.getBookRouteId(book)];
+    this.selection.onBookPress(book);
   }
 
   onBookDragStart(book: Book, event: DragEvent): void {
-    if (!this.isSelectable(book) || !event.dataTransfer) {
-      event.preventDefault();
-      return;
-    }
-    // Dragging a ticked book carries every ticked book; any other carries itself.
-    const ids = this.selecting() && this.selected().has(book.id) ? this.selectedBooks().map((b) => b.id) : [book.id];
-    event.dataTransfer.setData(BOOKS_DRAG_TYPE, JSON.stringify(ids));
-    event.dataTransfer.effectAllowed = 'copy';
+    this.selection.onBookDragStart(book, event);
   }
 
   onBooksDropped(event: { collectionId: string; bookIds: string[] }): void {
-    this.addToCollection(event.bookIds, event.collectionId);
+    this.selection.addToCollection(event.bookIds, event.collectionId);
   }
 
   addToCollection(bookIds: string[], collectionId: string): void {
-    const ids = new Set(bookIds);
-    const name = this.collections().find((c) => c.id === collectionId)?.name ?? 'the collection';
-    const books = this.rawBooks().filter((b) => ids.has(b.id));
-    const changes = books
-      .filter((b) => !(b.collectionIds ?? []).includes(collectionId))
-      .map((b) => ({ id: b.id, before: b.collectionIds ?? [], after: [...(b.collectionIds ?? []), collectionId] }));
-    if (!changes.length) {
-      this.toast.info(books.length === 1 ? `Already in “${name}”` : `All of them are already in “${name}”`);
-      return;
-    }
-    this.changeMemberships(changes, (n) => `Added ${plural(n, 'book')} to “${name}”`);
+    this.selection.addToCollection(bookIds, collectionId);
   }
 
   removeSelectionFromCollection(): void {
-    const collectionId = this.filters.collectionId();
-    if (!collectionId) return;
-    const name = this.collections().find((c) => c.id === collectionId)?.name ?? 'the collection';
-    const changes = this.selectedBooks()
-      .filter((b) => (b.collectionIds ?? []).includes(collectionId))
-      .map((b) => ({
-        id: b.id,
-        before: b.collectionIds ?? [],
-        after: (b.collectionIds ?? []).filter((id) => id !== collectionId),
-      }));
-    if (!changes.length) {
-      // The collection list also shows books that sit in a sub-collection.
-      this.toast.info(`These books are not directly in “${name}”`);
-      return;
-    }
-    this.changeMemberships(changes, (n) => `Removed ${plural(n, 'book')} from “${name}”`);
-  }
-
-  private changeMemberships(
-    changes: { id: string; before: string[]; after: string[] }[],
-    message: (count: number) => string,
-  ): void {
-    this.writeMemberships(changes, 'after').subscribe((done) => {
-      if (done.length < changes.length) this.toast.error(`Could not update ${plural(changes.length - done.length, 'book')}`);
-      if (!done.length) return;
-      this.selected.set(new Set());
-      this.toast.success(message(done.length), {
-        label: 'Undo',
-        run: () => this.writeMemberships(done, 'before').subscribe(),
-      });
-    });
-  }
-
-  /** Writes each book's whole membership set; resolves with the changes that were saved. */
-  private writeMemberships(
-    changes: { id: string; before: string[]; after: string[] }[],
-    which: 'before' | 'after',
-  ): Observable<{ id: string; before: string[]; after: string[] }[]> {
-    return from(changes).pipe(
-      mergeMap(
-        (change) =>
-          this.booksService.update(change.id, { collectionIds: change[which] }, HANDLED).pipe(
-            map(() => change),
-            catchError(() => of(null)),
-          ),
-        4,
-      ),
-      toArray(),
-      map((results) => results.filter((c): c is (typeof changes)[number] => c !== null)),
-      tap((done) => {
-        const next = new Map(done.map((c) => [c.id, c[which]]));
-        this.rawBooks.update((books) =>
-          books.map((b) => (next.has(b.id) ? { ...b, collectionIds: next.get(b.id)! } : b)),
-        );
-        this.sidebar?.loadCounts();
-        this.refreshStatusCounts();
-        // A collection or Unsorted view may now hold different books.
-        if (this.filters.collectionId() || this.filters.status() === 'unsorted') this.refreshBooks(true, false);
-      }),
-    );
+    this.selection.removeSelectionFromCollection();
   }
 
   markSelectionFinished(): void {
-    const pending = this.selectedBooks().filter((b) => !b.finishedAt);
-    if (!pending.length) {
-      this.toast.info('They are all finished already');
-      return;
-    }
-    from(pending)
-      .pipe(
-        mergeMap(
-          (book) => this.booksService.update(book.id, { isFinished: true }, HANDLED).pipe(catchError(() => of(null))),
-          4,
-        ),
-        toArray(),
-      )
-      .subscribe((results) => {
-        const updated = results.filter((b): b is Book => b !== null);
-        updated.forEach((book) => this.syncToggledBook(book, false));
-        this.refreshStatusCounts();
-        if (updated.length < pending.length) {
-          this.toast.error(`Could not update ${plural(pending.length - updated.length, 'book')}`);
-        }
-        if (updated.length) this.toast.success(`Marked ${plural(updated.length, 'book')} as finished`);
-        this.selected.set(new Set());
-      });
+    this.selection.markSelectionFinished();
   }
 
   askDeleteSelection(): void {
-    if (this.selectedBooks().length) this.bulkDeleteOpen.set(true);
+    this.selection.askDeleteSelection();
   }
 
   cancelBulkDelete(): void {
-    if (!this.bulkDeleting()) this.bulkDeleteOpen.set(false);
+    this.selection.cancelBulkDelete();
   }
 
   confirmBulkDelete(): void {
-    const books = this.selectedBooks();
-    if (!books.length || this.bulkDeleting()) return;
-    this.bulkDeleting.set(true);
-    from(books)
-      .pipe(
-        mergeMap((book) => this.booksService.delete(book.id).pipe(map(() => book.id), catchError(() => of(null))), 4),
-        toArray(),
-      )
-      .subscribe((results) => {
-        const gone = new Set(results.filter((id): id is string => id !== null));
-        this.rawBooks.update((current) => current.filter((b) => !gone.has(b.id)));
-        this.totalItems.update((c) => Math.max(0, c - gone.size));
-        this.refreshStatusCounts();
-        this.sidebar?.loadCounts();
-        this.bulkDeleting.set(false);
-        this.bulkDeleteOpen.set(false);
-        this.selected.set(new Set());
-        if (gone.size < books.length) this.toast.error(`Could not delete ${plural(books.length - gone.size, 'book')}`);
-        if (gone.size) this.toast.success(`Deleted ${plural(gone.size, 'book')}`);
-      });
+    this.selection.confirmBulkDelete();
   }
 }

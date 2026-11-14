@@ -1,0 +1,169 @@
+<div class="table-header">
+  <div id="title-header">Title</div>
+  <div id="author-header">Author</div>
+  <div id="rating-header">Rating</div>
+  <div id="format-header">Format</div>
+  <div id="date-header">Added</div>
+</div>
+
+@for (book of books(); track book.id) {
+<div class="table-row" [class.is-importing]="book.status === 1 || book.status === 2" [class.is-failed]="book.status === 3" [class.is-selected]="selected().has(book.id)" (click)="bookPressed.emit(book)" [attr.draggable]="isSelectable(book)" (dragstart)="dragStarted.emit({ book, event: $event })" (mouseenter)="hoverStarted.emit(book)" (mouseleave)="hoverEnded.emit()">
+  <div class="col title">
+    @if (selecting() && isSelectable(book)) {
+    <input type="checkbox" appCheckbox class="select-check" [checked]="selected().has(book.id)"
+      [attr.aria-label]="'Select ' + book.title" (click)="$event.stopPropagation()"
+      (change)="onSelection(book, $any($event.target).checked)" />
+    }
+    <nostos-book-cover
+      class="list-cover-frame"
+      size="sm"
+      reveal="bloom"
+      [src]="book.coverUrl ? coverUrl(book) : null"
+      [bookTitle]="book.title"
+      [format]="coverFormat(book)"
+    />
+
+    <div class="list-title-text">
+      <a class="list-book-title card-link" (keydown.space)="$event.preventDefault(); $any($event.currentTarget).click()" [routerLink]="bookLink(book)">{{ book.title }}</a>
+      @if (book.subtitle) {
+        <span class="list-book-subtitle">{{ book.subtitle }}</span>
+      }
+      <!-- Phones hide the Author column, so the row names the author
+           under the title instead (desktop hides this line). -->
+      <span class="list-book-author">{{ book.author || unknownAuthor }}</span>
+
+      <!-- Import state, in the row the book will keep. The bar sits inside
+           the existing row height (measured: 63px desktop / 79px mobile
+           with and without it), so the row that finishes is the same row. -->
+      @if (book.status === 1 || book.status === 2) {
+      <div
+        class="list-progress"
+        role="progressbar"
+        aria-valuemin="0"
+        aria-valuemax="100"
+        [attr.aria-valuenow]="bookProgress(book)?.percent ?? 0"
+        [attr.aria-label]="bookProgressLabel(book)"
+      >
+        <nostos-progress class="list-progress-track" decorative [value]="bookProgress(book)?.percent ?? 0" />
+        <span class="list-progress-caption">
+          {{ bookStageLabel(book) }}
+          @if (bookProgress(book); as progress) {
+          <span class="list-progress-percent">{{ progress.percent }}%</span>
+          }
+        </span>
+      </div>
+      } @else if (book.status === 3) {
+      <app-library-item-failure [message]="book.statusMessage || 'The import did not finish.'" [failure]="bookProgress(book)" />
+      }
+    </div>
+
+    <!-- Row status, trailing the title. These are the same two toggles
+         the grid overlays on its cover — hidden at rest, revealed on the
+         row's hover, always visible in their active state. They sit at
+         the END of the title column, so the cover stays flush left and
+         lines up with the Title header, and the flush-right edit/delete
+         overlay can never land on top of them. -->
+    <div class="list-row-status" (click)="$event.stopPropagation()">
+      <button
+        type="button"
+        appIconButton
+        size="xs"
+        class="finished-btn-list"
+        icon="check-circle"
+        [weight]="book.finishedAt ? 'fill' : 'regular'"
+        [pressed]="!!book.finishedAt"
+        [class.active]="book.finishedAt"
+        (click)="onFinished(book, $event)"
+        [attr.aria-label]="book.finishedAt ? 'Mark as not finished' : 'Mark as finished'"
+        [title]="book.finishedAt ? 'Mark as not finished' : 'Mark as finished'"
+      ></button>
+
+      <button
+        type="button"
+        appIconButton
+        size="xs"
+        class="fav-btn-list"
+        icon="heart"
+        [weight]="book.isFavorite ? 'fill' : 'regular'"
+        [pressed]="!!book.isFavorite"
+        [class.active]="book.isFavorite"
+        (click)="onFavorite(book, $event)"
+        aria-label="Favourite"
+        title="Toggle favourite"
+      ></button>
+    </div>
+  </div>
+
+  <div class="col author">
+    {{ book.author || unknownAuthor }}
+  </div>
+
+  <div class="col rating" (click)="$event.stopPropagation()">
+    @if (book.rating > 0) {
+    <app-star-rating
+      [rating]="book.rating"
+      [size]="13"
+      (ratingChange)="onRating(book, $event)"
+    >
+    </app-star-rating>
+    }
+  </div>
+
+  <!-- Plain text with its glyph, not an outlined capsule: a column of
+       fourteen bordered pills was the loudest thing in the list. -->
+  <div class="col format">
+    @if (book.otherEditions && book.otherEditions.length > 0) {
+    <span class="list-format micro-glyphs" [attr.title]="formatsTooltip(book)">
+      @for (glyph of formatGlyphs(book); track glyph.type) {
+        <nostos-icon [name]="glyph.icon" [size]="13"></nostos-icon>
+      }
+    </span>
+    } @else {
+    <span class="list-format" [attr.data-type]="book.type">
+      <nostos-icon [concept]="formatConcept(book)" [size]="13"></nostos-icon>
+      {{ formatLabel(book) }}
+    </span>
+    }
+  </div>
+
+  <div class="col date">
+    {{ book.createdAt | nostosDate }}
+  </div>
+
+  <div class="col actions-cell" (click)="$event.stopPropagation()">
+    <!-- `data-tip` drives the themed tip in the CSS below. `title` is
+         deliberately gone: on desktop it fired the browser's own white,
+         square-cornered tooltip a beat later and the two fought over the
+         same spot. `aria-label` carries the name for assistive tech. -->
+    <button
+      appIconButton
+      class="edit"
+      size="xs"
+      icon="pencil-simple"
+      [glyphSize]="15"
+      (click)="onEdit(book, $event)"
+      data-tip="Edit"
+      aria-label="Edit book"
+    ></button>
+
+    <button
+      appIconButton
+      class="delete"
+      size="xs"
+      icon="trash"
+      [glyphSize]="15"
+      (click)="onDelete(book, $event)"
+      data-tip="Delete"
+      aria-label="Delete book"
+    ></button>
+  </div>
+</div>
+} @empty {
+<app-library-empty-state
+  [search]="searchQuery()"
+  [hasFilters]="hasFilters()"
+  (clearSearch)="clearSearch.emit()"
+  (clearFilters)="clearFilters.emit()"
+  (addBook)="addBook.emit()"
+/>
+}

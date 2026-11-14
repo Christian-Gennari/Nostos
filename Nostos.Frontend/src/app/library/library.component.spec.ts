@@ -246,8 +246,12 @@ describe('Library', () => {
     expect(host.querySelector('.offscreen-imports')).toBeNull();
 
     // Nothing was inserted above the results either: the toolbar is still first.
+    // (It is a component now, so the column's first child is its host; the header
+    // inside it is what paints.)
     const rightSide = host.querySelector('.library-right-side') as HTMLElement;
-    expect(rightSide.firstElementChild!.classList.contains('toolbar')).toBe(true);
+    const toolbar = rightSide.firstElementChild as HTMLElement;
+    expect(toolbar.tagName).toBe('APP-LIBRARY-TOOLBAR');
+    expect(toolbar.firstElementChild!.classList.contains('toolbar')).toBe(true);
   });
 
   it('draws nothing for a failure with no library row — the feed toasts it instead', () => {
@@ -331,8 +335,11 @@ describe('Library', () => {
     // The regression this exists for: the removed panel was an always-present
     // element with its own top padding, so the library carried a dead band above
     // the toolbar whether or not anything was importing. Nothing may precede the
-    // toolbar.
-    expect(rightSide.firstElementChild!.classList.contains('toolbar')).toBe(true);
+    // toolbar — a component now, so its host is the column's first child and the
+    // header inside it is what paints.
+    const toolbar = rightSide.firstElementChild as HTMLElement;
+    expect(toolbar.tagName).toBe('APP-LIBRARY-TOOLBAR');
+    expect(toolbar.firstElementChild!.classList.contains('toolbar')).toBe(true);
     expect(host.querySelector('.offscreen-imports')).toBeNull();
   });
 
