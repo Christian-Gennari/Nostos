@@ -302,7 +302,7 @@ public sealed class LibraryChangesetTests : IClassFixture<SqliteTestFixture>
         }
 
         var factory = new TestContextFactory(options);
-        var service = new LibraryService(factory,
+        var service = LibraryServiceGraph.Create(factory,
             new BookLookupService(new NoopHttpClientFactory(), Microsoft.Extensions.Logging.Abstractions.NullLogger<BookLookupService>.Instance));
         return new Harness(factory, service, fiction.Id, russian.Id, philosophy.Id,
             anna.Id, dune.Id, meditations.Id, letters.Id);

@@ -391,7 +391,7 @@ public sealed class BookUpdateMappingTests : IClassFixture<SqliteTestFixture>
 
         var factory = new TestContextFactory(options);
         var lookup = new BookLookupService(new NoopHttpClientFactory(), NullLogger<BookLookupService>.Instance);
-        var service = new LibraryService(factory, lookup);
+        var service = LibraryServiceGraph.Create(factory, lookup);
         return new TestHarness(factory, service);
     }
 

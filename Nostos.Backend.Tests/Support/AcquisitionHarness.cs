@@ -295,7 +295,7 @@ public sealed class AcquisitionHarness : IDisposable
         var storage = new FileStorageService(env, fileStorageOptions, new SilentLogger<FileStorageService>());
 
         var lookup = new BookLookupService(new NoopHttpClientFactory(), new SilentLogger<BookLookupService>());
-        var library = new LibraryService(contextFactory, lookup);
+        var library = LibraryServiceGraph.Create(contextFactory, lookup);
 
         var acqOptions = new AcquisitionOptions
         {

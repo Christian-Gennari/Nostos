@@ -67,7 +67,7 @@ internal sealed class RetrievalQualityHarness : IAsyncDisposable
         var noteRepository = new NoteRepository(db);
         var noteService = NoteServiceGraph.Create(db, new PassThroughThoughtProcessor());
 
-        var library = new LibraryService(
+        var library = LibraryServiceGraph.Create(
             factory,
             new BookLookupService(
                 new StubHttpClientFactory(),

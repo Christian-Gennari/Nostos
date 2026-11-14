@@ -257,8 +257,21 @@ public sealed class NostosProductCompositionTests
         AssertRegistered(services, typeof(BookFileCommit), typeof(BookFileCommit), ServiceLifetime.Scoped);
         AssertRegistered(services, typeof(BookTrackUpload), typeof(BookTrackUpload), ServiceLifetime.Scoped);
         AssertRegistered(services, typeof(BookLookupService), typeof(BookLookupService), ServiceLifetime.Scoped);
-        AssertRegistered(services, typeof(ILibraryService), typeof(LibraryService), ServiceLifetime.Scoped);
-        AssertRegistered(services, typeof(ILibraryChangesetService), typeof(LibraryService), ServiceLifetime.Scoped);
+        // The facade is registered through a factory (two public constructors
+        // would be ambiguous to the container); the factory builds LibraryService.
+        AssertRegistered(services, typeof(ILibraryService), ServiceLifetime.Scoped);
+        AssertRegistered(services, typeof(ILibraryChangesetService), ServiceLifetime.Scoped);
+        services.Single(d => d.ServiceType == typeof(ILibraryService)).ImplementationFactory.Should().NotBeNull();
+        services.Single(d => d.ServiceType == typeof(ILibraryChangesetService)).ImplementationFactory.Should().NotBeNull();
+        // LibraryService is a facade; its focused collaborators are resolved
+        // from the container too (issue #1611).
+        AssertRegistered(services, typeof(LibraryMutationExecutor), typeof(LibraryMutationExecutor), ServiceLifetime.Scoped);
+        AssertRegistered(services, typeof(LibraryReadService), typeof(LibraryReadService), ServiceLifetime.Scoped);
+        AssertRegistered(services, typeof(LibraryBookCommandService), typeof(LibraryBookCommandService), ServiceLifetime.Scoped);
+        AssertRegistered(services, typeof(LibraryProgressService), typeof(LibraryProgressService), ServiceLifetime.Scoped);
+        AssertRegistered(services, typeof(LibraryWorkService), typeof(LibraryWorkService), ServiceLifetime.Scoped);
+        AssertRegistered(services, typeof(LibraryCollectionService), typeof(LibraryCollectionService), ServiceLifetime.Scoped);
+        AssertRegistered(services, typeof(LibraryChangesetService), typeof(LibraryChangesetService), ServiceLifetime.Scoped);
         AssertRegistered(services, typeof(LibraryReceiptRetentionService), typeof(LibraryReceiptRetentionService), ServiceLifetime.Scoped);
         AssertRegistered(services, typeof(MediaMetadataService), typeof(MediaMetadataService), ServiceLifetime.Scoped);
         AssertRegistered(services, typeof(AudiobookPackageService), typeof(AudiobookPackageService), ServiceLifetime.Scoped);

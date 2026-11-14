@@ -572,7 +572,7 @@ public sealed class BookValuesAcrossEditionsTests : IClassFixture<SqliteTestFixt
             bootstrap.Database.EnsureCreated();
 
         var factory = new TestContextFactory(options);
-        var service = new LibraryService(factory,
+        var service = LibraryServiceGraph.Create(factory,
             new BookLookupService(new NoopHttpClientFactory(), NullLogger<BookLookupService>.Instance));
         return new TestHarness(factory, service);
     }

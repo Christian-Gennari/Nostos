@@ -69,7 +69,9 @@ public sealed class PortableBulkOperationScanTests
     /// </summary>
     private static readonly Dictionary<string, string> AmbientTransactionAllowList = new(StringComparer.Ordinal)
     {
-        ["Nostos.Product/Services/Library/LibraryService.cs:DeleteCollectionCoreAsync"] =
+        ["Nostos.Product/Services/Library/LibraryProgressService.cs:UpdateProgressAsync"] =
+            "runs inside LibraryMutationExecutor's ambient transaction; the advance happens before the bulk update",
+        ["Nostos.Product/Services/Library/LibraryCollectionService.cs:DeleteCollectionCoreAsync"] =
             "runs inside LibraryMutationExecutor's ambient transaction; the advance happens before the bulk delete",
     };
 

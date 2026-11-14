@@ -78,7 +78,7 @@ internal sealed class GateAHost : IDisposable
         var topics = new TopicRepository(db);
         var noteService = NoteServiceGraph.Create(db, new FakeThoughtProcessor());
 
-        var libraryService = new LibraryService(
+        var libraryService = LibraryServiceGraph.Create(
             factory,
             new BookLookupService(new NoopClientFactory(), new SilentLogger<BookLookupService>()));
 

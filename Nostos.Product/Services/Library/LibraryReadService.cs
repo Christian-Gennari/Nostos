@@ -7,12 +7,14 @@ using Nostos.Shared.Enums;
 
 namespace Nostos.Backend.Services.Library;
 
+using static LibraryCommandResults;
+
 /// <summary>
 /// Read-only library operations. Keeping queries separate from mutation and
 /// receipt plumbing makes the canonical LibraryService a small facade over
 /// focused domain responsibilities.
 /// </summary>
-internal sealed class LibraryReadService(
+public sealed class LibraryReadService(
     IDbContextFactory<NostosDbContext> contexts,
     BookLookupService lookup)
 {
@@ -653,17 +655,6 @@ internal sealed class LibraryReadService(
     private static async Task<LibraryState?> TryGetStateAsync(NostosDbContext db, CancellationToken ct) =>
         await db.LibraryStates.AsNoTracking().SingleOrDefaultAsync(ct);
 
-    private static LibraryCandidate ToCandidate(BookModel book, string reason) =>
-        new(book.Id, book.Title, book.Author,
-            book switch
-            {
-                PhysicalBookModel p => p.Isbn,
-                EBookModel e => e.Isbn,
-                _ => null,
-            },
-            book is AudioBookModel a ? a.Asin : null,
-            reason);
-
     private sealed record TitleRow(Guid Id, BookStatus Status, string Title);
 
     /// <summary>The columns that group, rank and sort a book in the grouped list.</summary>
@@ -724,18 +715,6 @@ internal sealed class LibraryReadService(
     private static IOrderedEnumerable<GroupCandidate> ImportingFirst(IEnumerable<GroupCandidate> books) =>
         books.OrderByDescending(b =>
             b.Status == BookStatus.Downloading || b.Status == BookStatus.Transcoding);
-
-    private static LibraryCommandResultDto Result(string reply, object? data, string version) =>
-        new(reply, data, version);
-
-    private static LibraryCommandResultDto Failure(string code, string reply, string version = "0",
-        IReadOnlyList<LibraryCandidate>? candidates = null)
-    {
-        if (candidates is not null)
-            return new LibraryCommandResultDto(reply,
-                new LibraryConfirmationErrorDto(code, candidates), version);
-        return new LibraryCommandResultDto(reply, new LibraryErrorDto(code), version);
-    }
 
     /// <summary>
     /// Expands a collection subtree to the collection id plus every

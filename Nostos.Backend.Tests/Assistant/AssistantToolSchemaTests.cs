@@ -518,7 +518,7 @@ public sealed class AssistantToolSchemaTests : IClassFixture<SqliteTestFixture>
         var topics = new TopicRepository(db);
         var noteService = NoteServiceGraph.Create(db, new FakeThoughtProcessor());
 
-        var libraryService = new LibraryService(
+        var libraryService = LibraryServiceGraph.Create(
             factory,
             new BookLookupService(new NoopHttpClientFactory(), new SilentLogger<BookLookupService>()));
 

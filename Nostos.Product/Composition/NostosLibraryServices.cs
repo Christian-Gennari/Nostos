@@ -30,8 +30,21 @@ internal static class NostosLibraryServices
         services.TryAddScoped<BookTrackUpload>();
 
         services.AddScoped<BookLookupService>();
-        services.AddScoped<ILibraryService, LibraryService>();
-        services.AddScoped<ILibraryChangesetService, LibraryService>();
+        // LibraryService is the public facade; reads, book commands, progress,
+        // edition grouping, collections and changesets are focused collaborators
+        // (issue #1611). TryAdd keeps a host's own registration authoritative.
+        services.TryAddScoped<LibraryMutationExecutor>();
+        services.TryAddScoped<LibraryReadService>();
+        services.TryAddScoped<LibraryBookCommandService>();
+        services.TryAddScoped<LibraryProgressService>();
+        services.TryAddScoped<LibraryWorkService>();
+        services.TryAddScoped<LibraryCollectionService>();
+        services.TryAddScoped<LibraryChangesetService>();
+        // A factory, not AddScoped<ILibraryService, LibraryService>(): the facade
+        // also keeps a two-argument constructor for hosts that build it by hand,
+        // and the container would find both constructors satisfiable (ambiguous).
+        services.AddScoped<ILibraryService>(CreateLibraryFacade);
+        services.AddScoped<ILibraryChangesetService>(CreateLibraryFacade);
         services.AddScoped<LibraryReceiptRetentionService>();
         services.AddScoped<MediaMetadataService>();
         services.AddScoped<AudiobookPackageService>();
@@ -63,4 +76,13 @@ internal static class NostosLibraryServices
 
         return services;
     }
+
+    private static LibraryService CreateLibraryFacade(IServiceProvider sp) =>
+        new(
+            sp.GetRequiredService<LibraryReadService>(),
+            sp.GetRequiredService<LibraryBookCommandService>(),
+            sp.GetRequiredService<LibraryProgressService>(),
+            sp.GetRequiredService<LibraryWorkService>(),
+            sp.GetRequiredService<LibraryCollectionService>(),
+            sp.GetRequiredService<LibraryChangesetService>());
 }
