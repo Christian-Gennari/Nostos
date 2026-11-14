@@ -81,6 +81,54 @@ public sealed class PortableImportIntegrityVerifierTests
             PortableLibraryVerificationErrorCodes.CountMismatch);
     }
 
+    [Fact]
+    public async Task Truncated_stored_book_file_is_rejected()
+    {
+        await using var scenario = await ImportScenario.CreateAsync();
+        var path = scenario.BookFilePath();
+        var bytes = await File.ReadAllBytesAsync(path);
+        await File.WriteAllBytesAsync(path, bytes[..^1]);
+
+        var exception = await Assert.ThrowsAsync<PortableArchiveException>(
+            () => scenario.VerifyAsync());
+
+        exception.Code.Should().Be(PortableImportIntegrityVerifier.FailureCode);
+        exception.Message.Should().Contain(
+            PortableLibraryVerificationErrorCodes.MediaLengthMismatch);
+    }
+
+    [Fact]
+    public async Task Stored_book_file_with_one_changed_byte_is_rejected()
+    {
+        await using var scenario = await ImportScenario.CreateAsync();
+        var path = scenario.BookFilePath();
+        var bytes = await File.ReadAllBytesAsync(path);
+        bytes[bytes.Length / 2] ^= 0xFF;
+        await File.WriteAllBytesAsync(path, bytes);
+
+        var exception = await Assert.ThrowsAsync<PortableArchiveException>(
+            () => scenario.VerifyAsync());
+
+        exception.Code.Should().Be(PortableImportIntegrityVerifier.FailureCode);
+        exception.Message.Should().Contain(
+            PortableLibraryVerificationErrorCodes.MediaHashMismatch);
+    }
+
+    [Fact]
+    public async Task Missing_collection_membership_is_rejected()
+    {
+        await using var scenario = await ImportScenario.CreateAsync();
+        var membership = await scenario.Library.Db.BookCollections.FirstAsync();
+        scenario.Library.Db.BookCollections.Remove(membership);
+        await scenario.Library.Db.SaveChangesAsync();
+        scenario.Library.Db.ChangeTracker.Clear();
+
+        var exception = await Assert.ThrowsAsync<PortableArchiveException>(
+            () => scenario.VerifyAsync());
+
+        exception.Code.Should().Be(PortableImportIntegrityVerifier.FailureCode);
+    }
+
     private sealed class ImportScenario(
         LocalPortableTestLibrary source,
         LocalPortableTestLibrary library,
@@ -92,6 +140,16 @@ public sealed class PortableImportIntegrityVerifierTests
         public PortableLibraryData Data { get; } = data;
 
         public PortableArchiveManifest Manifest { get; } = manifest;
+
+        public string BookFilePath()
+        {
+            var bookFile = Manifest.Media.First(
+                item => item.Kind == PortableArchiveFormat.BookMediaKind);
+            return Path.Combine(
+                Library.Storage.StorageRoot,
+                bookFile.BookId.ToString(),
+                bookFile.FileName);
+        }
 
         public static async Task<ImportScenario> CreateAsync()
         {
