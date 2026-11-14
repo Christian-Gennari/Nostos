@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
@@ -98,6 +99,10 @@ public sealed class TranscriptionEndpointTests
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         (await ProblemTitleAsync(response)).Should().Be(SttErrorCodes.InvalidRequest);
+        // Byte-level pin (issue #1632): the shared error helper must not move it.
+        Regex.Replace(await response.Content.ReadAsStringAsync(), ",\"traceId\":\"[^\"]*\"", "")
+            .Should().Be(
+                """{"type":"https://tools.ietf.org/html/rfc9110#section-15.5.1","title":"stt_invalid_request","status":400,"detail":"A non-empty 'file' part is required."}""");
         provider.CallCount.Should().Be(0);
     }
 

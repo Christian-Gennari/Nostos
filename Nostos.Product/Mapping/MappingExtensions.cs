@@ -251,6 +251,31 @@ public static class MappingExtensions
 
     public static bool IsPassage(this NoteModel model) => model.Kind == NoteKinds.Passage;
 
+    /// <summary>
+    /// One note as a topic detail lists it. Same rules as <see cref="ToDto(NoteModel)"/>:
+    /// a passage travels as its opening, with the ligatures expanded, and its
+    /// word count is computed from the stored text.
+    /// </summary>
+    public static NoteContextDto ToContextDto(this NoteModel model) =>
+        new(
+            NoteId: model.Id,
+            Content: model.Content,
+            SelectedText: TextLigatures.Expand(
+                model.IsPassage() ? PassageText.Opening(model.SelectedText) : model.SelectedText),
+            CfiRange: model.CfiRange,
+            BookId: model.BookId,
+            BookTitle: model.Book?.Title ?? "Unknown book",
+            CreatedAt: model.CreatedAt,
+            SourceAnchorKind: model.SourceAnchorKind,
+            SourceAnchorValue: model.SourceAnchorValue,
+            AnchorVerified: model.AnchorVerified,
+            HighlightColour: model.HighlightColour,
+            Kind: model.Kind,
+            PassageTitle: model.PassageTitle,
+            PassageEnd: model.PassageEnd,
+            PassageWordCount: model.IsPassage() ? PassageText.WordCount(model.SelectedText) : null,
+            BookAuthor: model.Book?.Author);
+
     public static PassageDto ToPassageDto(this NoteModel model) =>
         new(
             Id: model.Id,

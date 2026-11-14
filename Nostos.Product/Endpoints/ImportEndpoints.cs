@@ -1,10 +1,10 @@
 using System.Text.Json;
-using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Nostos.Backend.Data;
 using Nostos.Backend.Providers.Acquisition;
+using Nostos.Product.Http;
 using Nostos.Shared.Dtos;
 using Nostos.Shared.Enums;
 
@@ -261,24 +261,10 @@ public static class ImportEndpoints
         JsonSerializerOptions serializerOptions)
     {
         var ct = http.RequestAborted;
-        var response = http.Response;
 
-        // These three headers are the difference between a live feed and a frozen
-        // one behind a reverse proxy:
-        //   - text/event-stream is what the client's EventSource accepts at all;
-        //   - no-cache stops an intermediary serving a stale copy of a live feed;
-        //   - X-Accel-Buffering: no is nginx's documented opt-out from response
-        //     buffering. WITHOUT IT the proxy holds the frames until its buffer
-        //     fills or the stream ends, so the UI sits at 0% and then jumps to
-        //     done — which is exactly the bug this endpoint exists to fix.
-        response.ContentType = "text/event-stream";
-        response.Headers.CacheControl = "no-cache";
-        response.Headers["X-Accel-Buffering"] = "no";
-
-        // Kestrel would otherwise coalesce small writes; a progress frame is a
-        // few hundred bytes, so it would sit in the buffer until something else
-        // flushed it.
-        http.Features.Get<IHttpResponseBodyFeature>()?.DisableBuffering();
+        // Headers, flushes and completion live in the shared SSE helper; this
+        // route owns only what it sends and when.
+        var stream = SseResponse.Begin(http);
 
         var heartbeat = TimeSpan.FromSeconds(Math.Clamp(
             configuration.GetValue(HeartbeatSecondsKey, DefaultHeartbeatSeconds), 1, 300));
@@ -308,7 +294,7 @@ public static class ImportEndpoints
                         continue;
 
                     await WriteEventAsync(
-                        response,
+                        stream,
                         job.State == AcquisitionJobState.Succeeded ? "done" : "failed",
                         [Budget(job, entries)],
                         serializerOptions,
@@ -325,7 +311,7 @@ public static class ImportEndpoints
                     if (!announced.Add(entry.Id))
                         continue;
 
-                    await WriteEventAsync(response, "failed", [entry], serializerOptions, ct);
+                    await WriteEventAsync(stream, "failed", [entry], serializerOptions, ct);
                     lastWriteAt = DateTime.UtcNow;
                 }
 
@@ -337,14 +323,14 @@ public static class ImportEndpoints
                 if (snapshot != lastSnapshot)
                 {
                     lastSnapshot = snapshot;
-                    await WriteEventAsync(response, "progress", entries, serializerOptions, ct);
+                    await WriteEventAsync(stream, "progress", entries, serializerOptions, ct);
                     lastWriteAt = DateTime.UtcNow;
                 }
                 else if (DateTime.UtcNow - lastWriteAt >= heartbeat)
                 {
                     // A bare comment line: the client ignores it, every proxy in
                     // between sees traffic and keeps the connection.
-                    await WriteAsync(response, ": ping\n\n", ct);
+                    await stream.WriteCommentAsync("ping", ct);
                     lastWriteAt = DateTime.UtcNow;
                 }
 
@@ -376,7 +362,7 @@ public static class ImportEndpoints
             // error: it is how every SSE stream ends.
         }
 
-        await TryCompleteAsync(response);
+        await stream.CompleteAsync();
     }
 
     /// <summary>
@@ -408,7 +394,7 @@ public static class ImportEndpoints
                 && !string.IsNullOrWhiteSpace(job.ExternalId));
 
     private static Task WriteEventAsync(
-        HttpResponse response,
+        SseResponse stream,
         string name,
         IReadOnlyList<ImportActivityDto> payload,
         JsonSerializerOptions serializerOptions,
@@ -418,26 +404,7 @@ public static class ImportEndpoints
         // anything pretty-printed would be truncated by the client's parser.
         var json = JsonSerializer.Serialize(payload, serializerOptions);
 
-        return WriteAsync(response, $"event: {name}\ndata: {json}\n\n", ct);
-    }
-
-    private static async Task WriteAsync(HttpResponse response, string frame, CancellationToken ct)
-    {
-        await response.WriteAsync(frame, ct);
-        await response.Body.FlushAsync(ct);
-    }
-
-    private static async Task TryCompleteAsync(HttpResponse response)
-    {
-        try
-        {
-            await response.CompleteAsync();
-        }
-        catch (Exception)
-        {
-            // Completing a response whose reader has already gone is expected to
-            // fail; there is nothing left to do about it.
-        }
+        return stream.WriteEventAsync(name, json, ct);
     }
 
     private sealed record BookLookup(Guid Id, string Title, string? Author, bool HasCover, DateTime CreatedAt);

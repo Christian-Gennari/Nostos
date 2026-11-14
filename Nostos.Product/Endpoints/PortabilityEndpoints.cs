@@ -1,6 +1,7 @@
 using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Markdown;
 using Nostos.Product.Composition;
+using Nostos.Product.Http;
 
 namespace Nostos.Backend.Endpoints;
 
@@ -53,11 +54,10 @@ public static class PortabilityEndpoints
         {
             if (request.ContentLength == 0)
             {
-                return Results.BadRequest(new
-                {
-                    error = "empty_archive",
-                    message = "Portable archive request body is empty.",
-                });
+                return ApiErrors.ErrorWithCode(
+                    "empty_archive",
+                    "Portable archive request body is empty.",
+                    StatusCodes.Status400BadRequest);
             }
 
             try
@@ -73,13 +73,7 @@ public static class PortabilityEndpoints
                     ? StatusCodes.Status409Conflict
                     : StatusCodes.Status400BadRequest;
 
-                return Results.Json(
-                    new
-                    {
-                        error = exception.Code,
-                        message = exception.Message,
-                    },
-                    statusCode: statusCode);
+                return ApiErrors.ErrorWithCode(exception.Code, exception.Message, statusCode);
             }
         });
 

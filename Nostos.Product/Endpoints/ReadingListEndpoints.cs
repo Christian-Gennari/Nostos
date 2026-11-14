@@ -1,4 +1,5 @@
 using Nostos.Backend.Services.ReadingList;
+using Nostos.Product.Http;
 using Nostos.Shared.Dtos;
 
 namespace Nostos.Backend.Endpoints;
@@ -84,10 +85,8 @@ public static class ReadingListEndpoints
             _ => StatusCodes.Status400BadRequest,
         };
 
-        return Results.Problem(
-            statusCode: status,
-            title: result.ErrorCode,
-            detail: result.ErrorMessage,
-            extensions: new Dictionary<string, object?> { ["code"] = result.ErrorCode });
+        // The reading list repeats its machine code in a `code` extension as
+        // well as in `title`; the helper keeps both, because clients read both.
+        return ApiErrors.Problem(status, result.ErrorCode!, result.ErrorMessage, code: result.ErrorCode);
     }
 }

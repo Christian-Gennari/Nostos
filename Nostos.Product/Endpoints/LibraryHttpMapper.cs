@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Http;
+using Nostos.Product.Http;
 using Nostos.Shared.Dtos;
 
 namespace Nostos.Backend.Endpoints;
@@ -7,6 +8,11 @@ namespace Nostos.Backend.Endpoints;
 /// Maps library-domain error envelopes to HTTP Problem Details, mirroring the
 /// Library ToHttp convention: invalid_* → 400, *_not_found → 404,
 /// the conflict family → 409, everything else → 422.
+///
+/// The body is <see cref="ApiErrors.Problem"/>: the machine code in
+/// <c>title</c> and the reply in <c>detail</c>, no <c>code</c> extension. That
+/// is the shape this mapper has always returned; sharing the factory does not
+/// change a byte on the wire.
 /// </summary>
 public static class LibraryHttpMapper
 {
@@ -31,9 +37,6 @@ public static class LibraryHttpMapper
             _ => StatusCodes.Status422UnprocessableEntity,
         };
 
-        return Results.Problem(
-            statusCode: status,
-            title: code,
-            detail: envelope.Reply);
+        return ApiErrors.Problem(status, code, envelope.Reply);
     }
 }

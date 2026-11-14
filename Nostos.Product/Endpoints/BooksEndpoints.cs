@@ -252,7 +252,7 @@ public static class BooksEndpoints
             "/{id}/locations",
             async (Guid id, IBookRepository repo, CancellationToken ct) =>
             {
-                var book = await repo.GetByIdAsync(id);
+                var book = await repo.GetByIdAsync(id, ct);
                 if (book is null)
                     return Results.NotFound();
 
@@ -267,12 +267,12 @@ public static class BooksEndpoints
             "/{id}/locations",
             async (Guid id, BookLocationsDto dto, IBookRepository repo, CancellationToken ct) =>
             {
-                var book = await repo.GetByIdAsync(id);
+                var book = await repo.GetByIdAsync(id, ct);
                 if (book is null)
                     return Results.NotFound();
 
                 book.FileDetails.LocationsJson = dto.Locations;
-                await repo.UpdateAsync(book);
+                await repo.UpdateAsync(book, ct);
 
                 return Results.Ok();
             }
@@ -312,7 +312,7 @@ public static class BooksEndpoints
                 if (LibraryHttpMapper.MapError(result) is { } error)
                     return error;
                 if (result.Data is not BookDto book || !book.HasFile || string.IsNullOrWhiteSpace(book.FileName))
-                    return Results.BadRequest("This book has no digital source file to index.");
+                    return ApiErrors.Message("This book has no digital source file to index.");
 
                 await scheduler.ScheduleAsync(id, book.FileName, ct);
                 return Results.Accepted($"/api/books/{id}/text-index");
@@ -355,7 +355,7 @@ public static class BooksEndpoints
                 var form = await request.ReadFormAsync(ct);
                 var file = form.Files.FirstOrDefault();
                 if (file is null)
-                    return Results.BadRequest("Missing file.");
+                    return ApiErrors.Message("Missing file.");
                 if (file.Length > NostosProductRequestLimits.MaxFileMetadataRequestBytes)
                     return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
 
@@ -376,7 +376,7 @@ public static class BooksEndpoints
                 IBookRepository repo,
                 BookFileCommit commit,
                 BookFileMutationGate fileMutationGate,
-                ILoggerFactory loggerFactory,
+                ILogger<BookUploadLog> logger,
                 CancellationToken ct
             ) =>
             {
@@ -384,29 +384,35 @@ public static class BooksEndpoints
                 // would turn a stale upload click into an unexpected replacement.
                 using var fileLease = fileMutationGate.TryEnter(id);
                 if (fileLease is null)
-                    return Results.Conflict(new { code = "book_import_in_progress",
-                        message = "Wait for this book's current import or upload to finish." });
+                    return ApiErrors.CodeMessage(
+                        "book_import_in_progress",
+                        "Wait for this book's current import or upload to finish.",
+                        StatusCodes.Status409Conflict);
 
-                var book = await repo.GetByIdAsync(id);
+                var book = await repo.GetByIdAsync(id, ct);
                 if (book is null)
                     return Results.NotFound();
 
                 if (book is PhysicalBookModel)
                 {
-                    return Results.BadRequest(
+                    return ApiErrors.Message(
                         "Physical books are metadata-only. Add the digital file as a separate edition."
                     );
                 }
 
                 if (book.Status is BookStatus.Downloading or BookStatus.Transcoding)
-                    return Results.Conflict(new { code = "book_import_in_progress",
-                        message = "This book is still importing. Wait until it finishes before uploading a file." });
+                    return ApiErrors.CodeMessage(
+                        "book_import_in_progress",
+                        "This book is still importing. Wait until it finishes before uploading a file.",
+                        StatusCodes.Status409Conflict);
 
                 // Create-or-match can hand back a book that already holds a
                 // file; replacing it must be asked for, never a side effect.
                 if (book.FileDetails.HasFile && replace != true)
-                    return Results.Conflict(new { code = "book_has_file",
-                        message = "This book already has a file. Pass ?replace=true to replace it." });
+                    return ApiErrors.CodeMessage(
+                        "book_has_file",
+                        "This book already has a file. Pass ?replace=true to replace it.",
+                        StatusCodes.Status409Conflict);
 
                 // Count what actually arrived so a truncated whole-request
                 // upload is diagnosable: the declared Content-Length alone
@@ -422,7 +428,7 @@ public static class BooksEndpoints
                 catch (Exception exception)
                     when (exception is BadHttpRequestException or IOException or InvalidDataException)
                 {
-                    loggerFactory.CreateLogger("Nostos.BookUpload").LogWarning(
+                    logger.LogWarning(
                         exception,
                         "Legacy book file upload for {BookId} was interrupted after " +
                         "{BytesReceived} of {DeclaredBytes} bytes.",
@@ -434,11 +440,11 @@ public static class BooksEndpoints
 
                 var file = form.Files.FirstOrDefault();
                 if (file is null)
-                    return Results.BadRequest("Missing file.");
+                    return ApiErrors.Message("Missing file.");
 
                 var allowed = BookAssetFormats.IsAllowedUpload(file.ContentType, file.FileName);
                 if (!allowed)
-                    return Results.BadRequest($"Unsupported file type: {file.ContentType}");
+                    return ApiErrors.Message($"Unsupported file type: {file.ContentType}");
 
                 await using (var probe = file.OpenReadStream())
                 {
@@ -473,21 +479,25 @@ public static class BooksEndpoints
 
                 using var fileLease = fileMutationGate.TryEnter(id);
                 if (fileLease is null)
-                    return Results.Conflict(new { code = "book_import_in_progress",
-                        message = "Wait for this book's current import or upload to finish." });
+                    return ApiErrors.CodeMessage(
+                        "book_import_in_progress",
+                        "Wait for this book's current import or upload to finish.",
+                        StatusCodes.Status409Conflict);
 
-                var book = await repo.GetByIdAsync(id);
+                var book = await repo.GetByIdAsync(id, ct);
                 if (book is null)
                     return Results.NotFound();
                 if (book.Status is BookStatus.Downloading or BookStatus.Transcoding)
-                    return Results.Conflict(new { code = "book_import_in_progress",
-                        message = "This book is still importing. Wait until it finishes before uploading files." });
+                    return ApiErrors.CodeMessage(
+                        "book_import_in_progress",
+                        "This book is still importing. Wait until it finishes before uploading files.",
+                        StatusCodes.Status409Conflict);
 
                 var form = await request.ReadFormAsync(ct);
                 var result = await upload.CommitAsync(book, form.Files, ct);
                 return result.Ok
                     ? Results.Ok(new { uploaded = true, tracks = result.Tracks })
-                    : Results.BadRequest(result.Error);
+                    : ApiErrors.Message(result.Error);
             }
         );
 
@@ -607,7 +617,7 @@ public static class BooksEndpoints
                 if (http.RequestServices.GetService<IBookTrackStorage>() is not { } tracks)
                     return Results.NotFound();
 
-                var book = await repo.GetByIdAsync(id);
+                var book = await repo.GetByIdAsync(id, ct);
                 var list = BookTrackList.Parse(book?.FileDetails.TracksJson);
                 var track = list.FirstOrDefault(candidate => candidate.Number == number);
                 if (track is null)
@@ -640,7 +650,7 @@ public static class BooksEndpoints
                 CancellationToken ct
             ) =>
             {
-                var book = await repo.GetByIdAsync(id);
+                var book = await repo.GetByIdAsync(id, ct);
                 if (book is null)
                     return Results.NotFound();
 
@@ -658,13 +668,13 @@ public static class BooksEndpoints
                 var form = await request.ReadFormAsync(ct);
                 var file = form.Files.FirstOrDefault();
                 if (file is null)
-                    return Results.BadRequest("Missing cover file.");
+                    return ApiErrors.Message("Missing cover file.");
 
                 if (file.Length > NostosProductRequestLimits.MaxCoverUploadBytes)
                     return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
 
                 if (!BookAssetFormats.IsAllowedCoverUpload(file.ContentType, file.FileName))
-                    return Results.BadRequest("Cover file type does not match a supported PNG or JPEG filename.");
+                    return ApiErrors.Message("Cover file type does not match a supported PNG or JPEG filename.");
 
                 await using (var coverStream = file.OpenReadStream())
                 {
@@ -674,7 +684,7 @@ public static class BooksEndpoints
                 var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
                 book.FileDetails.SetCover($"cover{ext}");
 
-                await repo.UpdateAsync(book);
+                await repo.UpdateAsync(book, ct);
 
                 return Results.Ok(new { uploaded = true });
             }
@@ -727,7 +737,7 @@ public static class BooksEndpoints
             "/{id}/cover",
             async (Guid id, IBookRepository repo, IBookAssetStorage storage, CancellationToken ct) =>
             {
-                var book = await repo.GetByIdAsync(id);
+                var book = await repo.GetByIdAsync(id, ct);
                 if (book is null)
                     return Results.NotFound();
 
@@ -735,7 +745,7 @@ public static class BooksEndpoints
                     return Results.NotFound();
 
                 book.FileDetails.SetCover(null);
-                await repo.UpdateAsync(book);
+                await repo.UpdateAsync(book, ct);
 
                 return Results.NoContent();
             }
@@ -749,14 +759,11 @@ public static class BooksEndpoints
                 var normalizedIsbn = BookIdentityNormalizer.NormalizeIsbn(isbn);
                 if (normalizedIsbn is null)
                 {
-                    return Results.Problem(
-                        statusCode: StatusCodes.Status400BadRequest,
-                        title: "Invalid ISBN",
-                        detail: "Enter a valid ISBN-10 or ISBN-13.",
-                        extensions: new Dictionary<string, object?>
-                        {
-                            ["code"] = "invalid_isbn",
-                        });
+                    return ApiErrors.Problem(
+                        StatusCodes.Status400BadRequest,
+                        "Invalid ISBN",
+                        "Enter a valid ISBN-10 or ISBN-13.",
+                        code: "invalid_isbn");
                 }
 
                 var outcome = await service.LookupCombinedDetailedAsync(normalizedIsbn, ct);
@@ -765,24 +772,18 @@ public static class BooksEndpoints
 
                 if (outcome.Failed)
                 {
-                    return Results.Problem(
-                        statusCode: StatusCodes.Status503ServiceUnavailable,
-                        title: "Book metadata services unavailable",
-                        detail: "Book metadata services are temporarily unavailable. Please try again.",
-                        extensions: new Dictionary<string, object?>
-                        {
-                            ["code"] = "book_metadata_unavailable",
-                        });
+                    return ApiErrors.Problem(
+                        StatusCodes.Status503ServiceUnavailable,
+                        "Book metadata services unavailable",
+                        "Book metadata services are temporarily unavailable. Please try again.",
+                        code: "book_metadata_unavailable");
                 }
 
-                return Results.Problem(
-                    statusCode: StatusCodes.Status404NotFound,
-                    title: "Book metadata not found",
-                    detail: "No book metadata found for this ISBN.",
-                    extensions: new Dictionary<string, object?>
-                    {
-                        ["code"] = "book_metadata_not_found",
-                    });
+                return ApiErrors.Problem(
+                    StatusCodes.Status404NotFound,
+                    "Book metadata not found",
+                    "No book metadata found for this ISBN.",
+                    code: "book_metadata_not_found");
             }
         );
 
@@ -857,11 +858,11 @@ public static class BooksEndpoints
         }
         catch (MultipartUploadRejectedException ex)
         {
-            return Results.BadRequest(new { error = ex.Message });
+            return ApiErrors.Error(ex.Message);
         }
         catch (Exception ex) when (ex is FormatException or JsonException)
         {
-            return Results.BadRequest(new { error = ex.Message });
+            return ApiErrors.Error(ex.Message);
         }
     }
 }

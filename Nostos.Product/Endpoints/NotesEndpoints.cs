@@ -55,7 +55,7 @@ public static class NotesEndpoints
                     .Distinct()
                     .ToList();
                 if (parsed.Count > NoteService.MaxNotesByIds)
-                    return Results.BadRequest(new { error = $"At most {NoteService.MaxNotesByIds} ids." });
+                    return ApiErrors.Error($"At most {NoteService.MaxNotesByIds} ids.");
                 return Results.Ok(await notes.GetManyAsync(parsed, ct));
             }
         );
@@ -91,7 +91,7 @@ public static class NotesEndpoints
                 Guid? withTopicId, string? order, Guid? workId, CancellationToken ct) =>
             {
                 if (!TryParseOrder(order, oldestFirst ?? false, out var parsed))
-                    return Results.BadRequest(new { error = "order is newest, oldest or book." });
+                    return ApiErrors.Error("order is newest, oldest or book.");
 
                 // workId: the notes of every edition of one book; bookId: one edition.
                 var browse = new NoteBrowseQuery(query, bookId, withoutTopics ?? false, kind,
@@ -146,8 +146,8 @@ public static class NotesEndpoints
 
                 return result.ErrorCode switch
                 {
-                    NoteErrorCodes.BookNotFound => Results.NotFound(new { error = result.ErrorMessage }),
-                    _ => Results.BadRequest(new { error = result.ErrorMessage }),
+                    NoteErrorCodes.BookNotFound => ApiErrors.Error(result.ErrorMessage!, StatusCodes.Status404NotFound),
+                    _ => ApiErrors.Error(result.ErrorMessage!),
                 };
             }
         );
@@ -158,18 +158,18 @@ public static class NotesEndpoints
         // identical to every other capture path.
         group.MapPost(
             "/notes/import/koreader",
-            async (HttpRequest request, KoreaderNoteImportService importer, ILoggerFactory loggers, CancellationToken ct) =>
+            async (HttpRequest request, KoreaderNoteImportService importer, ILogger<KoreaderNoteImportService> loggers, CancellationToken ct) =>
             {
                 const long maxMetadataBytes = 2 * 1024 * 1024;
                 if (!request.HasFormContentType)
-                    return Results.BadRequest(new { error = "Expected multipart/form-data with a KOReader metadata.lua file." });
+                    return ApiErrors.Error("Expected multipart/form-data with a KOReader metadata.lua file.");
 
                 var form = await request.ReadFormAsync(ct);
                 var file = form.Files.GetFile("file") ?? form.Files.FirstOrDefault();
                 if (file is null)
-                    return Results.BadRequest(new { error = "A KOReader metadata.lua file is required." });
+                    return ApiErrors.Error("A KOReader metadata.lua file is required.");
                 if (file.Length <= 0 || file.Length > maxMetadataBytes)
-                    return Results.BadRequest(new { error = "KOReader metadata.lua must be between 1 byte and 2 MB." });
+                    return ApiErrors.Error("KOReader metadata.lua must be between 1 byte and 2 MB.");
 
                 string source;
                 await using (var stream = file.OpenReadStream())
@@ -184,9 +184,8 @@ public static class NotesEndpoints
                 {
                     // Issue #1523: a sidecar the plugin sent that no longer
                     // parses is a format change we want to see.
-                    HighlightImportShapeLog.WriteText(
-                        loggers.CreateLogger<KoreaderNoteImportService>(), source, HighlightImportShapeLog.ParseFailed);
-                    return Results.BadRequest(new { error = ex.Message });
+                    HighlightImportShapeLog.WriteText(loggers, source, HighlightImportShapeLog.ParseFailed);
+                    return ApiErrors.Error(ex.Message);
                 }
             }
         );
@@ -332,7 +331,7 @@ public static class NotesEndpoints
                     return Results.Json(result.Value, statusCode: StatusCodes.Status409Conflict);
                 return result.ErrorCode == NoteErrorCodes.NoteNotFound
                     ? Results.NotFound()
-                    : Results.BadRequest(new { error = result.ErrorMessage });
+                    : ApiErrors.Error(result.ErrorMessage!);
             }
         );
 
@@ -347,7 +346,7 @@ public static class NotesEndpoints
                     return Results.Ok(result.Value);
                 return result.ErrorCode == NoteErrorCodes.NoteNotFound
                     ? Results.NotFound()
-                    : Results.BadRequest(new { error = result.ErrorMessage });
+                    : ApiErrors.Error(result.ErrorMessage!);
             }
         );
 
@@ -381,8 +380,8 @@ public static class NotesEndpoints
 
     private static IResult ReadwiseFailure(Exception ex) => ex switch
     {
-        ReadwiseNotConnectedException => Results.Conflict(new { error = ex.Message }),
-        ReadwiseInvalidTokenException => Results.BadRequest(new { error = ex.Message }),
+        ReadwiseNotConnectedException => ApiErrors.Error(ex.Message, StatusCodes.Status409Conflict),
+        ReadwiseInvalidTokenException => ApiErrors.Error(ex.Message),
         ReadwiseRateLimitedException limited => Results.Json(
             new
             {
@@ -390,13 +389,9 @@ public static class NotesEndpoints
                 retryAfterSeconds = (int)Math.Ceiling(limited.RetryAfter.TotalSeconds),
             },
             statusCode: StatusCodes.Status503ServiceUnavailable),
-        ReadwiseFormatException format => Results.Json(
-            new { error = format.Message },
-            statusCode: StatusCodes.Status502BadGateway),
-        ReadwiseUpstreamException upstream => Results.Json(
-            new { error = upstream.Message },
-            statusCode: StatusCodes.Status502BadGateway),
-        ArgumentException invalid => Results.BadRequest(new { error = invalid.Message }),
+        ReadwiseFormatException format => ApiErrors.Error(format.Message, StatusCodes.Status502BadGateway),
+        ReadwiseUpstreamException upstream => ApiErrors.Error(upstream.Message, StatusCodes.Status502BadGateway),
+        ArgumentException invalid => ApiErrors.Error(invalid.Message),
         _ => throw ex,
     };
 
@@ -426,9 +421,9 @@ public static class NotesEndpoints
 
             var companions = upload.Form.Files.GetFiles("companion");
             if (companions.Count > maxCompanions)
-                return Results.BadRequest(new { error = "Choose at most five files for one import." });
+                return ApiErrors.Error("Choose at most five files for one import.");
             if (companions.Any(companion => companion.Length <= 0 || companion.Length > maxBytes))
-                return Results.BadRequest(new { error = "Each file must be between 1 byte and 256 MB." });
+                return ApiErrors.Error("Each file must be between 1 byte and 256 MB.");
 
             var companionPaths = new List<string>(companions.Count);
             for (var i = 0; i < companions.Count; i++)
@@ -442,11 +437,11 @@ public static class NotesEndpoints
         }
         catch (MultipartUploadRejectedException ex)
         {
-            return Results.BadRequest(new { error = ex.Message });
+            return ApiErrors.Error(ex.Message);
         }
         catch (Exception ex) when (ex is FormatException or JsonException)
         {
-            return Results.BadRequest(new { error = ex.Message });
+            return ApiErrors.Error(ex.Message);
         }
     }
 

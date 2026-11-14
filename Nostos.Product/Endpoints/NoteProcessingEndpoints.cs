@@ -1,5 +1,6 @@
 using Nostos.Backend.Services.Ai;
 using Nostos.Backend.Services.Notes;
+using Nostos.Product.Http;
 using Nostos.Shared.Dtos;
 
 namespace Nostos.Backend.Endpoints;
@@ -46,10 +47,10 @@ public static class NoteProcessingEndpoints
         {
             // The note and its raw transcript are untouched; the client gets the
             // typed provider failure rather than a 500.
-            return Results.Problem(
-                statusCode: StatusCodes.Status502BadGateway,
-                title: ex.Code,
-                detail: ex.Message);
+            return ApiErrors.Problem(
+                StatusCodes.Status502BadGateway,
+                ex.Code,
+                ex.Message);
         }
     }
 
@@ -73,8 +74,12 @@ public static class NoteProcessingEndpoints
 
     private static IResult MapFailure<T>(NoteCommandResult<T> result) => result.ErrorCode switch
     {
-        NoteErrorCodes.NoteNotFound => Results.NotFound(new { error = result.ErrorMessage }),
-        NoteErrorCodes.NoRawTranscript => Results.Conflict(new { error = result.ErrorMessage }),
-        _ => Results.BadRequest(new { error = result.ErrorMessage }),
+        NoteErrorCodes.NoteNotFound => ApiErrors.Error(
+            result.ErrorMessage!,
+            StatusCodes.Status404NotFound),
+        NoteErrorCodes.NoRawTranscript => ApiErrors.Error(
+            result.ErrorMessage!,
+            StatusCodes.Status409Conflict),
+        _ => ApiErrors.Error(result.ErrorMessage!),
     };
 }

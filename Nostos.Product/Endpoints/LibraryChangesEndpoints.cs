@@ -1,8 +1,8 @@
-using Microsoft.AspNetCore.Http.Features;
 using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Data;
 using Nostos.Backend.Middleware;
 using Nostos.Backend.Services.Portability.Migration;
+using Nostos.Product.Http;
 
 namespace Nostos.Backend.Endpoints;
 
@@ -99,14 +99,10 @@ public static class LibraryChangesEndpoints
         IConfiguration configuration)
     {
         var ct = http.RequestAborted;
-        var response = http.Response;
 
-        // Same proxy contract as the import stream: an event-stream content type,
-        // no intermediary caching, and nginx's opt-out from response buffering.
-        response.ContentType = "text/event-stream";
-        response.Headers.CacheControl = "no-cache";
-        response.Headers["X-Accel-Buffering"] = "no";
-        http.Features.Get<IHttpResponseBodyFeature>()?.DisableBuffering();
+        // The proxy-safe headers, frame flushes and completion are the same
+        // contract the import feed uses: one implementation, in SseResponse.
+        var stream = SseResponse.Begin(http);
 
         var poll = TimeSpan.FromMilliseconds(Math.Clamp(
             configuration.GetValue(PollMillisecondsKey, DefaultPollMilliseconds), 50, 600_000));
@@ -121,7 +117,7 @@ public static class LibraryChangesEndpoints
 
         try
         {
-            await WriteAsync(response, $"retry: {RetryMilliseconds}\n\n", ct);
+            await stream.WriteRetryAsync(RetryMilliseconds, ct);
 
             // Wait first, then read: a change that commits while the revision is
             // being read still completes this wait, so it cannot be missed.
@@ -139,7 +135,7 @@ public static class LibraryChangesEndpoints
             // that reconnects after a gap compares it with the last one it saw
             // and re-reads when it missed a change.
             var lastReadAt = DateTime.UtcNow;
-            await WriteRevisionAsync(response, announced, progressOnly: false, ct);
+            await WriteRevisionAsync(stream, announced, progressOnly: false, ct);
             lastWriteAt = DateTime.UtcNow;
 
             // True while every change since the last announcement only moved a
@@ -154,7 +150,7 @@ public static class LibraryChangesEndpoints
 
                 if (DateTime.UtcNow - lastWriteAt >= heartbeat)
                 {
-                    await WriteAsync(response, ": ping\n\n", ct);
+                    await stream.WriteCommentAsync("ping", ct);
                     lastWriteAt = DateTime.UtcNow;
                 }
 
@@ -185,7 +181,7 @@ public static class LibraryChangesEndpoints
                 {
                     announced = revision;
                     // A change found by the re-read alone is of unknown kind.
-                    await WriteRevisionAsync(response, revision, pendingPositionOnly == true, ct);
+                    await WriteRevisionAsync(stream, revision, pendingPositionOnly == true, ct);
                     lastWriteAt = DateTime.UtcNow;
                     pendingPositionOnly = null;
                 }
@@ -208,7 +204,7 @@ public static class LibraryChangesEndpoints
             // retry delay and resumes from the revision it receives then.
         }
 
-        await TryCompleteAsync(response);
+        await stream.CompleteAsync();
     }
 
     /// <summary>
@@ -243,36 +239,19 @@ public static class LibraryChangesEndpoints
     /// may pick it up lazily; its absence means "re-read now".
     /// </summary>
     private static Task WriteRevisionAsync(
-        HttpResponse response,
+        SseResponse stream,
         string revision,
         bool progressOnly,
         CancellationToken ct) =>
-        WriteAsync(
-            response,
+        stream.WriteEventAsync(
+            "library",
             progressOnly
-                ? $"event: library\ndata: {{\"stateVersion\":\"{revision}\",\"progressOnly\":true}}\n\n"
-                : $"event: library\ndata: {{\"stateVersion\":\"{revision}\"}}\n\n",
+                ? $"{{\"stateVersion\":\"{revision}\",\"progressOnly\":true}}"
+                : $"{{\"stateVersion\":\"{revision}\"}}",
             ct);
 
     private static TimeSpan Min(TimeSpan a, TimeSpan b) => a < b ? a : b;
 
     private static TimeSpan Max(TimeSpan a, TimeSpan b) => a > b ? a : b;
 
-    private static async Task WriteAsync(HttpResponse response, string frame, CancellationToken ct)
-    {
-        await response.WriteAsync(frame, ct);
-        await response.Body.FlushAsync(ct);
-    }
-
-    private static async Task TryCompleteAsync(HttpResponse response)
-    {
-        try
-        {
-            await response.CompleteAsync();
-        }
-        catch (Exception)
-        {
-            // Completing a response whose reader has already gone is expected to fail.
-        }
-    }
 }

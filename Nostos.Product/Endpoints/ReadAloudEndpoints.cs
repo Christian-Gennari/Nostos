@@ -1,4 +1,5 @@
 using Nostos.Product.Services.Ai;
+using Nostos.Product.Http;
 
 namespace Nostos.Backend.Endpoints;
 
@@ -217,7 +218,7 @@ public static class ReadAloudEndpoints
     };
 
     private static IResult Failure(string code, int statusCode, string detail) =>
-        Results.Problem(statusCode: statusCode, title: code, detail: detail);
+        ApiErrors.Problem(statusCode, code, detail);
 
     /// <summary>The JSON body of a speech request.</summary>
     public sealed record ReadAloudSpeechBody(string? Text, string? Voice, string? Language);

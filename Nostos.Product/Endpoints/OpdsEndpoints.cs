@@ -79,18 +79,19 @@ public static class OpdsEndpoints
         StoredAssetHttpResult.MapGetAndHead(
             group,
             "/",
-            async (HttpContext context, IBookRepository bookRepo) =>
+            async (HttpContext context, IBookRepository bookRepo, CancellationToken ct) =>
             {
                 // The feed is paginated, so the request describes a window into
                 // the collection rather than the collection itself.
-                var total = await bookRepo.CountBooksWithFilesAsync();
+                var total = await bookRepo.CountBooksWithFilesAsync(ct);
                 var pageSize = options.PageSize;
                 var lastPage = Math.Max(1, (total + pageSize - 1) / pageSize);
                 var page = Math.Clamp(ParsePage(context.Request.Query["page"]), 1, lastPage);
 
                 var books = await bookRepo.GetBooksWithFilesPageAsync(
                     (page - 1) * pageSize,
-                    pageSize
+                    pageSize,
+                    ct
                 );
 
                 var selfUrl = GetAbsoluteUrl(context, options, PagePath(page));
