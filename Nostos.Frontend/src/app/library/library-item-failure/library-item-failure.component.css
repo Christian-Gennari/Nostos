@@ -1,0 +1,37 @@
+/* A failed import explains itself where it lives. The message is the book's own
+   `statusMessage`, so it survives a reload; only the actions need the feed, which
+   is the one place the provider and item ids still exist. */
+:host {
+  display: block;
+}
+
+.item-failure {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: 1.35;
+  color: var(--color-danger);
+  overflow-wrap: anywhere;
+}
+
+.item-failure-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 5px;
+  /* Above the card's stretched link, so the actions stay clickable while the
+     rest of the card still opens the book. */
+  position: relative;
+  z-index: 1;
+}
+
+/* Retry / Dismiss are appButton sm (primary / secondary). On a phone every
+   action is a full 44px target: the failure actions have no hover to fall back
+   on. */
+@media (max-width: 768px) {
+  .item-action {
+    min-height: 44px;
+    min-width: 44px;
+    padding: 0 1rem;
+    font-size: var(--text-sm);
+  }
+}

@@ -5,7 +5,7 @@ import { HttpEventType } from '@angular/common/http';
 import { finalize } from 'rxjs';
 
 // DTOs & Services
-import { Book, LinkableBookDto } from '../core/dtos/book.dtos';
+import { Book, LinkableBookDto, type UpdateBookDto } from '../core/dtos/book.dtos';
 import type { NoteSearchHit } from '../core/dtos/note.dtos';
 import { Collection } from '../core/dtos/collection.dtos';
 import { BooksService } from '../core/services/books.service';
@@ -319,8 +319,10 @@ export class BookDetailStore {
     // 1. Optimistic Update
     this.book.update((curr) => (curr ? { ...curr, isFavorite: newStatus } : null));
 
-    // 2. API Call
-    this.booksService.update(b.id, { isFavorite: newStatus } as any, HANDLED).subscribe({
+    // 2. API Call. `UpdateBookDto` types both fields, so the payload is checked
+    // against the server's contract instead of being cast past it.
+    const dto: UpdateBookDto = { isFavorite: newStatus };
+    this.booksService.update(b.id, dto, HANDLED).subscribe({
       error: () => {
         // Revert on error
         this.book.update((curr) => (curr ? { ...curr, isFavorite: !newStatus } : null));
@@ -453,7 +455,8 @@ export class BookDetailStore {
 
     this.book.update((curr) => (curr ? { ...curr, rating } : null));
 
-    this.booksService.update(b.id, { rating } as any, HANDLED).subscribe({
+    const dto: UpdateBookDto = { rating };
+    this.booksService.update(b.id, dto, HANDLED).subscribe({
       error: () => this.toast.error('Could not update the rating'),
     });
   }

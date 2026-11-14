@@ -215,10 +215,8 @@
   );
 }
 /* No cover (or the art failed): the band stays a flat warm gradient, never a
-   broken-image glyph or a stripped-out rectangle. */
-.book-hero.no-art .hero-art {
-  display: none;
-}
+   broken-image glyph or a stripped-out rectangle. Nothing has to hide the art
+   layer: the template does not render it in that state. */
 .hero-inner {
   position: relative;
   z-index: 3;

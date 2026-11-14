@@ -10,118 +10,24 @@
   ></app-sidebar-collections>
 
   <div class="library-right-side" [class.is-selecting]="selecting()" #resultsScroller>
-    <header class="toolbar toolbar-edge">
-      <!-- Static heading: the active-filter chips directly below (and the
-           sidebar highlight) already name the current scope, so the heading
-           never restates them. -->
-      <!-- On a phone the active bottom dock already names the section, so the
-           heading is screen-reader-only there. -->
-      <h1 id="library-title" class="page-title library-title visually-hidden-phone">Library</h1>
-
-      <nostos-search-field class="search-bar-container">
-        <input
-          appInput
-          controlSize="compact"
-          type="search"
-          class="search-input"
-          placeholder="Search books…"
-          aria-label="Search books"
-          [value]="searchQuery()"
-          (input)="onSearch($event)"
-        />
-      </nostos-search-field>
-
-      <div class="toolbar-right">
-        <!-- Phone only. Navigation anchors the row's left edge: the drawer
-             opener is icon-only on the touch rung, and the active-filter chip
-             row below carries the shelf's name. aria-label keeps the action
-             ("Open collections sidebar") for assistive tech. -->
-        <button
-          type="button"
-          appButton
-          variant="ghost"
-          class="floating-toggle"
-          [class.hidden]="sidebarExpanded()"
-          (click)="$event.stopPropagation(); toggleSidebar()"
-          [attr.aria-expanded]="sidebarExpanded()"
-          aria-controls="library-collections-sidebar"
-          [attr.aria-label]="sidebarExpanded() ? 'Close collections sidebar' : 'Open collections sidebar'"
-          title="Collections"
-        >
-          <nostos-icon name="list" [size]="20"></nostos-icon>
-          <span class="scope-label" data-testid="library-scope-label">{{ scopeLabel() }}</span>
-          <nostos-icon name="caret-down" [size]="14" class="scope-caret"></nostos-icon>
-        </button>
-        <span class="toolbar-spacer" aria-hidden="true"></span>
-        <!-- Phone only: the same sort, as a square button; the open list shows
-             the current order. The labelled field below is the desktop control. -->
-        <app-dropdown
-          class="sort-select-phone"
-          appearance="icon"
-          triggerIcon="sliders-horizontal"
-          align="end"
-          ariaLabel="Sort books"
-          [options]="sortOptions"
-          [value]="activeSort()"
-          (valueChange)="setSort($event)"
-        />
-        <div class="select-wrapper">
-          <app-dropdown
-            class="sort-select"
-            controlSize="compact"
-            appearance="subtle"
-            ariaLabel="Sort books"
-            [options]="sortOptions"
-            [value]="activeSort()"
-            (valueChange)="setSort($event)"
-          />
-        </div>
-
-        <button appButton variant="ghost" size="sm" type="button" class="select-toggle" aria-label="Select books"
-          [attr.aria-pressed]="selecting()" (click)="toggleSelecting()">
-          <nostos-icon name="check-square" [size]="16" /><span class="select-label">Select</span>
-        </button>
-
-        <nostos-view-toggle
-          class="control-group"
-          aria-label="Book view"
-          [options]="viewToggleOptions"
-          [value]="viewMode()"
-          (valueChange)="setViewMode($event)"
-        />
-
-        <button appButton variant="primary" class="library-add-button" (click)="openAddModal()">
-          <nostos-icon name="plus" [size]="18"></nostos-icon>
-          <span class="btn-text">Add book</span>
-        </button>
-      </div>
-    </header>
-
-    <!-- On a phone the scope chip here is the shelf's name: the toolbar's
-         drawer opener is icon-only. `scope-only` marks a bar with no search
-         chip, and `.is-empty` lets it keep zero height when nothing is set. -->
-    <div
-      class="filter-bar"
-      [class.is-empty]="activeFilterChips().length === 0"
-      [class.scope-only]="!searchQuery().trim()"
-    >
-      <div class="filter-bar-inner">
-        <div class="active-filters" role="status" aria-label="Active filters">
-          @for (chip of activeFilterChips(); track chip.key) {
-          <button
-            appChip
-            class="filter-chip"
-            [class.filter-chip--scope]="chip.key !== 'search'"
-            (click)="clearChip(chip.key)"
-            [title]="'Clear ' + chip.label"
-          >
-            <span>{{ chip.label }}</span>
-            <nostos-icon name="x" [size]="14"></nostos-icon>
-          </button>
-          }
-        </div>
-      </div>
-    </div>
+    <app-library-toolbar
+      [searchQuery]="searchQuery()"
+      [activeSort]="activeSort()"
+      [sortOptions]="sortOptions"
+      [viewMode]="viewMode()"
+      [viewToggleOptions]="viewToggleOptions"
+      [selecting]="selecting()"
+      [sidebarExpanded]="sidebarExpanded()"
+      [scopeLabel]="scopeLabel()"
+      [chips]="activeFilterChips()"
+      (search)="onSearch($event)"
+      (sortChanged)="setSort($event)"
+      (viewModeChanged)="setViewMode($event)"
+      (sidebarToggled)="toggleSidebar()"
+      (selectingToggled)="toggleSelecting()"
+      (addBook)="openAddModal()"
+      (chipCleared)="clearChip($event)"
+    />
 
     <div class="container lg">
 
@@ -180,344 +86,50 @@
         <nostos-loading-indicator class="results-loading" label="Loading your books" />
         } @else {
       @if (viewMode() === 'list') {
-      <div class="table-view">
-        <div class="table-header">
-          <div id="title-header">Title</div>
-          <div id="author-header">Author</div>
-          <div id="rating-header">Rating</div>
-          <div id="format-header">Format</div>
-          <div id="date-header">Added</div>
-        </div>
-
-        @for (book of books(); track book.id) {
-        <div class="table-row" [class.is-importing]="book.status === 1 || book.status === 2" [class.is-failed]="book.status === 3" [class.is-selected]="selected().has(book.id)" (click)="onBookPress(book)" [attr.draggable]="isSelectable(book)" (dragstart)="onBookDragStart(book, $event)" (mouseenter)="prefetchHeroCover(book)" (mouseleave)="cancelHeroCoverPrefetch()">
-          <div class="col title">
-            @if (selecting() && isSelectable(book)) {
-            <input type="checkbox" appCheckbox class="select-check" [checked]="selected().has(book.id)"
-              [attr.aria-label]="'Select ' + book.title" (click)="$event.stopPropagation()"
-              (change)="setSelected(book.id, $any($event.target).checked)" />
-            }
-            <nostos-book-cover
-              class="list-cover-frame"
-              size="sm"
-              reveal="bloom"
-              [src]="book.coverUrl ? getLibraryCoverUrl(book) : null"
-              [bookTitle]="book.title"
-              [format]="coverFormat(book)"
-            />
-
-            <div class="list-title-text">
-              <a class="list-book-title card-link" (keydown.space)="$event.preventDefault(); $any($event.currentTarget).click()" [routerLink]="bookLink(book)">{{ book.title }}</a>
-              @if (book.subtitle) {
-                <span class="list-book-subtitle">{{ book.subtitle }}</span>
-              }
-              <!-- Phones hide the Author column, so the row names the author
-                   under the title instead (desktop hides this line). -->
-              <span class="list-book-author">{{ book.author || unknownAuthor }}</span>
-
-              <!-- Import state, in the row the book will keep. The bar sits inside
-                   the existing row height (measured: 63px desktop / 79px mobile
-                   with and without it), so the row that finishes is the same row. -->
-              @if (book.status === 1 || book.status === 2) {
-              <div
-                class="list-progress"
-                role="progressbar"
-                aria-valuemin="0"
-                aria-valuemax="100"
-                [attr.aria-valuenow]="bookProgress(book)?.percent ?? 0"
-                [attr.aria-label]="bookProgressLabel(book)"
-              >
-                <nostos-progress class="list-progress-track" decorative [value]="bookProgress(book)?.percent ?? 0" />
-                <span class="list-progress-caption">
-                  {{ bookStageLabel(book) }}
-                  @if (bookProgress(book); as progress) {
-                  <span class="list-progress-percent">{{ progress.percent }}%</span>
-                  }
-                </span>
-              </div>
-              } @else if (book.status === 3) {
-              <p class="item-failure">{{ book.statusMessage || 'The import did not finish.' }}</p>
-              @if (bookProgress(book); as failure) {
-              <div class="item-failure-actions">
-                @if (failure.canRetry) {
-                <button type="button" appButton variant="primary" size="sm" class="item-action" (click)="retryImport(failure, $event)">
-                  <nostos-icon name="arrow-counter-clockwise" [size]="13"></nostos-icon>
-                  <span>Try again</span>
-                </button>
-                }
-                <button type="button" appButton variant="secondary" size="sm" class="item-action" (click)="dismissImport(failure, $event)">
-                  <nostos-icon name="x" [size]="13"></nostos-icon>
-                  <span>Dismiss</span>
-                </button>
-              </div>
-              }
-              }
-            </div>
-
-            <!-- Row status, trailing the title. These are the same two toggles
-                 the grid overlays on its cover — hidden at rest, revealed on the
-                 row's hover, always visible in their active state. They sit at
-                 the END of the title column, so the cover stays flush left and
-                 lines up with the Title header, and the flush-right edit/delete
-                 overlay can never land on top of them. -->
-            <div class="list-row-status" (click)="$event.stopPropagation()">
-              <button
-                type="button"
-                appIconButton
-                size="xs"
-                class="finished-btn-list"
-                icon="check-circle"
-                [weight]="book.finishedAt ? 'fill' : 'regular'"
-                [pressed]="!!book.finishedAt"
-                [class.active]="book.finishedAt"
-                (click)="toggleFinished(book, $event)"
-                [attr.aria-label]="book.finishedAt ? 'Mark as not finished' : 'Mark as finished'"
-                [title]="book.finishedAt ? 'Mark as not finished' : 'Mark as finished'"
-              ></button>
-
-              <button
-                type="button"
-                appIconButton
-                size="xs"
-                class="fav-btn-list"
-                icon="heart"
-                [weight]="book.isFavorite ? 'fill' : 'regular'"
-                [pressed]="!!book.isFavorite"
-                [class.active]="book.isFavorite"
-                (click)="toggleFavorite(book, $event)"
-                aria-label="Favourite"
-                title="Toggle favourite"
-              ></button>
-            </div>
-          </div>
-
-          <div class="col author">
-            {{ book.author || unknownAuthor }}
-          </div>
-
-          <div class="col rating" (click)="$event.stopPropagation()">
-            @if (book.rating > 0) {
-            <app-star-rating
-              [rating]="book.rating"
-              [size]="13"
-              (ratingChange)="updateRating(book, $event)"
-            >
-            </app-star-rating>
-            }
-          </div>
-
-          <!-- Plain text with its glyph, not an outlined capsule: a column of
-               fourteen bordered pills was the loudest thing in the list. -->
-          <div class="col format">
-            @if (book.otherEditions && book.otherEditions.length > 0) {
-            <span class="list-format micro-glyphs" [attr.title]="getWorkFormatsTooltip(book)">
-              @for (glyph of getWorkFormatGlyphs(book); track glyph.type) {
-                <nostos-icon [name]="glyph.icon" [size]="13"></nostos-icon>
-              }
-            </span>
-            } @else {
-            <span class="list-format" [attr.data-type]="book.type">
-              <nostos-icon [concept]="formatConcept(book)" [size]="13"></nostos-icon>
-              {{ listFormatLabel(book) }}
-            </span>
-            }
-          </div>
-
-          <div class="col date">
-            {{ book.createdAt | nostosDate }}
-          </div>
-
-          <div class="col actions-cell" (click)="$event.stopPropagation()">
-            <!-- `data-tip` drives the themed tip in the CSS below. `title` is
-                 deliberately gone: on desktop it fired the browser's own white,
-                 square-cornered tooltip a beat later and the two fought over the
-                 same spot. `aria-label` carries the name for assistive tech. -->
-            <button
-              appIconButton
-              class="edit"
-              size="xs"
-              icon="pencil-simple"
-              [glyphSize]="15"
-              (click)="openEditModal(book); $event.stopPropagation()"
-              data-tip="Edit"
-              aria-label="Edit book"
-            ></button>
-
-            <button
-              appIconButton
-              class="delete"
-              size="xs"
-              icon="trash"
-              [glyphSize]="15"
-              (click)="openDeleteModal(book, $event)"
-              data-tip="Delete"
-              aria-label="Delete book"
-            ></button>
-          </div>
-        </div>
-        } @empty {
-        <ng-container *ngTemplateOutlet="booksEmpty"></ng-container>
-        }
-      </div>
-      } @if (viewMode() === 'grid') {
-      <div class="book-grid">
-        @for (book of books(); track book.id) {
-
-        <div class="book-card" [class.is-importing]="book.status === 1 || book.status === 2" [class.is-failed]="book.status === 3" [class.is-selected]="selected().has(book.id)" (click)="onBookPress(book)" [attr.draggable]="isSelectable(book)" (dragstart)="onBookDragStart(book, $event)" (mouseenter)="prefetchHeroCover(book)" (mouseleave)="cancelHeroCoverPrefetch()">
-          <div class="cover-wrapper">
-            @if (selecting() && isSelectable(book)) {
-            <input type="checkbox" appCheckbox class="select-check" [checked]="selected().has(book.id)"
-              [attr.aria-label]="'Select ' + book.title" (click)="$event.stopPropagation()"
-              (change)="setSelected(book.id, $any($event.target).checked)" />
-            }
-            @if (book.status === 1 || book.status === 2) {
-              <!-- In flight: the progress lives ON the card, at the top of the cover
-                   so it never collides with the format badge (bottom-right) and so
-                   it costs the card no height — this box is the finished card too. -->
-              <div
-                class="cover-progress"
-                role="progressbar"
-                aria-valuemin="0"
-                aria-valuemax="100"
-                [attr.aria-valuenow]="bookProgress(book)?.percent ?? 0"
-                [attr.aria-label]="bookProgressLabel(book)"
-              >
-                <div class="cover-progress-row">
-                  <span class="import-status-label">{{ bookStageLabel(book) }}</span>
-                  @if (bookProgress(book); as progress) {
-                  <span class="cover-progress-percent">{{ progress.percent }}%</span>
-                  }
-                </div>
-                <nostos-progress class="cover-progress-track" decorative size="md" surface="overlay" [value]="bookProgress(book)?.percent ?? 0" />
-              </div>
-            } @else if (book.status === 3) {
-              <div class="import-status-overlay is-failed-overlay">
-                <nostos-icon name="warning-circle" [size]="24"></nostos-icon>
-                <span class="import-status-label">Failed</span>
-              </div>
-            }
-
-            <nostos-book-cover
-              class="cover-image"
-              size="fill"
-              reveal="bloom"
-              [src]="book.coverUrl ? getLibraryCoverUrl(book) : null"
-              [bookTitle]="book.title"
-              [format]="coverFormat(book)"
-            />
-
-            @if (book.otherEditions && book.otherEditions.length > 0) {
-            <span class="format-badge micro-glyphs" [attr.title]="getWorkFormatsTooltip(book)">
-              @for (glyph of getWorkFormatGlyphs(book); track glyph.type) {
-                <nostos-icon [name]="glyph.icon" [size]="11"></nostos-icon>
-              }
-            </span>
-            } @else {
-            <span
-              class="format-badge single"
-              [class.audiobook]="book.type === 'audiobook'"
-              [attr.data-type]="book.type"
-            >
-              <nostos-icon [concept]="formatConcept(book)" [size]="11"></nostos-icon>
-              {{ getFormatLabel(book) }}
-            </span>
-            }
-
-            <button
-              type="button"
-              appIconButton
-              surface="overlay"
-              class="finished-btn-grid"
-              icon="check-circle"
-              [glyphSize]="18"
-              [weight]="book.finishedAt ? 'fill' : 'regular'"
-              [pressed]="!!book.finishedAt"
-              [class.active]="book.finishedAt"
-              (click)="toggleFinished(book, $event)"
-              [attr.aria-label]="book.finishedAt ? 'Mark as not finished' : 'Mark as finished'"
-              [title]="book.finishedAt ? 'Mark as not finished' : 'Mark as finished'"
-            ></button>
-
-            <button
-              type="button"
-              appIconButton
-              surface="overlay"
-              class="fav-btn-grid"
-              icon="heart"
-              [glyphSize]="18"
-              [weight]="book.isFavorite ? 'fill' : 'regular'"
-              [pressed]="!!book.isFavorite"
-              [class.active]="book.isFavorite"
-              (click)="toggleFavorite(book, $event)"
-              aria-label="Favourite"
-              title="Toggle favourite"
-            ></button>
-
-            <div class="actions-overlay">
-              <button
-                type="button"
-                appIconButton
-                surface="overlay"
-                class="action-circle"
-                icon="pencil-simple"
-                (click)="openEditModal(book); $event.stopPropagation()"
-                aria-label="Edit"
-                title="Edit"
-              ></button>
-
-              <button
-                type="button"
-                appIconButton
-                surface="overlay"
-                tone="danger"
-                class="action-circle delete"
-                icon="trash"
-                (click)="openDeleteModal(book, $event)"
-                aria-label="Delete"
-                title="Delete"
-              ></button>
-            </div>
-          </div>
-
-          <!-- The title is the card's one real link; its ::after stretches over the
-               whole card, so a click anywhere opens the book and Tab/Enter reach it. -->
-          <div class="meta-title"><a class="card-link" (keydown.space)="$event.preventDefault(); $any($event.currentTarget).click()" [routerLink]="bookLink(book)">{{ book.title }}</a></div>
-          <!-- The shelf shows title and author only. Reading state lives on the
-               book page; the toggles on the cover appear on hover. -->
-          <div class="meta-author">
-            <span class="meta-author-name">{{ book.author || unknownAuthor }}</span>
-          </div>
-
-          <!-- A failed import explains itself on the card, not in a `title`
-               tooltip: no phone can show a tooltip, and "Failed" alone says
-               nothing about what broke. The MESSAGE comes from the book row (it
-               survives a reload); the ACTIONS need the feed, which is the only
-               place the provider/item ids still exist. -->
-          @if (book.status === 3) {
-          <p class="item-failure">{{ book.statusMessage || 'The import did not finish.' }}</p>
-          @if (bookProgress(book); as failure) {
-          <div class="item-failure-actions">
-            @if (failure.canRetry) {
-            <button type="button" appButton variant="primary" size="sm" class="item-action" (click)="retryImport(failure, $event)">
-              <nostos-icon name="arrow-counter-clockwise" [size]="13"></nostos-icon>
-              <span>Try again</span>
-            </button>
-            }
-            <button type="button" appButton variant="secondary" size="sm" class="item-action" (click)="dismissImport(failure, $event)">
-              <nostos-icon name="x" [size]="13"></nostos-icon>
-              <span>Dismiss</span>
-            </button>
-          </div>
-          }
-          }
-
-
-        </div>
-
-        } @empty {
-        <ng-container *ngTemplateOutlet="booksEmpty"></ng-container>
-        }
-      </div>
+      <app-library-book-list
+        class="table-view"
+        [class.is-selecting]="selecting()"
+        [books]="books()"
+        [selecting]="selecting()"
+        [selected]="selected()"
+        [searchQuery]="searchQuery()"
+        [hasFilters]="activeFilterChips().length > 0"
+        (favoriteToggled)="toggleFavorite($event)"
+        (finishedToggled)="toggleFinished($event)"
+        (ratingChanged)="updateRating($event.book, $event.rating)"
+        (editRequested)="openEditModal($event)"
+        (deleteRequested)="openDeleteModal($event)"
+        (bookPressed)="onBookPress($event)"
+        (selectionChanged)="setSelected($event.id, $event.on)"
+        (dragStarted)="onBookDragStart($event.book, $event.event)"
+        (hoverStarted)="prefetchHeroCover($event)"
+        (hoverEnded)="cancelHeroCoverPrefetch()"
+        (clearSearch)="clearChip('search')"
+        (clearFilters)="filters.clearAll()"
+        (addBook)="openAddModal()"
+      />
+      } @else {
+      <app-library-book-grid
+        class="book-grid"
+        [class.is-selecting]="selecting()"
+        [books]="books()"
+        [selecting]="selecting()"
+        [selected]="selected()"
+        [searchQuery]="searchQuery()"
+        [hasFilters]="activeFilterChips().length > 0"
+        (favoriteToggled)="toggleFavorite($event)"
+        (finishedToggled)="toggleFinished($event)"
+        (editRequested)="openEditModal($event)"
+        (deleteRequested)="openDeleteModal($event)"
+        (bookPressed)="onBookPress($event)"
+        (selectionChanged)="setSelected($event.id, $event.on)"
+        (dragStarted)="onBookDragStart($event.book, $event.event)"
+        (hoverStarted)="prefetchHeroCover($event)"
+        (hoverEnded)="cancelHeroCoverPrefetch()"
+        (clearSearch)="clearChip('search')"
+        (clearFilters)="filters.clearAll()"
+        (addBook)="openAddModal()"
+      />
       }
       }
       </div>
@@ -537,37 +149,16 @@
 </main>
 
 @if (selecting()) {
-<nostos-selection-bar [count]="selectedBooks().length" label="Selected books" (closed)="leaveSelection()">
-  <button appButton variant="ghost" size="sm" type="button" class="selection-action"
-    [disabled]="selectedBooks().length === 0" aria-haspopup="menu" aria-label="Add to collection…"
-    [nostosMenuTriggerFor]="addToCollectionMenu">
-    <nostos-icon name="folder-plus" [size]="14" /><span class="selection-label">Add to collection…</span>
-  </button>
-  @if (filters.collectionId()) {
-  <button appButton variant="ghost" size="sm" type="button" class="selection-action"
-    [disabled]="selectedBooks().length === 0" aria-label="Remove from collection" (click)="removeSelectionFromCollection()">
-    <nostos-icon name="folder" [size]="14" /><span class="selection-label">Remove from collection</span>
-  </button>
-  }
-  <button appButton variant="ghost" size="sm" type="button" class="selection-action"
-    [disabled]="selectedBooks().length === 0" aria-label="Mark finished" (click)="markSelectionFinished()">
-    <nostos-icon name="check-circle" [size]="14" /><span class="selection-label">Mark finished</span>
-  </button>
-  <button appButton variant="danger" size="sm" type="button" class="selection-action"
-    [disabled]="selectedBooks().length === 0" aria-label="Delete" (click)="askDeleteSelection()">
-    <nostos-icon name="trash" [size]="14" /><span class="selection-label">Delete</span>
-  </button>
-</nostos-selection-bar>
-<ng-template #addToCollectionMenu>
-  <nostos-menu aria-label="Add the selected books to a collection">
-    @for (choice of collectionChoices(); track choice.id) {
-    <button nostosMenuItem icon="folder" [style.padding-left.rem]="0.65 + choice.level"
-      (triggered)="addToCollection(selectedBooks().map(b => b.id), choice.id)">{{ choice.name }}</button>
-    } @empty {
-    <button nostosMenuItem [disabled]="true">No collections yet</button>
-    }
-  </nostos-menu>
-</ng-template>
+<app-library-selection-bar
+  [count]="selectedBooks().length"
+  [collectionChoices]="collectionChoices()"
+  [inCollection]="!!filters.collectionId()"
+  (closed)="leaveSelection()"
+  (addToCollection)="addToCollection(selectedBooks().map(b => b.id), $event)"
+  (removeFromCollection)="removeSelectionFromCollection()"
+  (markFinished)="markSelectionFinished()"
+  (deleteRequested)="askDeleteSelection()"
+/>
 }
 
 <app-confirm-modal
@@ -581,20 +172,3 @@
   (cancel)="cancelBulkDelete()"
 >
 </app-confirm-modal>
-
-<!-- One empty state for both views (issue #1202). -->
-<ng-template #booksEmpty>
-  @if (searchQuery().trim()) {
-  <nostos-empty-state class="books-empty-state" icon="book" message='No books match "{{ searchQuery().trim() }}"'>
-    <button appButton variant="secondary" size="sm" type="button" (click)="clearChip('search')">Clear search</button>
-  </nostos-empty-state>
-  } @else if (activeFilterChips().length > 0) {
-  <nostos-empty-state class="books-empty-state" icon="book" message="Nothing matches these filters">
-    <button appButton variant="secondary" size="sm" type="button" (click)="filters.clearAll()">Clear filters</button>
-  </nostos-empty-state>
-  } @else {
-  <nostos-empty-state class="books-empty-state" icon="book" message="Your library is empty">
-    <button appButton variant="primary" type="button" (click)="openAddModal()">Add your first book</button>
-  </nostos-empty-state>
-  }
-</ng-template>
