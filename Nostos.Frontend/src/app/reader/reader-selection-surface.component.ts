@@ -40,7 +40,11 @@ export type MenuPlacement = { left: number; width: number; top: number | null; b
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './reader-selection-surface.component.html',
-  styleUrls: ['./reader-selection-surface.component.css', './reader-floating-surface.css'],
+  styleUrls: [
+    './reader-selection-surface.component.css',
+    './reader-floating-surface.css',
+    './reader-chrome-icons.css',
+  ],
   host: { style: 'display: contents' },
 })
 export class ReaderSelectionSurface {

@@ -15,7 +15,7 @@ import type { ReaderSearchState } from './reader.interface';
   imports: [IconButtonComponent, InputDirective, SearchFieldComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './reader-search-panel.component.html',
-  styleUrl: './reader-search-panel.component.css',
+  styleUrls: ['./reader-search-panel.component.css', './reader-chrome-icons.css'],
   host: { style: 'display: contents' },
 })
 export class ReaderSearchPanel {

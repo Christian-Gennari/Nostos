@@ -1,0 +1,48 @@
+/* The reader's icon ink and phone box, for the overlays that used to live in the
+   shell's own template (issue #1607).
+
+   These rules are the ones `reader-shell.component.css` carried as
+   `.reader-layout.immersive .icon-btn`, `.reader-layout.audio-immersive
+   .icon-btn` and the `@media (max-width: 768px)` `.icon-btn` block. They matched
+   every icon button the shell rendered, so the overlays' close (x), duplicate
+   and caret glyphs sat in muted chrome ink and, on a phone, in a 44px touch box.
+   Each overlay is its own component now, so its buttons carry a different scope
+   attribute and those selectors stopped matching: the glyphs fell back to full
+   ink and to the 32px desktop box, which also shortened the search panel by a
+   row on a phone.
+
+   Scoped per component on purpose. A `::ng-deep` rule from the shell would also
+   restyle the icon buttons inside the shared components these overlays embed
+   (note rows, pen swatches), which the shell's selectors never reached. */
+:host-context(.reader-layout.immersive) .icon-btn,
+:host-context(.reader-layout.audio-immersive) .icon-btn {
+  color: var(--color-text-muted);
+  border-color: transparent;
+}
+
+:host-context(.reader-layout.immersive) .icon-btn.active,
+:host-context(.reader-layout.audio-immersive) .icon-btn.active {
+  color: var(--color-primary);
+  background: var(--bg-hover);
+  border-color: transparent;
+}
+
+@media (max-width: 768px) {
+  .icon-btn {
+    width: var(--control-h-touch);
+    height: var(--control-h-touch);
+  }
+  /* A tap leaves no hover to inherit, and the phone block keeps the active row
+     on the primary fill rather than the immersive hover wash. */
+  .icon-btn:hover {
+    background-color: transparent;
+    color: inherit;
+    border-color: inherit;
+  }
+  .icon-btn.active,
+  .icon-btn.active:hover {
+    background-color: var(--primary-fill);
+    color: var(--on-primary);
+    border-color: var(--color-primary);
+  }
+}

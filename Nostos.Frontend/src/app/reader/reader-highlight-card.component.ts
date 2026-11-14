@@ -38,7 +38,11 @@ import type { MenuPlacement } from './reader-selection-surface.component';
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './reader-highlight-card.component.html',
-  styleUrls: ['./reader-highlight-card.component.css', './reader-floating-surface.css'],
+  styleUrls: [
+    './reader-highlight-card.component.css',
+    './reader-floating-surface.css',
+    './reader-chrome-icons.css',
+  ],
   host: { style: 'display: contents' },
 })
 export class ReaderHighlightCard {

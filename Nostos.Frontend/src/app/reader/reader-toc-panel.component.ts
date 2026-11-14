@@ -19,7 +19,7 @@ import type { TocItem } from './reader.interface';
   imports: [ButtonComponent, EmptyStateComponent, IconButtonComponent, NgTemplateOutlet],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './reader-toc-panel.component.html',
-  styleUrl: './reader-toc-panel.component.css',
+  styleUrls: ['./reader-toc-panel.component.css', './reader-chrome-icons.css'],
   host: { style: 'display: contents' },
 })
 export class ReaderTocPanel {

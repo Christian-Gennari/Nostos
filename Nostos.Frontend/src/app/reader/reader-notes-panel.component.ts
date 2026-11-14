@@ -40,7 +40,7 @@ export type ReaderNoteRow = { note: Note; item: NoteSearchHit };
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './reader-notes-panel.component.html',
-  styleUrl: './reader-notes-panel.component.css',
+  styleUrls: ['./reader-notes-panel.component.css', './reader-chrome-icons.css'],
   host: { style: 'display: contents' },
 })
 export class ReaderNotesPanel {
