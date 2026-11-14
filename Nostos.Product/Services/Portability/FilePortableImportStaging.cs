@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using Nostos.Backend.Services.Portability.Transfers;
 
 namespace Nostos.Backend.Services.Portability;
@@ -250,12 +249,6 @@ public sealed class FilePortableImportStaging : IPortableImportStaging
 
     private static readonly ConcurrentDictionary<string, FileStagingCoordinator> Coordinators =
         new(StringComparer.Ordinal);
-
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = false,
-        DefaultIgnoreCondition = JsonIgnoreCondition.Never,
-    };
 
     private readonly TransferPathResolver _resolver;
     private readonly FilePortableImportStagingHooks? _hooks;
@@ -1039,7 +1032,7 @@ public sealed class FilePortableImportStaging : IPortableImportStaging
                 PortableStagingFilePrimitives.StateBufferBytes,
                 FileOptions.Asynchronous | FileOptions.SequentialScan);
             inventory = await JsonSerializer
-                .DeserializeAsync<FileStagingInventory>(stream, JsonOptions, cancellationToken)
+                .DeserializeAsync<FileStagingInventory>(stream, PortableArchiveJson.StagingOptions, cancellationToken)
                 .ConfigureAwait(false)
                 ?? throw new JsonException("The staging state file is empty.");
         }
@@ -1133,7 +1126,7 @@ public sealed class FilePortableImportStaging : IPortableImportStaging
             FileOptions.Asynchronous))
         {
             await JsonSerializer
-                .SerializeAsync(stream, inventory, JsonOptions, cancellationToken)
+                .SerializeAsync(stream, inventory, PortableArchiveJson.StagingOptions, cancellationToken)
                 .ConfigureAwait(false);
             await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
             stream.Flush(flushToDisk: true);
@@ -1215,7 +1208,7 @@ public sealed class FilePortableImportStaging : IPortableImportStaging
         }
 
         await using var stream = OpenVerifiedReadStream(full);
-        return await PortableStagingFilePrimitives
+        return await PortableArchiveHashing
             .HashStreamAsync(stream, cancellationToken)
             .ConfigureAwait(false);
     }

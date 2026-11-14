@@ -1,6 +1,36 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Nostos.Backend.Services.Portability;
+
+/// <summary>
+/// The JSON configurations the portability code uses, defined once so the
+/// archive writer, import reader, materializer and staging providers cannot
+/// drift apart.
+/// </summary>
+internal static class PortableArchiveJson
+{
+    /// <summary>
+    /// Archive payloads and the manifest: camelCase keys, compact. This is the
+    /// on-disk interchange format and its options must not change without a
+    /// format version bump.
+    /// </summary>
+    internal static readonly JsonSerializerOptions Options = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = false,
+    };
+
+    /// <summary>
+    /// Durable staging metadata and inventories: declared property names,
+    /// compact. These files outlive a process, so their shape is part of the
+    /// staging contract rather than of the archive format.
+    /// </summary>
+    internal static readonly JsonSerializerOptions StagingOptions = new()
+    {
+        WriteIndented = false,
+    };
+}
 
 // The archive's JSON keys (concepts / noteConcepts / concept / conceptId) are an
 // on-disk interchange format: they stay as written so archives exported before the

@@ -69,6 +69,16 @@ public static partial class MarkdownNotesRenderer
 
     private const int ExcerptLength = 240;
 
+    /// <summary>
+    /// Chapter JSON arrives from stored file details, so reads stay
+    /// case-insensitive. Static because the options are immutable after first
+    /// use and re-allocating them per chapter call was pure overhead.
+    /// </summary>
+    private static readonly JsonSerializerOptions ChapterJsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+    };
+
     [GeneratedRegex(@"\[[^\]]*\]")]
     private static partial Regex CfiAssertionRegex();
 
@@ -365,7 +375,7 @@ public static partial class MarkdownNotesRenderer
         if (string.IsNullOrWhiteSpace(json)) return [];
         try
         {
-            return (JsonSerializer.Deserialize<List<AudioChapter>>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [])
+            return (JsonSerializer.Deserialize<List<AudioChapter>>(json, ChapterJsonOptions) ?? [])
                 .Where(c => !string.IsNullOrWhiteSpace(c.Title))
                 .OrderBy(c => c.StartTime)
                 .ToList();

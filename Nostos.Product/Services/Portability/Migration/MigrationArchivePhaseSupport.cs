@@ -81,20 +81,14 @@ internal sealed class MigrationArchiveProgressPump : IProgress<PortableArchivePr
 
 internal static class MigrationPreparedMetadata
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = false,
-    };
-
     internal static string Serialize(PreparedPortableImportMetadata metadata) =>
-        JsonSerializer.Serialize(metadata, JsonOptions);
+        JsonSerializer.Serialize(metadata, PortableArchiveJson.Options);
 
     internal static PreparedPortableImportMetadata? Deserialize(string json)
     {
         try
         {
-            return JsonSerializer.Deserialize<PreparedPortableImportMetadata>(json, JsonOptions);
+            return JsonSerializer.Deserialize<PreparedPortableImportMetadata>(json, PortableArchiveJson.Options);
         }
         catch (JsonException)
         {

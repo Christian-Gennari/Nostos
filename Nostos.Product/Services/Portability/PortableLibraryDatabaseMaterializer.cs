@@ -23,12 +23,6 @@ namespace Nostos.Backend.Services.Portability;
 /// </remarks>
 internal static class PortableLibraryDatabaseMaterializer
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = false,
-    };
-
     // The staged relational payload was already validated by the reader; this
     // deserializes the same verified bytes for the relational restore.
     internal static async Task<PortableLibraryData> ReadRelationalDataAsync(
@@ -55,7 +49,7 @@ internal static class PortableLibraryDatabaseMaterializer
         try
         {
             var data = await JsonSerializer
-                .DeserializeAsync<PortableLibraryData>(source, JsonOptions, cancellationToken)
+                .DeserializeAsync<PortableLibraryData>(source, PortableArchiveJson.Options, cancellationToken)
                 ?? throw new PortableArchiveException(
                     "malformed_data",
                     "Portable archive relational payload is malformed.");

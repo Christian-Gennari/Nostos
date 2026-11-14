@@ -29,12 +29,6 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
     /// </summary>
     internal const int MaxRetainedFailures = 64;
 
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = false,
-    };
-
     private static readonly IReadOnlyDictionary<string, string> ManifestCountToDataCount =
         new Dictionary<string, string>(StringComparer.Ordinal)
         {
@@ -208,7 +202,7 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
                     "The staged relational payload length does not match the prepared descriptor."));
             }
             else if (!PortableArchiveValidation.FixedHashEquals(
-                Sha256Hex(dataBytes),
+                PortableArchiveHashing.Sha256Hex(dataBytes),
                 metadata.DataSha256))
             {
                 failures.Add(Failure(
@@ -615,7 +609,9 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
                     continue;
                 }
 
-                var hash = await HashStreamAsync(opened.Content, descriptor.Length, ct).ConfigureAwait(false);
+                var hash = await PortableArchiveHashing
+                    .HashStreamAsync(opened.Content, ct, descriptor.Length)
+                    .ConfigureAwait(false);
                 if (hash.Length != descriptor.Length
                     || !PortableArchiveValidation.FixedHashEquals(hash.Sha256, descriptor.Sha256))
                 {
@@ -719,7 +715,7 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
                 bytes,
                 "malformed_data",
                 "Portable archive relational payload is malformed.",
-                JsonOptions);
+                PortableArchiveJson.Options);
             // The restore reads the same bytes through the same roll-up, so an
             // older archive is compared against what it was restored as.
             return data is null || data.Works is null || data.Books is null
@@ -748,7 +744,7 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
                 bytes,
                 "malformed_manifest",
                 "Portable archive manifest is malformed.",
-                JsonOptions);
+                PortableArchiveJson.Options);
         }
         catch (PortableArchiveException exception)
         {
@@ -973,7 +969,9 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
                 await using var stream = await staging
                     .OpenMediaReadAsync(stagingId, item.Reference, ct)
                     .ConfigureAwait(false);
-                var hash = await HashStreamAsync(stream, item.Descriptor.Length, ct).ConfigureAwait(false);
+                var hash = await PortableArchiveHashing
+                    .HashStreamAsync(stream, ct, item.Descriptor.Length)
+                    .ConfigureAwait(false);
                 if (hash.Length != item.Descriptor.Length)
                 {
                     failures.Add(Failure(
@@ -1322,7 +1320,9 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
                     FileShare.Read,
                     PortableArchiveLimits.CopyBufferBytes,
                     FileOptions.Asynchronous | FileOptions.SequentialScan);
-                var hash = await HashStreamAsync(stream, descriptor.Length, ct).ConfigureAwait(false);
+                var hash = await PortableArchiveHashing
+                    .HashStreamAsync(stream, ct, descriptor.Length)
+                    .ConfigureAwait(false);
                 if (hash.Length != descriptor.Length
                     || !PortableArchiveValidation.FixedHashEquals(hash.Sha256, descriptor.Sha256))
                 {
@@ -1778,39 +1778,6 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
 
         return output.ToArray();
     }
-
-    private static async Task<(long Length, string Sha256)> HashStreamAsync(
-        Stream source,
-        long maxBytes,
-        CancellationToken ct)
-    {
-        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        var buffer = new byte[PortableArchiveLimits.CopyBufferBytes];
-        long total = 0;
-        while (true)
-        {
-            var read = await source.ReadAsync(buffer.AsMemory(), ct).ConfigureAwait(false);
-            if (read == 0)
-            {
-                break;
-            }
-
-            total = checked(total + read);
-            if (total > maxBytes)
-            {
-                throw new PortableArchiveException(
-                    "entry_too_large",
-                    "The payload exceeds its declared length.");
-            }
-
-            hash.AppendData(buffer, 0, read);
-        }
-
-        return (total, Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant());
-    }
-
-    private static string Sha256Hex(byte[] bytes) =>
-        Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
 
     /// <summary>An entity property checked by an executable comparison entry.</summary>
     internal sealed record EntityField(string Entity, string Property);
