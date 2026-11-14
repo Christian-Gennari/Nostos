@@ -31,6 +31,19 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
+      # NuGet packages are cached by hand: there is no packages.lock.json, so
+      # actions/setup-dotnet's `cache` input (which requires one) cannot be
+      # used. The key is the project files; restore-keys falls back to the
+      # newest cache for this runner, and the package folder only grows, so a
+      # partial hit still avoids most downloads.
+      - name: Cache NuGet packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/*.csproj', '**/Directory.Packages.props', '**/Directory.Build.props') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-${{ runner.arch }}-
+
       - name: Restore
         run: dotnet restore Nostos.sln
 
