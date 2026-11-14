@@ -57,5 +57,8 @@ public static class LibraryReplyFormatter
     public static string CollectionNameConflict(string name) => $"A sibling collection named \"{name}\" already exists.";
     public static string CollectionCycle => "Cannot move a collection into itself or its own child.";
     public static string CollectionHasChildren => "Collection has children; move or delete them first.";
+    public static string CollectionsChanged(string title, int added, int removed) =>
+        $"Collections updated for \"{title}\": {added} added, {removed} removed.";
+    public static string CollectionsUnchanged(string title) => $"Collections unchanged for \"{title}\".";
     public static string DeleteConfirmationRequired => "Confirmation is required to delete a collection.";
 }

@@ -325,6 +325,8 @@ public sealed class BookTextSearchQueryCountTests(ITestOutputHelper output) : ID
         public Task<LibraryCommandResultDto> MoveCollectionAsync(LibraryMoveCollectionRequest request, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<LibraryCommandResultDto> UpdateCollectionAsync(string clientId, string idempotencyKey, Guid collectionId, string name, Guid? parentId, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<LibraryCommandResultDto> DeleteCollectionAsync(LibraryDeleteCollectionRequest request, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<LibraryCommandResultDto> ApplyBookCollectionChangesAsync(Guid bookId, IReadOnlyList<Guid> addCollectionIds, IReadOnlyList<Guid> removeCollectionIds, CancellationToken ct = default) =>
+            inner.ApplyBookCollectionChangesAsync(bookId, addCollectionIds, removeCollectionIds, ct);
     }
 
     private sealed class RecordingScheduler : IBookTextIngestionScheduler
