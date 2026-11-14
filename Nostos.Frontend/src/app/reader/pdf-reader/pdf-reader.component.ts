@@ -31,9 +31,7 @@ import {
   TextLayerRenderedEvent,
 } from 'ngx-extended-pdf-viewer';
 import './pdf-defaults';
-import { HttpErrorResponse } from '@angular/common/http';
-import { Subject, Subscription, firstValueFrom } from 'rxjs';
-import { debounceTime, distinctUntilChanged, filter } from 'rxjs/operators';
+import { EMPTY } from 'rxjs';
 
 import { PageHighlight, PdfAnnotationManager } from './pdf-annotation-manager';
 import { bookFileUrl } from '../../core/book-url';
@@ -68,7 +66,9 @@ import {
   sourcePassagePhrase,
   sourcePassagePhrases,
 } from './pdf-search-controller';
-import { readUnlocatedNoteIds, rememberUnlocatedNoteId } from '../passage/note-locating';
+import { NoteLocationCoordinator, newNotesSince } from '../shared/note-location-coordinator';
+import { commitNote } from '../shared/note-save';
+import { ReaderProgressReporter } from '../shared/reader-progress-reporter';
 import { PassageDraft, PassageMark, excerptOf } from '../passage/passage-mark';
 import { isDesktopMouseSelection, type SelectionAnchor } from '../selection-anchor';
 import {
@@ -107,6 +107,13 @@ interface PendingPdfHighlight {
   pageNumber: number;
   rects: { left: number; top: number; width: number; height: number }[];
   selectedText: string;
+}
+
+/** One page to save, and the book it belongs to. */
+interface PdfProgressReport {
+  bookId: string;
+  location: string;
+  percentage: number;
 }
 
 /**
@@ -379,8 +386,27 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
   readonly zoomPresets = PDF_ZOOM_PRESETS;
 
   private initialLoadComplete = false;
-  private progressUpdater$ = new Subject<{ location: string; percentage: number }>();
-  private progressSubscription: Subscription | null = null;
+  /**
+   * The debounced progress save (issue #1610). The shared reporter owns the
+   * cadence; this reader owns the write barrier (the opening page must not be
+   * saved over the stored position) and what a page means.
+   */
+  private readonly progressReporter = new ReaderProgressReporter<PdfProgressReport>({
+    destroyRef: this.destroyRef,
+    // Writes stay closed until the opening page has been displayed.
+    isReady: () => this.initialLoadComplete,
+    // A page is the whole position: the same page in another book is still a
+    // new place, so the book is part of the comparison.
+    isSamePosition: (previous, current) =>
+      previous.bookId === current.bookId && previous.location === current.location,
+    // A write already in flight is allowed to finish; the newer page follows.
+    concurrency: 'merge',
+    write: (report) => {
+      if (report.bookId !== this.bookId()) return EMPTY;
+      return this.booksService.updateProgress(report.bookId, report.location, report.percentage);
+    },
+    onWriteError: (error) => console.warn('Could not save reading progress:', error),
+  });
 
   constructor() {
     this.destroyRef.onDestroy(() => {
@@ -391,9 +417,8 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
       const notes = this.notes();
       if (!notes) return;
       untracked(() => {
-        const arrived = notes.filter((note) => !this.notesSeen.has(note.id));
+        const arrived = newNotesSince(this.notesSeen, notes);
         if (arrived.length === 0) return;
-        arrived.forEach((note) => this.notesSeen.add(note.id));
         this.applyNotes(arrived);
         this.waitForQuotes(arrived);
       });
@@ -520,8 +545,6 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     this.surfaceClickSuppression = null;
     this.clearNativeSelection();
 
-    this.bindProgressUpdater();
-
     // Zoom, reading mode, and inversion are per-book preferences; reset to
     // defaults first so a book without stored choices never inherits the prior
     // book's settings.
@@ -532,22 +555,6 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     this.restoreSavedInversion();
 
     this.cdr.markForCheck();
-  }
-
-  private bindProgressUpdater(): void {
-    this.progressSubscription?.unsubscribe();
-    this.progressSubscription = null;
-    if (this.destroyed) return;
-
-    this.progressSubscription = this.progressUpdater$
-      .pipe(
-        filter(() => this.initialLoadComplete),
-        debounceTime(1000),
-        distinctUntilChanged((prev, curr) => prev.location === curr.location),
-      )
-      .subscribe((data) => {
-        this.booksService.updateProgress(this.bookId(), data.location, data.percentage).subscribe();
-      });
   }
 
   // --- IReader Methods ---
@@ -1163,11 +1170,14 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
    * with no page is not looked for.
    */
   private waitForQuotes(notes: Note[]): void {
-    const notFound = readUnlocatedNoteIds();
+    const locations = this.quoteLocations(this.timers.currentGeneration());
     const pages = new Set<number>();
-    for (const note of notes) {
+    for (const note of locations.candidates(
+      notes,
+      (candidate) => pdfQuotePageToLocate(candidate) !== null,
+    )) {
       const pageNumber = pdfQuotePageToLocate(note);
-      if (pageNumber === null || notFound.has(note.id)) continue;
+      if (pageNumber === null) continue;
       this.quotesByPage.set(pageNumber, [...(this.quotesByPage.get(pageNumber) ?? []), note]);
       pages.add(pageNumber);
     }
@@ -1181,6 +1191,25 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
   }
 
   /**
+   * The shared bookkeeping for a quote's location: which quotes are worth
+   * looking for, saving the one place it stands, and remembering the ones never
+   * found. What counts as "found" is this reader's own text-layer match.
+   */
+  private quoteLocations(generation: number): NoteLocationCoordinator {
+    return new NoteLocationCoordinator({
+      isCurrent: () => this.timers.isCurrent(generation),
+      notes: () => this.notes(),
+      setLocation: (noteId, location) => this.notesService.setLocation(noteId, location),
+      onLocated: (saved) => {
+        this.savedHighlights = this.savedHighlights.filter((held) => held.id !== saved.id);
+        this.applyNotes([saved]);
+        this.noteLocated.emit(saved);
+      },
+      what: 'a quote on its page',
+    });
+  }
+
+  /**
    * Save and draw the quotes waiting on a drawn page. Nothing is drawn unless
    * the words stand on the page exactly once; a scanned page has no text, so
    * its quote simply stays a note.
@@ -1191,6 +1220,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     this.quotesByPage.delete(pageNumber);
 
     const generation = this.timers.currentGeneration();
+    const locations = this.quoteLocations(generation);
     // Read together: a zoom can replace the layer during the saves below.
     const found = quotes.map((note) => ({
       note,
@@ -1199,27 +1229,11 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     for (const { note, rects } of found) {
       if (!this.timers.isCurrent(generation)) return;
       if (!rects) {
-        rememberUnlocatedNoteId(note.id);
+        locations.rememberMissing(note.id);
         continue;
       }
-
-      try {
-        const location = JSON.stringify({ pageNumber, rects });
-        const saved = await firstValueFrom(this.notesService.setLocation(note.id, location));
-        if (!this.timers.isCurrent(generation)) return;
-        // Deleted while it was being saved: nothing to draw.
-        if (!saved.cfiRange || !this.notes()?.some((held) => held.id === note.id)) continue;
-        this.savedHighlights = this.savedHighlights.filter((held) => held.id !== note.id);
-        this.applyNotes([saved]);
-        this.noteLocated.emit(saved);
-      } catch (error) {
-        if (!this.timers.isCurrent(generation)) return;
-        // The server refused this note for good: do not ask at every opening.
-        if (error instanceof HttpErrorResponse && error.status === 400) {
-          rememberUnlocatedNoteId(note.id);
-        }
-        console.warn('Could not save where a quote stands on its page:', error);
-      }
+      const outcome = await locations.save(note, JSON.stringify({ pageNumber, rects }));
+      if (outcome === 'stale') return;
     }
   }
 
@@ -1247,68 +1261,65 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
   }
 
   commitHighlight(content = '', pen?: HighlightColour, topics: readonly string[] = []): void {
-    if (!this.pendingHighlight) {
-      // Never leave the shell in Saving... if its confirmation and the reader
-      // somehow drift out of sync.
-      this.commitFailed.emit();
-      return;
-    }
-
-    const p = this.pendingHighlight;
+    const pending = this.pendingHighlight;
     const generation = this.timers.currentGeneration();
-    this.commitInFlight = true;
     // The pen in hand when Save was pressed is the one stored and drawn.
     const colour = pen ?? this.highlightColour();
-    const newHighlight: PageHighlight = {
-      id: p.tempId,
-      pageNumber: p.pageNumber,
-      rects: p.rects,
-      colour,
-      noted: !!content.trim() || topics.length > 0,
-    };
-    this.savedHighlights.push(newHighlight);
-    this.repaintPage(p.pageNumber);
+    const noted = !!content.trim() || topics.length > 0;
 
-    this.clearNativeSelection();
-
-    // The pen travels in the note's own `highlightColour` (issue #861), no
-    // longer inside this location payload: one place to read it from, and one
-    // to change when the highlight is recoloured.
-    const cfiPayload = {
-      pageNumber: p.pageNumber,
-      rects: p.rects,
-    };
-
-    this.notesService
-      .create(this.bookId(), {
-        content,
-        selectedText: p.selectedText,
-        cfiRange: JSON.stringify(cfiPayload),
-        highlightColour: colour,
-        ...(topics.length ? { topics: [...topics] } : {}),
-      })
-      .subscribe({
-        next: (createdNote) => {
-          if (!this.timers.isCurrent(generation)) return;
-          const index = this.savedHighlights.findIndex((h) => h.id === p.tempId);
-          if (index !== -1) {
-            this.savedHighlights[index].id = createdNote.id;
-          }
-          this.commitInFlight = false;
-          this.pendingHighlight = null;
-          this.noteCreated.emit(createdNote);
-        },
-        error: () => {
-          if (!this.timers.isCurrent(generation)) return;
-          this.savedHighlights = this.savedHighlights.filter((h) => h.id !== p.tempId);
-          this.repaintPage(p.pageNumber);
-          // Preserve the exact capture. The shared shell deliberately keeps its
-          // confirmation open after failure, so Save must retry this same mark.
-          this.commitInFlight = false;
-          this.pendingHighlight = p;
-          this.commitFailed.emit();
-        },
-      });
+    // Optimistic save (issue #1610): the mark goes on the page, the note is
+    // sent, and a failed save takes the mark back off and offers the same
+    // passage again. The order lives in the shared commit, the drawing here.
+    void commitNote<PendingPdfHighlight>({
+      pending: () => pending,
+      // Never leave the shell in Saving... if its confirmation and the reader
+      // somehow drift out of sync.
+      onNothing: () => this.commitFailed.emit(),
+      isCurrent: () => this.timers.isCurrent(generation),
+      request: (mark) =>
+        this.notesService.create(this.bookId(), {
+          content,
+          selectedText: mark.selectedText,
+          // The pen travels in the note's own `highlightColour` (issue #861),
+          // no longer inside this location payload: one place to read it from,
+          // and one to change when the highlight is recoloured.
+          cfiRange: JSON.stringify({ pageNumber: mark.pageNumber, rects: mark.rects }),
+          highlightColour: colour,
+          ...(topics.length ? { topics: [...topics] } : {}),
+        }),
+      draw: (mark) => {
+        this.commitInFlight = true;
+        this.savedHighlights.push({
+          id: mark.tempId,
+          pageNumber: mark.pageNumber,
+          rects: mark.rects,
+          colour,
+          noted,
+        });
+        this.repaintPage(mark.pageNumber);
+        this.clearNativeSelection();
+        return () => {
+          this.savedHighlights = this.savedHighlights.filter((h) => h.id !== mark.tempId);
+          this.repaintPage(mark.pageNumber);
+        };
+      },
+      settle: (mark, createdNote) => {
+        const index = this.savedHighlights.findIndex((h) => h.id === mark.tempId);
+        if (index !== -1) {
+          this.savedHighlights[index].id = createdNote.id;
+        }
+        this.commitInFlight = false;
+        this.pendingHighlight = null;
+        this.noteCreated.emit(createdNote);
+      },
+      onFailed: (mark) => {
+        this.commitInFlight = false;
+        // Preserve the exact capture. The shared shell deliberately keeps its
+        // confirmation open after failure, so Save must retry this same mark.
+        this.pendingHighlight = mark;
+        this.commitFailed.emit();
+      },
+    });
   }
 
   discardHighlight(): void {
@@ -1420,7 +1431,7 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     });
 
     const location = JSON.stringify({ pageNumber: page, yPercent: 0, rects: [] });
-    this.progressUpdater$.next({ location, percentage });
+    this.progressReporter.report({ bookId: this.bookId(), location, percentage });
   }
 
   /**
@@ -1492,8 +1503,6 @@ export class PdfReader implements OnInit, OnChanges, OnDestroy, IReader {
     this.searchController.reset();
     this.unregisterAssistantContext?.();
     this.unregisterAssistantContext = null;
-    this.progressSubscription?.unsubscribe();
-    this.progressSubscription = null;
-    this.progressUpdater$.complete();
+    this.progressReporter.dispose();
   }
 }
