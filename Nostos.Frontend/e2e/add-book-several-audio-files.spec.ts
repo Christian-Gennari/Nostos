@@ -41,7 +41,10 @@ async function chooseFiles(page: Page, baseUrl: string, files: string[]) {
   const dialog = page.getByRole('dialog').first();
   await expect(dialog).toBeVisible();
   await dialog.getByRole('button', { name: 'Add manually' }).click();
-  await dialog.locator('input[type="file"][multiple]').setInputFiles(files);
+  // The manual step has two multiple-file inputs since #1704: the book file
+  // (audio included) and "Add several EPUB or PDF files at once". This is the
+  // one that takes an audiobook's tracks.
+  await dialog.locator('input[type="file"][accept*=".mp3"]').setInputFiles(files);
   await expect(dialog).toContainText('3 audio files');
   return dialog;
 }

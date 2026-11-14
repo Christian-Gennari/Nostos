@@ -222,6 +222,31 @@ async function delayChunks(page: Page, delayMs: number): Promise<void> {
   );
 }
 
+/**
+ * Holds the archive preflight until the returned `release()` runs.
+ *
+ * Preflighting is the window in which the owning tab holds the lease while no
+ * server job exists yet; once the upload starts, a second tab is shown the
+ * server's own live progress instead of the lease. Holding the request keeps
+ * the owner in that window until the second tab has looked, instead of hoping
+ * the archive is still being checked when it arrives.
+ */
+async function holdPreflight(page: Page): Promise<() => void> {
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  let holding = true;
+  await page.route('**/api/portability/migration/preflight', async (route) => {
+    if (holding) {
+      holding = false;
+      await held;
+    }
+    // The owner may cancel while this request is still held; it was aborted on
+    // the page side and has nowhere left to go.
+    await route.continue().catch(() => undefined);
+  });
+  return release;
+}
+
 /** Resolves even when the reload already happened (timeOrigin comparison). */
 async function navigationOrigin(page: Page): Promise<number> {
   return page.evaluate(() => performance.timeOrigin);
@@ -1087,46 +1112,53 @@ test('scenario e5: a second tab is blocked by the lease with no double upload', 
   const archive = await ensureArchive();
   const errors = collectErrors(page);
   await withDestination(testInfo, 'second-tab', 'none', async (destination) => {
-    await delayChunks(page, 600);
-    await openSettings(page, destination.baseUrl);
-    const chunkIndexes = trackChunkIndexes(page);
-    await selectArchive(page, archive);
-    await expect(page.getByTestId('import-uploading')).toBeVisible({ timeout: 180_000 });
-    await waitForChunkIndex(chunkIndexes, 1);
-
-    const second = await context.newPage();
-    const secondErrors = collectErrors(second);
-    const secondChunks: number[] = [];
-    second.on('request', (request) => {
-      const match = /\/upload-session\/chunks\/(\d+)/.exec(request.url());
-      if (match) secondChunks.push(Number(match[1]));
-    });
+    // Keep the owner in preflight: it holds the lease with no server job yet,
+    // so the lease is what the second tab has to be stopped by.
+    const releasePreflight = await holdPreflight(page);
     try {
-      await second.goto(`${destination.baseUrl}/settings`);
-      await expect(second.getByTestId('manage-library-open')).toBeVisible();
-      await second.getByTestId('manage-library-open').click();
-      await expect(second).toHaveURL(`${destination.baseUrl}/settings/library`);
-      await expect(second.getByTestId('manage-library-page')).toBeVisible();
-      await expect(second.getByTestId('library-transfer-card')).toBeVisible();
-      await expect(second.getByTestId('transfer-other-tab')).toBeVisible({ timeout: 30_000 });
-      await expect(second.getByTestId('transfer-other-tab')).toContainText(
-        'An import is already in progress in another tab.',
-      );
-      // KEPT DELAY: this scenario fails the same way on `main` (the owner
-      // finishes uploading and its Cancel is gone before the second tab is
-      // asserted), so its timing is left untouched rather than guessed at.
-      // Listed in the PR body.
-      await second.waitForTimeout(2_500);
-      expect(secondChunks).toEqual([]);
-      await secondErrors.settle();
-      expect(secondErrors.pageErrors).toEqual([]);
-    } finally {
-      await second.close();
-    }
+      await openSettings(page, destination.baseUrl);
+      await selectArchive(page, archive);
+      await expect(page.getByTestId('import-preflighting')).toBeVisible({ timeout: 180_000 });
 
-    // The owning tab still owns the transfer and can cancel it cleanly.
-    await page.getByTestId('import-cancel').click();
-    await expect(page.getByTestId('import-cancelled')).toBeVisible({ timeout: 60_000 });
+      const second = await context.newPage();
+      const secondErrors = collectErrors(second);
+      const secondChunks: number[] = [];
+      second.on('request', (request) => {
+        const match = /\/upload-session\/chunks\/(\d+)/.exec(request.url());
+        if (match) secondChunks.push(Number(match[1]));
+      });
+      try {
+        await second.goto(`${destination.baseUrl}/settings`);
+        await expect(second.getByTestId('manage-library-open')).toBeVisible();
+        await second.getByTestId('manage-library-open').click();
+        await expect(second).toHaveURL(`${destination.baseUrl}/settings/library`);
+        await expect(second.getByTestId('manage-library-page')).toBeVisible();
+        await expect(second.getByTestId('library-transfer-card')).toBeVisible();
+        await expect(second.getByTestId('transfer-other-tab')).toBeVisible({ timeout: 30_000 });
+        await expect(second.getByTestId('transfer-other-tab')).toContainText(
+          'An import is already in progress in another tab.',
+        );
+        // No double upload: the owner is still preflighting, so the second tab
+        // has had the whole visit to start one. Its chunk log is a claim about
+        // nothing arriving, hence the stable read.
+        await waitUntilStable(() => Promise.resolve(secondChunks.length), {
+          quietMs: 1_000,
+          description: "the second tab's chunk requests",
+        });
+        expect(secondChunks).toEqual([]);
+        await secondErrors.settle();
+        expect(secondErrors.pageErrors).toEqual([]);
+      } finally {
+        await second.close();
+      }
+
+      // The owning tab still owns the transfer and can cancel it cleanly while
+      // its preflight is held.
+      await page.getByTestId('import-cancel').click();
+      await expect(page.getByTestId('import-cancelled')).toBeVisible({ timeout: 60_000 });
+    } finally {
+      releasePreflight();
+    }
   });
   await errors.settle();
   expect(unexpectedPageErrors(errors.pageErrors)).toEqual([]);
