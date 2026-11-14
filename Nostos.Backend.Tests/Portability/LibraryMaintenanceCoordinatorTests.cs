@@ -3,6 +3,7 @@ using Nostos.Backend.Services;
 using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Activation;
 using Xunit;
+using Nostos.Backend.Tests.Support;
 
 namespace Nostos.Backend.Tests.Portability;
 
@@ -29,12 +30,16 @@ public sealed class LibraryMaintenanceCoordinatorTests
     [Fact]
     public async Task HeldOperation_TimeoutFailsClosedBeforeExclusivity_AndReleasesAdmission()
     {
-        var time = new DeadlineClock();
+        var time = new TestTimeProvider();
         var coordinator = new LibraryMaintenanceCoordinator(clock: time);
         using var neverFinishes = coordinator.TryEnterOperation();
         var entering = coordinator.EnterExclusiveAsync(LibraryMaintenanceReason.Activation);
-        await time.TimerCreated.Task;
-        time.Expire();
+        await time.WaitForTimerCountAsync(1);
+
+        // The drain deadline is the only timer armed; passing it is what turns
+        // the contended entry into a fail-closed Busy.
+        var deadline = time.ArmedDueTimes.Should().ContainSingle().Subject;
+        time.Advance(deadline);
         Func<Task> enter = async () => await entering;
         (await enter.Should().ThrowAsync<MigrationActivationException>()).Which.Code.Should().Be(MigrationActivationErrorCodes.Busy);
         coordinator.IsMaintenanceActive.Should().BeFalse();
@@ -168,27 +173,6 @@ public sealed class LibraryMaintenanceCoordinatorTests
         Func<Task> enter = async () => await coordinator.EnterExclusiveAsync(LibraryMaintenanceReason.Activation);
         await enter.Should().ThrowAsync<IOException>();
         coordinator.IsMaintenanceActive.Should().BeFalse();
-    }
-
-    internal sealed class DeadlineClock : TimeProvider
-    {
-        public TaskCompletionSource TimerCreated { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        private ManualTimer? _timer;
-        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
-        {
-            _timer = new(callback, state);
-            TimerCreated.TrySetResult();
-            return _timer;
-        }
-        public void Expire() => _timer!.Fire();
-        private sealed class ManualTimer(TimerCallback callback, object? state) : ITimer
-        {
-            private bool _disposed;
-            public void Fire() { if (!_disposed) callback(state); }
-            public bool Change(TimeSpan dueTime, TimeSpan period) => !_disposed;
-            public void Dispose() => _disposed = true;
-            public ValueTask DisposeAsync() { Dispose(); return ValueTask.CompletedTask; }
-        }
     }
 
     internal sealed class MaintenanceFiles : IDisposable

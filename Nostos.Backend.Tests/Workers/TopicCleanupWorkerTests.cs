@@ -6,6 +6,7 @@ using Nostos.Backend.Data;
 using Nostos.Backend.Data.Interfaces;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Data.Repositories;
+using Nostos.Backend.Tests.Support;
 using Nostos.Backend.Workers;
 using Xunit;
 
@@ -30,7 +31,7 @@ public sealed class TopicCleanupWorkerTests : IDisposable
         }
 
         using var provider = BuildProvider(path);
-        var clock = new FakeWorkerClock();
+        var clock = new TestTimeProvider();
         var logger = new CapturingLogger<TopicCleanupWorker>();
         var worker = new TestWorker(
             provider.GetRequiredService<IServiceScopeFactory>(), logger, clock);
@@ -65,7 +66,7 @@ public sealed class TopicCleanupWorkerTests : IDisposable
     public async Task Cancellation_during_a_cycle_logs_no_error()
     {
         using var provider = BuildProvider(NewDatabasePath());
-        var clock = new FakeWorkerClock();
+        var clock = new TestTimeProvider();
         var logger = new CapturingLogger<TopicCleanupWorker>();
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var worker = new TestWorker(
@@ -98,7 +99,7 @@ public sealed class TopicCleanupWorkerTests : IDisposable
     public async Task Failed_cycle_is_logged_and_the_worker_keeps_running()
     {
         using var provider = BuildProvider(NewDatabasePath());
-        var clock = new FakeWorkerClock();
+        var clock = new TestTimeProvider();
         var logger = new CapturingLogger<TopicCleanupWorker>();
         var attempts = 0;
         var worker = new TestWorker(
@@ -184,7 +185,7 @@ public sealed class TopicCleanupWorkerTests : IDisposable
     private sealed class TestWorker(
         IServiceScopeFactory scopeFactory,
         ILogger<TopicCleanupWorker> logger,
-        FakeWorkerClock clock,
+        TestTimeProvider clock,
         Func<CancellationToken, Task>? cycle = null)
         : TopicCleanupWorker(scopeFactory, logger)
     {

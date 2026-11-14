@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Nostos.Backend.Configuration;
 using Nostos.Backend.Integrations.Assistant;
 using Nostos.Backend.Services.Ai;
+using Nostos.Backend.Tests.Support;
 using Nostos.Product.Composition;
 using Xunit;
 
@@ -219,7 +220,8 @@ public sealed class AssistantExecutionBudgetTests
     [Fact]
     public void Meter_snapshot_reports_live_usage_and_keeps_unknown_dimensions_unknown()
     {
-        var meter = new AssistantExecutionMeter();
+        var clock = new TestTimeProvider();
+        var meter = new AssistantExecutionMeter(clock);
         meter.RecordUpstreamRequest();
         meter.RecordCompletion(new LlmCompletion("hi", "stop", [], PromptTokens: 10, CompletionTokens: 5));
 
@@ -227,8 +229,11 @@ public sealed class AssistantExecutionBudgetTests
         snapshot.UpstreamCallCount.Should().Be(1);
         snapshot.ReportedTotalTokens.Should().Be(15);
 
-        Thread.Sleep(30);
-        meter.Snapshot().ElapsedMilliseconds.Should().BeGreaterThanOrEqualTo(30);
+        // The meter reads a clock the test owns, so "some time passed" is an
+        // exact number instead of a 30 ms sleep plus an inequality that a busy
+        // runner can miss.
+        clock.Advance(TimeSpan.FromMilliseconds(30));
+        meter.Snapshot().ElapsedMilliseconds.Should().Be(30);
 
         var unknownMeter = new AssistantExecutionMeter();
         unknownMeter.RecordUpstreamRequest();

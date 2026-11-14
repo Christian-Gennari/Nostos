@@ -5,6 +5,7 @@ using Nostos.Backend.Integrations.Assistant;
 using Nostos.Product.Composition;
 using Nostos.Shared.Dtos;
 using Xunit;
+using Nostos.Backend.Tests.Support;
 
 namespace Nostos.Backend.Tests.Assistant;
 
@@ -18,7 +19,7 @@ public sealed class AssistantChangesetStoreTests
     private static readonly LibraryChangesetDiffDto EmptyDiff =
         new([], [], [], new LibraryChangesetCountsDto(0, 0, 0, 0, 0, 0, 0, 0));
 
-    private readonly ManualClock _clock = new();
+    private readonly TestTimeProvider _clock = new();
 
     [Fact]
     public void An_owner_past_its_capacity_expires_only_its_own_oldest()
@@ -141,12 +142,4 @@ public sealed class AssistantChangesetStoreTests
     private static bool Exists(AssistantChangesetStore store, StoredAssistantChangeset changeset) =>
         store.Find(changeset.ChangesetId, changeset.ActionToken, out _) == AssistantChangesetStore.Lookup.Found;
 
-    private sealed class ManualClock : TimeProvider
-    {
-        private DateTimeOffset _now = new(2026, 10, 17, 9, 0, 0, TimeSpan.Zero);
-
-        public override DateTimeOffset GetUtcNow() => _now;
-
-        public void Advance(TimeSpan by) => _now += by;
-    }
 }

@@ -1,16 +1,8 @@
 using Nostos.Backend.Services;
 using Nostos.Backend.Services.Portability.Transfers;
+using Nostos.Backend.Tests.Support;
 
 namespace Nostos.Backend.Tests.Portability;
-
-internal sealed class ManualTimeProvider(DateTimeOffset utcNow) : TimeProvider
-{
-    public DateTimeOffset UtcNow { get; private set; } = utcNow;
-
-    public override DateTimeOffset GetUtcNow() => UtcNow;
-
-    public void Advance(TimeSpan delta) => UtcNow = UtcNow.Add(delta);
-}
 
 internal sealed class FakeTransferVolume : ITransferVolume
 {

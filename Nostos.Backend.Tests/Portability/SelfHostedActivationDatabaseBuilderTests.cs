@@ -9,6 +9,7 @@ using Nostos.Backend.Services;
 using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Activation;
 using Xunit;
+using Nostos.Backend.Tests.Support;
 
 namespace Nostos.Backend.Tests.Portability;
 
@@ -728,7 +729,7 @@ internal sealed class ActivationBuildFixture : IAsyncDisposable
     }
 
     internal SelfHostedActivationDatabaseBuilder CreateBuilder() =>
-        new(Paths, Staging, Maintenance, new ManualTimeProvider(FixedBuildTime));
+        new(Paths, Staging, Maintenance, new TestTimeProvider(FixedBuildTime));
 
     internal Task<IAsyncDisposable> EnterExclusiveAsync() =>
         Maintenance.EnterExclusiveAsync(LibraryMaintenanceReason.Activation);

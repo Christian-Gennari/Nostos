@@ -2,6 +2,7 @@ using FluentAssertions;
 using Nostos.Backend.Integrations.Assistant;
 using Nostos.Shared.Dtos;
 using Xunit;
+using Nostos.Backend.Tests.Support;
 
 namespace Nostos.Backend.Tests.Assistant;
 
@@ -18,7 +19,7 @@ public sealed class AssistantContinuationStoreTests
     [Fact]
     public void The_same_conversation_key_holds_one_continuation_per_owner()
     {
-        var store = new AssistantContinuationStore(new TickingClock());
+        var store = new AssistantContinuationStore(new TestTimeProvider(tickOnRead: TimeSpan.FromMilliseconds(1)));
         var mine = Create(store, "a", "anonymous");
         var theirs = Create(store, "b", "anonymous");
 
@@ -29,7 +30,7 @@ public sealed class AssistantContinuationStoreTests
     [Fact]
     public void Another_owners_continuation_reads_as_missing()
     {
-        var store = new AssistantContinuationStore(new TickingClock());
+        var store = new AssistantContinuationStore(new TestTimeProvider(tickOnRead: TimeSpan.FromMilliseconds(1)));
         var theirs = Create(store, "b", "c");
 
         store.Find("a", theirs.ContinuationId, "c").Status
@@ -41,7 +42,7 @@ public sealed class AssistantContinuationStoreTests
     [Fact]
     public void A_receipt_replays_only_for_its_owner()
     {
-        var store = new AssistantContinuationStore(new TickingClock());
+        var store = new AssistantContinuationStore(new TestTimeProvider(tickOnRead: TimeSpan.FromMilliseconds(1)));
         var continuation = Create(store, "a", "c");
         store.Complete(continuation, "turn-2", Response);
 
@@ -52,7 +53,7 @@ public sealed class AssistantContinuationStoreTests
     [Fact]
     public void An_owner_past_its_capacity_expires_only_its_own_oldest()
     {
-        var store = new AssistantContinuationStore(new TickingClock());
+        var store = new AssistantContinuationStore(new TestTimeProvider(tickOnRead: TimeSpan.FromMilliseconds(1)));
         var other = Create(store, "b", "c-b");
         var first = Create(store, "a", "c-a");
         for (var i = 1; i < AssistantContinuationStore.OwnerActiveContinuations; i++)
@@ -67,7 +68,7 @@ public sealed class AssistantContinuationStoreTests
     [Fact]
     public void A_full_pool_takes_room_from_the_owner_holding_the_most()
     {
-        var store = new AssistantContinuationStore(new TickingClock());
+        var store = new AssistantContinuationStore(new TestTimeProvider(tickOnRead: TimeSpan.FromMilliseconds(1)));
         var small = Create(store, "small", "c");
         var firstOfLargest = Create(store, "large", "c-large-0");
         for (var i = 1; i < AssistantContinuationStore.OwnerActiveContinuations; i++)
@@ -89,7 +90,7 @@ public sealed class AssistantContinuationStoreTests
     [Fact]
     public void An_owner_past_its_receipt_capacity_expires_only_its_own_oldest()
     {
-        var store = new AssistantContinuationStore(new TickingClock());
+        var store = new AssistantContinuationStore(new TestTimeProvider(tickOnRead: TimeSpan.FromMilliseconds(1)));
         store.RecordReceipt("b", "k-b", "c", "t", Response);
         store.RecordReceipt("a", "k-a0", "c", "t", Response);
         for (var i = 1; i <= AssistantContinuationStore.OwnerReplayReceipts; i++)
@@ -111,11 +112,4 @@ public sealed class AssistantContinuationStoreTests
         StoredAssistantContinuation continuation) =>
         store.Find(owner, continuation.ContinuationId, continuation.ConversationId);
 
-    /// <summary>Each reading is a millisecond later, so "oldest" is never a tie.</summary>
-    private sealed class TickingClock : TimeProvider
-    {
-        private DateTimeOffset _now = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
-
-        public override DateTimeOffset GetUtcNow() => _now = _now.AddMilliseconds(1);
-    }
 }

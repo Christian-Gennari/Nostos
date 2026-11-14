@@ -8,6 +8,7 @@ using Nostos.Backend.Services.Portability;
 using Xunit;
 using Xunit.Abstractions;
 using static Nostos.Backend.Tests.Portability.PortableArchiveTestSupport;
+using Nostos.Backend.Tests.Support;
 
 namespace Nostos.Backend.Tests.Portability;
 
@@ -241,7 +242,7 @@ public sealed class PortableArchiveReaderTests(ITestOutputHelper output)
         var store = new InMemoryPortableImportStagingStore();
         await using var staging = new RecordingPortableImportStaging(
             new InMemoryPortableImportStaging(store));
-        var reader = new PortableArchiveReader(timeProvider: new ManualTimeProvider(FixedUtc));
+        var reader = new PortableArchiveReader(timeProvider: new TestTimeProvider(FixedUtc));
 
         var act = async () => await reader.PrepareImportAsync(source, staging);
         var exception = await act.Should().ThrowAsync<PortableArchiveException>();
@@ -272,7 +273,7 @@ public sealed class PortableArchiveReaderTests(ITestOutputHelper output)
         var store = new InMemoryPortableImportStagingStore();
         var inner = new InMemoryPortableImportStaging(store);
         await using var staging = new RecordingPortableImportStaging(inner);
-        var reader = new PortableArchiveReader(timeProvider: new ManualTimeProvider(FixedUtc));
+        var reader = new PortableArchiveReader(timeProvider: new TestTimeProvider(FixedUtc));
 
         var act = async () => await reader.PrepareImportAsync(source, staging);
         var exception = await act.Should().ThrowAsync<PortableArchiveException>();
@@ -449,7 +450,7 @@ public sealed class PortableArchiveReaderTests(ITestOutputHelper output)
         var inner = new InMemoryPortableImportStaging(store);
         await using var staging = new RecordingPortableImportStaging(inner);
         var reader = new PortableArchiveReader(
-            timeProvider: new ManualTimeProvider(FixedUtc));
+            timeProvider: new TestTimeProvider(FixedUtc));
 
         var effectiveBudget = budget ?? new PortableArchiveBufferBudget(
             PortableArchiveLimits.MaxExplicitBufferBytes);

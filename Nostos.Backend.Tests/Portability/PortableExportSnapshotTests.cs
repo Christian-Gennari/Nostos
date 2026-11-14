@@ -12,6 +12,7 @@ using Nostos.Backend.Data.Models;
 using Nostos.Backend.Services;
 using Nostos.Backend.Services.Portability;
 using Xunit;
+using Nostos.Backend.Tests.Support;
 
 namespace Nostos.Backend.Tests.Portability;
 
@@ -68,7 +69,7 @@ public sealed class PortableExportSnapshotTests
     [Fact]
     public async Task Export_timestamp_is_captured_inside_the_relational_snapshot_boundary()
     {
-        var clock = new ManualTimeProvider(
+        var clock = new TestTimeProvider(
             new DateTimeOffset(2026, 1, 2, 3, 4, 5, TimeSpan.Zero));
         var interceptor = new TransactionStartClockAdvancer(clock);
 
@@ -544,7 +545,7 @@ public sealed class PortableExportSnapshotTests
         }
     }
 
-    private sealed class TransactionStartClockAdvancer(ManualTimeProvider clock)
+    private sealed class TransactionStartClockAdvancer(TestTimeProvider clock)
         : DbTransactionInterceptor
     {
         public override DbTransaction TransactionStarted(

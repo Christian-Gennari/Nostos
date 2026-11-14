@@ -95,6 +95,18 @@ public sealed class WritingCitationEndpointTests : IClassFixture<LibraryEndpoint
             .ToListAsync();
     }
 
+    private async Task StampUpdatedAtAsync(IReadOnlyList<Guid> writingIds)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<NostosDbContext>();
+        var order = writingIds.Select((id, index) => (id, index)).ToDictionary(pair => pair.id, pair => pair.index);
+        var writings = await db.Writings.Where(w => writingIds.Contains(w.Id)).ToListAsync();
+        var start = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        foreach (var writing in writings)
+            writing.UpdatedAt = start.AddMinutes(order[writing.Id]);
+        await db.SaveChangesAsync();
+    }
+
     private async Task<TopicWritingUsageDto> UsageAsync(Guid topicId, int? limit = null)
     {
         var url = $"/api/topics/{topicId}/writings" + (limit is { } l ? $"?limit={l}" : string.Empty);
@@ -341,8 +353,12 @@ public sealed class WritingCitationEndpointTests : IClassFixture<LibraryEndpoint
             var id = await CreateAsync(name: $"Essay {i}");
             await SaveAsync(id, Cite(library.BookId, library.NoteIds[0]), $"Essay {i}");
             ids.Add(id);
-            await Task.Delay(5);
         }
+
+        // "Newest" is the writing's UpdatedAt, stamped from the wall clock when
+        // it is saved. Give the seven distinct times explicitly, so the order
+        // below is the query's and not the scheduler's.
+        await StampUpdatedAtAsync(ids);
 
         var usage = await UsageAsync(library.OptimismId);
 

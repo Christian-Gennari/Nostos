@@ -18,6 +18,7 @@ using Nostos.Backend.Services.BookText;
 using Nostos.Backend.Workers;
 using Nostos.Product.BookText;
 using Xunit;
+using Nostos.Backend.Tests.Support;
 
 namespace Nostos.Backend.Tests.Portability;
 
@@ -101,14 +102,17 @@ public sealed class LibraryMaintenanceHostTests
     [Fact]
     public async Task RealHost_HungRequestTimesOut_AndGateReopensWhileOldRequestStillExists()
     {
-        var clock = new LibraryMaintenanceCoordinatorTests.DeadlineClock();
+        var clock = new TestTimeProvider();
         using var host = new MaintenanceHost(clock);
         using var client = host.CreateClient();
         var request = client.GetAsync("/api/maintenance-fixture/held", HttpCompletionOption.ResponseHeadersRead);
         await host.Fixture.Opened.Task.WaitAsync(TimeSpan.FromSeconds(10));
         var entering = host.Maintenance.EnterExclusiveAsync(LibraryMaintenanceReason.Activation);
-        await clock.TimerCreated.Task.WaitAsync(TimeSpan.FromSeconds(10));
-        clock.Expire();
+        await clock.WaitForTimerCountAsync(1);
+
+        // The default drain timeout is the only deadline the coordinator arms on
+        // this clock; passing it is what fails the contended entry closed.
+        clock.Advance(TimeSpan.FromSeconds(30));
         Func<Task> enter = async () => await entering;
         (await enter.Should().ThrowAsync<MigrationActivationException>()).Which.Code.Should().Be(MigrationActivationErrorCodes.Busy);
         host.Maintenance.IsMaintenanceActive.Should().BeFalse();
@@ -220,7 +224,7 @@ public sealed class LibraryMaintenanceHostTests
         var reader = client.GetAsync("/api/maintenance-fixture/held", HttpCompletionOption.ResponseHeadersRead);
         await host.Fixture.Opened.Task.WaitAsync(TimeSpan.FromSeconds(10));
         var restore = client.PostAsync($"/api/backup/restore/{backupId}", null);
-        await Task.WhenAny(restore, host.Clock.TimerCreated.Task).WaitAsync(TimeSpan.FromSeconds(30));
+        await Task.WhenAny(restore, host.Clock.WaitForTimerCountAsync(1)).WaitAsync(TimeSpan.FromSeconds(30));
         if (restore.IsCompleted)
         {
             using var early = await restore;
@@ -261,10 +265,10 @@ public sealed class LibraryMaintenanceHostTests
         private readonly bool _withIndexProbe;
         public HeldRequest Fixture { get; } = new();
         public BookTextIndexProbe? IndexProbe { get; }
-        public LibraryMaintenanceCoordinatorTests.DeadlineClock Clock { get; }
+        public TestTimeProvider Clock { get; }
         public ILibraryMaintenanceCoordinator Maintenance => Services.GetRequiredService<ILibraryMaintenanceCoordinator>();
 
-        public MaintenanceHost(LibraryMaintenanceCoordinatorTests.DeadlineClock? clock = null,
+        public MaintenanceHost(TestTimeProvider? clock = null,
             string? root = null, bool withIndexProbe = false)
         {
             _ownsRoot = root is null;

@@ -15,8 +15,8 @@ using Nostos.Backend.Data;
 using Nostos.Backend.Endpoints;
 using Nostos.Backend.Integrations.Mcp;
 using Nostos.Backend.Services.Mcp;
-using Nostos.Backend.Tests.Support;
 using Xunit;
+using Nostos.Backend.Tests.Support;
 
 namespace Nostos.Backend.Tests.Mcp;
 
@@ -286,30 +286,30 @@ public sealed class McpAccessTokenTests : IAsyncLifetime
     [Fact]
     public void The_failed_attempt_window_ends()
     {
-        var clock = new ManualClock(DateTimeOffset.Parse("2026-11-07T10:00:00Z"));
+        var clock = new TestTimeProvider(DateTimeOffset.Parse("2026-11-07T10:00:00Z"));
         var throttle = new McpAccessTokenFailedAttemptThrottle(clock);
         for (var i = 0; i < McpAccessTokenFailedAttemptThrottle.MaxFailures; i++)
             throttle.RecordFailure("10.0.0.2");
 
         throttle.RetryAfter("10.0.0.2").Should().NotBeNull();
         throttle.RetryAfter("10.0.0.3").Should().BeNull();
-        clock.Now += McpAccessTokenFailedAttemptThrottle.Window;
+        clock.Advance(McpAccessTokenFailedAttemptThrottle.Window);
         throttle.RetryAfter("10.0.0.2").Should().BeNull();
     }
 
     [Fact]
     public async Task Last_used_is_written_at_most_once_a_minute()
     {
-        var clock = new ManualClock(DateTimeOffset.Parse("2026-11-07T10:00:00Z"));
+        var clock = new TestTimeProvider(DateTimeOffset.Parse("2026-11-07T10:00:00Z"));
         var service = new McpAccessTokenService(Contexts(), clock);
         var created = await service.CreateAsync("Agent", "read");
 
         (await service.AuthenticateAsync(created.Token)).Should().NotBeNull();
         var first = await LastUsedAsync();
-        clock.Now += TimeSpan.FromSeconds(30);
+        clock.Advance(TimeSpan.FromSeconds(30));
         await service.AuthenticateAsync(created.Token);
         var unchanged = await LastUsedAsync();
-        clock.Now += TimeSpan.FromSeconds(31);
+        clock.Advance(TimeSpan.FromSeconds(31));
         await service.AuthenticateAsync(created.Token);
         var moved = await LastUsedAsync();
 
@@ -389,9 +389,4 @@ public sealed class McpAccessTokenTests : IAsyncLifetime
     private static string Text(CallToolResult result) =>
         string.Concat(result.Content.OfType<TextContentBlock>().Select(c => c.Text));
 
-    private sealed class ManualClock(DateTimeOffset now) : TimeProvider
-    {
-        public DateTimeOffset Now { get; set; } = now;
-        public override DateTimeOffset GetUtcNow() => Now;
-    }
 }

@@ -63,12 +63,12 @@ public sealed class StandardEbooksSnapshotSourceTests
         return response;
     }
 
-    private static (StandardEbooksProvider Provider, StubHttpClientFactory Factory, StubHttpMessageHandler Handler, RecordingTimeProvider Clock)
+    private static (StandardEbooksProvider Provider, StubHttpClientFactory Factory, StubHttpMessageHandler Handler, TestTimeProvider Clock)
         CreateProvider()
     {
         var handler = new StubHttpMessageHandler();
         var factory = new StubHttpClientFactory(handler, new Uri("https://standardebooks.org"));
-        var clock = new RecordingTimeProvider(ScanStart);
+        var clock = new TestTimeProvider(ScanStart);
         var provider = new StandardEbooksProvider(
             factory,
             NullLogger<StandardEbooksProvider>.Instance,
@@ -190,15 +190,22 @@ public sealed class StandardEbooksSnapshotSourceTests
         first.ETag.Should().Be(ETag);
         first.LastModified.Should().Be(LastModified);
 
-        var second = await provider.ReadAsync(
+        // A continuation page is paused exactly as the feed asks clients to be;
+        // the test proves the pause is what the read waits on, then passes it.
+        var pending = provider.ReadAsync(
             new ProviderSnapshotRequest(Cursor: first.NextCursor),
             CancellationToken.None);
+        await clock.WaitForTimerCountAsync(1);
+        var pause = clock.ArmedDueTimes.Should().ContainSingle().Which;
+        pause.Should().Be(StandardEbooksProvider.SnapshotPageDelay);
+        clock.Advance(pause);
+
+        var second = await pending.WaitAsync(TimeSpan.FromSeconds(10));
 
         second.NextCursor.Should().BeNull();
         second.ETag.Should().Be(ETag, "the initial page's validator remains the scan checkpoint");
         second.LastModified.Should().Be(LastModified);
         (await ReadItemsAsync(second.Items)).Should().HaveCount(3);
-        clock.Delays.Should().ContainSingle().Which.Should().Be(StandardEbooksProvider.SnapshotPageDelay);
         handler.RecordedRequestPaths.Should().BeEquivalentTo(AllEbooksPath, AllEbooksPath + "?page=2");
     }
 
@@ -217,11 +224,16 @@ public sealed class StandardEbooksSnapshotSourceTests
             return response;
         });
 
-        var snapshot = await provider.ReadAsync(new ProviderSnapshotRequest(), CancellationToken.None);
+        var pending = provider.ReadAsync(new ProviderSnapshotRequest(), CancellationToken.None);
+        await clock.WaitForTimerCountAsync(1);
+        var retryAfter = clock.ArmedDueTimes.Should().ContainSingle().Which;
+        retryAfter.Should().Be(TimeSpan.FromSeconds(17), "the host asked for seventeen seconds");
+        clock.Advance(retryAfter);
+
+        var snapshot = await pending.WaitAsync(TimeSpan.FromSeconds(10));
 
         snapshot.Status.Should().Be(ProviderSnapshotStatus.Updated);
         attempts.Should().Be(2);
-        clock.Delays.Should().ContainSingle().Which.Should().Be(TimeSpan.FromSeconds(17));
     }
 
     [Fact]
@@ -295,16 +307,4 @@ public sealed class StandardEbooksSnapshotSourceTests
         await cancelAct.Should().ThrowAsync<OperationCanceledException>();
     }
 
-    private sealed class RecordingTimeProvider(DateTimeOffset now) : TimeProvider
-    {
-        public List<TimeSpan> Delays { get; } = [];
-
-        public override DateTimeOffset GetUtcNow() => now;
-
-        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
-        {
-            Delays.Add(dueTime);
-            return base.CreateTimer(callback, state, TimeSpan.Zero, period);
-        }
-    }
 }

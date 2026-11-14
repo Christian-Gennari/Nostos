@@ -28,11 +28,15 @@ public sealed class ExternalMediaScanServiceTests : IDisposable
     {
         File.WriteAllBytes(Path.Combine(_bed.ExternalRoot, "paper.pdf"), SyntheticMedia.Pdf());
         var maintenance = new LibraryMaintenanceCoordinator();
-        var scans = Service(maintenance);
+        var signals = new SignallingMaintenanceCoordinator(maintenance);
+        var scans = Service(signals);
         var exclusive = await maintenance.EnterExclusiveAsync(LibraryMaintenanceReason.BackupRestore);
 
         scans.TryStart(CancellationToken.None).Should().BeTrue();
-        await Task.Delay(300);
+
+        // The scan has reached the library and is waiting for the lease; it
+        // must not have written a result while a restore owns the library.
+        await signals.WaitForAttemptAsync(1);
 
         scans.Completion.IsCompleted.Should().BeFalse();
         scans.State.Result.Should().BeNull();

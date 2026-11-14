@@ -9,6 +9,7 @@ using Nostos.Backend.Services;
 using Nostos.Backend.Services.Portability;
 using Nostos.Backend.Services.Portability.Migration;
 using Nostos.Backend.Services.Portability.Transfers;
+using Nostos.Backend.Tests.Support;
 
 using static Nostos.Backend.Tests.Portability.PortableArchiveTestSupport;
 
@@ -17,7 +18,7 @@ namespace Nostos.Backend.Tests.Portability;
 internal sealed class MigrationEngineHarness : IAsyncDisposable
 {
     internal string DirectoryPath { get; } = Path.Combine(Path.GetTempPath(), "nostos-engine-" + Guid.NewGuid().ToString("N"));
-    internal EngineClock Clock { get; } = new();
+    internal TestTimeProvider Clock { get; } = new(new DateTimeOffset(2026, 10, 4, 12, 0, 0, TimeSpan.Zero));
     internal TransferStorageOptions Settings { get; } = new() { DiskSafetyMarginBytes = 0, DiskSafetyMarginPercent = 0 };
     internal FakeTransferVolume Volume { get; } = new()
     {
@@ -156,32 +157,3 @@ internal sealed class AsyncOnlyStream(byte[] bytes) : Stream
     public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
 }
 
-// Fake UTC clock and timers. Advance fires due timers without wall-clock sleeps.
-internal sealed class EngineClock : TimeProvider
-{
-    private readonly object _gate = new();
-    private DateTimeOffset _now = new(2026, 10, 4, 12, 0, 0, TimeSpan.Zero);
-    private readonly List<ManualTimer> _timers = new();
-    public override DateTimeOffset GetUtcNow() { lock (_gate) return _now; }
-    public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
-    { lock (_gate) { var timer = new ManualTimer(this, callback, state); _timers.Add(timer); timer.Change(dueTime, period); return timer; } }
-    internal void Advance(TimeSpan delta)
-    {
-        List<ManualTimer> due;
-        lock (_gate)
-        { _now += delta; due = _timers.Where(t => !t.Disposed && t.Due <= _now).ToList(); foreach (var timer in due) timer.Due = timer.Period == Timeout.InfiniteTimeSpan ? DateTimeOffset.MaxValue : _now + timer.Period; }
-        foreach (var timer in due) timer.Callback(timer.State);
-    }
-    private sealed class ManualTimer(EngineClock clock, TimerCallback callback, object? state) : ITimer
-    {
-        internal TimerCallback Callback { get; } = callback;
-        internal object? State { get; } = state;
-        internal DateTimeOffset Due { get; set; }
-        internal TimeSpan Period { get; private set; }
-        internal bool Disposed { get; private set; }
-        public bool Change(TimeSpan dueTime, TimeSpan period)
-        { lock (clock._gate) { if (Disposed) return false; Due = dueTime == Timeout.InfiniteTimeSpan ? DateTimeOffset.MaxValue : clock._now + dueTime; Period = period; return true; } }
-        public void Dispose() { lock (clock._gate) { Disposed = true; clock._timers.Remove(this); } }
-        public ValueTask DisposeAsync() { Dispose(); return ValueTask.CompletedTask; }
-    }
-}
