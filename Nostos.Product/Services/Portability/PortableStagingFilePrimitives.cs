@@ -238,20 +238,13 @@ internal static class PortableStagingFilePrimitives
     }
 
     internal static async ValueTask DiscardIfWritingAsync(
-        SemaphoreSlim gate,
+        PortableStagingGate gate,
         PortableStagingWriteState state,
         Action discard)
     {
-        await gate.WaitAsync().ConfigureAwait(false);
-        try
-        {
-            if (state.Status == PortableStagingItemStatus.Writing)
-                discard();
-        }
-        finally
-        {
-            gate.Release();
-        }
+        using var lease = await gate.EnterAsync(CancellationToken.None).ConfigureAwait(false);
+        if (state.Status == PortableStagingItemStatus.Writing)
+            discard();
     }
 
     internal static PortableStagingException NotFound(string message) =>
@@ -271,9 +264,16 @@ internal static class PortableStagingFilePrimitives
 /// provider may enforce the item's maximum length while it is written, and a write
 /// that overflows the limit discards the item immediately.
 /// </summary>
+/// <remarks>
+/// Every async member waits through <see cref="PortableStagingGate.EnterAsync"/> and
+/// never blocks a thread. Only the synchronous <see cref="Stream"/> overrides — which
+/// a <see cref="Stream"/> cannot implement asynchronously — take the gate through
+/// <see cref="PortableStagingGate.EnterBlocking"/>; the archive reader, the migration
+/// engine and the test suite write and dispose through the async members only.
+/// </remarks>
 internal sealed class PortableStagingWriteStream : Stream
 {
-    private readonly SemaphoreSlim _gate;
+    private readonly PortableStagingGate _gate;
     private readonly PortableStagingWriteState _state;
     private readonly Func<bool> _isAreaDeleted;
     private readonly Action _discard;
@@ -281,7 +281,7 @@ internal sealed class PortableStagingWriteStream : Stream
     private bool _disposed;
 
     internal PortableStagingWriteStream(
-        SemaphoreSlim gate,
+        PortableStagingGate gate,
         PortableStagingWriteState state,
         Func<bool> isAreaDeleted,
         Action discard,
@@ -331,17 +331,14 @@ internal sealed class PortableStagingWriteStream : Stream
     {
         _beforeWrite?.Invoke();
 
-        _gate.Wait();
-        try
+        // The synchronous Stream contract cannot await; this is the only blocking
+        // entry in the provider. Callers write through WriteAsync.
+        using (_gate.EnterBlocking())
         {
             EnsureWritable(buffer.Length);
             _state.Stream!.Write(buffer);
             _state.Hash!.AppendData(buffer);
             _state.Written += buffer.Length;
-        }
-        finally
-        {
-            _gate.Release();
         }
     }
 
@@ -351,20 +348,13 @@ internal sealed class PortableStagingWriteStream : Stream
     {
         _beforeWrite?.Invoke();
 
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            EnsureWritable(buffer.Length);
-            await _state.Stream!
-                .WriteAsync(buffer, cancellationToken)
-                .ConfigureAwait(false);
-            _state.Hash!.AppendData(buffer.Span);
-            _state.Written += buffer.Length;
-        }
-        finally
-        {
-            _gate.Release();
-        }
+        using var lease = await _gate.EnterAsync(cancellationToken).ConfigureAwait(false);
+        EnsureWritable(buffer.Length);
+        await _state.Stream!
+            .WriteAsync(buffer, cancellationToken)
+            .ConfigureAwait(false);
+        _state.Hash!.AppendData(buffer.Span);
+        _state.Written += buffer.Length;
     }
 
     public override Task WriteAsync(
@@ -394,15 +384,10 @@ internal sealed class PortableStagingWriteStream : Stream
         _disposed = true;
         if (disposing)
         {
-            _gate.Wait();
-            try
+            using (_gate.EnterBlocking())
             {
                 if (_state.Status == PortableStagingItemStatus.Writing)
                     _discard();
-            }
-            finally
-            {
-                _gate.Release();
             }
         }
 
