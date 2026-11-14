@@ -12,9 +12,6 @@ public class BackupSettingsProvider
     private readonly BackupSettings _defaults;
     private BackupSettings _current;
     private readonly object _lock = new();
-    private readonly object _maintenanceLock = new();
-    private IAsyncDisposable? _compatibilityLease;
-    private int _compatibilityReferences;
     private BackupProgressDto? _progress;
 
     private static readonly JsonSerializerOptions JsonOpts = new()
@@ -107,34 +104,6 @@ public class BackupSettingsProvider
     public void ClearProgress()
     {
         Volatile.Write(ref _progress, null);
-    }
-
-    // Compatibility entry points for existing callers. New asynchronous restore
-    // code uses Maintenance directly. These references own ONE coordinator lease.
-    public void EnterMaintenanceMode()
-    {
-        lock (_maintenanceLock)
-        {
-            if (_compatibilityReferences == 0)
-                _compatibilityLease = Maintenance.EnterExclusiveAsync(LibraryMaintenanceReason.BackupRestore)
-                    .GetAwaiter().GetResult();
-            _compatibilityReferences++;
-        }
-    }
-
-    public void ExitMaintenanceMode()
-    {
-        lock (_maintenanceLock)
-        {
-            if (_compatibilityReferences == 0)
-                throw new InvalidOperationException("ExitMaintenanceMode called without matching EnterMaintenanceMode.");
-            if (--_compatibilityReferences == 0)
-            {
-                var lease = _compatibilityLease;
-                _compatibilityLease = null;
-                lease!.DisposeAsync().GetAwaiter().GetResult();
-            }
-        }
     }
 
     private BackupSettings? LoadFromFile()

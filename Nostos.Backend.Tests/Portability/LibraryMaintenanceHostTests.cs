@@ -26,22 +26,17 @@ namespace Nostos.Backend.Tests.Portability;
 public sealed class LibraryMaintenanceHostTests
 {
     [Fact]
-    public async Task BackupCompatibilityReferences_OwnOneLease_AndCannotExitActivationMaintenance()
+    public async Task BackupSettingsProvider_ProjectsTheSharedCoordinator_WithoutOwningItsOwnLease()
     {
         using var host = new MaintenanceHost();
-        using var client = host.CreateClient();
         var settings = host.Services.GetRequiredService<BackupSettingsProvider>();
         settings.Maintenance.Should().BeSameAs(host.Maintenance);
-        settings.EnterMaintenanceMode();
-        settings.EnterMaintenanceMode();
-        settings.ExitMaintenanceMode();
-        host.Maintenance.IsMaintenanceActive.Should().BeTrue();
-        settings.ExitMaintenanceMode();
-        host.Maintenance.IsMaintenanceActive.Should().BeFalse();
-        await using var exclusive = await host.Maintenance.EnterExclusiveAsync(LibraryMaintenanceReason.Activation);
-        Action extraExit = settings.ExitMaintenanceMode;
-        extraExit.Should().Throw<InvalidOperationException>();
-        host.Maintenance.IsMaintenanceActive.Should().BeTrue();
+        settings.IsInMaintenanceMode.Should().BeFalse();
+
+        var exclusive = await host.Maintenance.EnterExclusiveAsync(LibraryMaintenanceReason.BackupRestore);
+        settings.IsInMaintenanceMode.Should().BeTrue("the provider reports the shared coordinator's state");
+        await exclusive.DisposeAsync();
+        settings.IsInMaintenanceMode.Should().BeFalse();
     }
 
     [Fact]

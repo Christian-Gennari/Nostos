@@ -2,7 +2,6 @@ using System.Collections.Concurrent;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -44,7 +43,6 @@ public class BackupService : IBackupService
     {
         WriteIndented = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        ReferenceHandler = ReferenceHandler.IgnoreCycles,
     };
 
     public BackupService(
@@ -509,53 +507,13 @@ public class BackupService : IBackupService
                 }
             }
 
-            _settingsProvider.UpdateProgress("Collecting files", 40, 2, 5);
-            var metadataDir = Path.Combine(tempDir, "metadata");
-            Directory.CreateDirectory(metadataDir);
-
-            await using (var scope = _scopeFactory.CreateAsyncScope())
-            {
-                var db = scope.ServiceProvider.GetRequiredService<NostosDbContext>();
-
-                // Membership lives in the join table, so the backup has to carry
-                // it explicitly — the book row alone no longer records which
-                // collections a book belongs to. Acquisition provenance lives in
-                // its own table for the same reason: without this Include a
-                // backup would silently drop where imported books came from.
-                var books = await db.Books
-                    .Include(b => b.BookCollections)
-                    .Include(b => b.Acquisition)
-                    .ToListAsync(ct);
-                await WriteJsonAsync(Path.Combine(metadataDir, "books.json"), books, ct);
-
-                var notes = await db
-                    .Notes.Include(n => n.Book)
-                    .Include(n => n.NoteTopics)
-                    .ThenInclude(nc => nc.Topic)
-                    .ToListAsync(ct);
-                await WriteJsonAsync(Path.Combine(metadataDir, "notes.json"), notes, ct);
-
-                var topics = await db
-                    .Topics.Include(c => c.NoteTopics)
-                    .ThenInclude(nc => nc.Note)
-                    .ToListAsync(ct);
-                await WriteJsonAsync(Path.Combine(metadataDir, "topics.json"), topics, ct);
-
-                var collections = await db.Collections.ToListAsync(ct);
-                await WriteJsonAsync(Path.Combine(metadataDir, "collections.json"), collections, ct);
-
-                var writings = await db.Writings.ToListAsync(ct);
-                await WriteJsonAsync(Path.Combine(metadataDir, "writings.json"), writings, ct);
-
-                var readingList = await db.ReadingListEntries.ToListAsync(ct);
-                await WriteJsonAsync(Path.Combine(metadataDir, "reading-list.json"), readingList, ct);
-            }
-
             var dbFileSize = new FileInfo(backupDbPath).Length;
             // The manifest cannot hold the archive's own size or checksum (they
             // exist only once the archive is written; the database record keeps
             // them). It holds what is known now: the real number of book files
-            // copied and the uncompressed size of everything that goes in.
+            // copied and the uncompressed size of the database snapshot plus
+            // those book files — the only payload restore actually reads. Older
+            // archives may also carry a metadata/ JSON dump; restore ignores it.
             var contentBytes = new DirectoryInfo(tempDir)
                 .EnumerateFiles("*", SearchOption.AllDirectories)
                 .Sum(f => f.Length);
@@ -1241,11 +1199,5 @@ public class BackupService : IBackupService
 
         if (stale.Count > 0)
             await db.SaveChangesAsync(ct);
-    }
-
-    private static async Task WriteJsonAsync<T>(string path, T data, CancellationToken ct)
-    {
-        await using var stream = File.Create(path);
-        await JsonSerializer.SerializeAsync(stream, data, JsonOpts, ct);
     }
 }
