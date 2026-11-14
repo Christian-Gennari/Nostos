@@ -3,6 +3,16 @@ using System.Text.Json;
 namespace Nostos.Backend.Services.Portability;
 
 /// <summary>
+/// Test-only seams for the process-local staging provider: deterministic
+/// interleaving before the staging gate, so a test can prove how two concurrent
+/// operations queue. Production instances pass none of them.
+/// </summary>
+internal sealed class LocalPortableImportStagingHooks
+{
+    internal Func<FileStagingOperation, Task>? BeforeAreaGateAsync { get; set; }
+}
+
+/// <summary>
 /// Process-local file staging for the immediate compatibility import
 /// (<c>POST /api/portability/import</c>). Every staged byte lives under a
 /// caller-owned disposable scratch root; disposing the provider releases no files and
@@ -28,6 +38,7 @@ internal sealed class LocalPortableImportStaging
 
     private readonly string _root;
     private readonly Func<string, long?> _availableBytesProbe;
+    private readonly LocalPortableImportStagingHooks? _hooks;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Dictionary<Guid, LocalArea> _areas = [];
     private readonly HashSet<Guid> _deleted = [];
@@ -40,10 +51,23 @@ internal sealed class LocalPortableImportStaging
     internal LocalPortableImportStaging(
         string root,
         Func<string, long?>? availableBytesProbe)
+        : this(root, availableBytesProbe, hooks: null)
+    {
+    }
+
+    /// <summary>
+    /// Test seam: a hook that runs immediately before an operation takes the staging
+    /// gate. Production always passes none.
+    /// </summary>
+    internal LocalPortableImportStaging(
+        string root,
+        Func<string, long?>? availableBytesProbe,
+        LocalPortableImportStagingHooks? hooks)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(root);
         _root = Path.GetFullPath(root);
         _availableBytesProbe = availableBytesProbe ?? DefaultAvailableBytesProbe;
+        _hooks = hooks;
         Directory.CreateDirectory(_root);
     }
 
@@ -110,7 +134,8 @@ internal sealed class LocalPortableImportStaging
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(descriptor);
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await EnterGateAsync(FileStagingOperation.OpenMediaWrite, cancellationToken)
+            .ConfigureAwait(false);
         try
         {
             var area = GetExistingArea(stagingId);
@@ -179,7 +204,8 @@ internal sealed class LocalPortableImportStaging
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(write);
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await EnterGateAsync(FileStagingOperation.CompleteMedia, cancellationToken)
+            .ConfigureAwait(false);
         try
         {
             var area = GetExistingArea(stagingId);
@@ -233,7 +259,7 @@ internal sealed class LocalPortableImportStaging
         PortableStagedMediaReference reference,
         CancellationToken cancellationToken = default)
     {
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await EnterGateAsync(FileStagingOperation.Read, cancellationToken).ConfigureAwait(false);
         try
         {
             var area = GetExistingArea(stagingId);
@@ -254,7 +280,7 @@ internal sealed class LocalPortableImportStaging
         PortableStagingId stagingId,
         CancellationToken cancellationToken = default)
     {
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await EnterGateAsync(FileStagingOperation.List, cancellationToken).ConfigureAwait(false);
         try
         {
             return DescribeCompletedMedia(GetExistingArea(stagingId));
@@ -310,7 +336,7 @@ internal sealed class LocalPortableImportStaging
     {
         ArgumentNullException.ThrowIfNull(metadata);
         ArgumentNullException.ThrowIfNull(metadata.Counts);
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await EnterGateAsync(FileStagingOperation.Commit, cancellationToken).ConfigureAwait(false);
         try
         {
             var area = GetExistingArea(stagingId);
@@ -413,7 +439,7 @@ internal sealed class LocalPortableImportStaging
         PortableStagingId stagingId,
         CancellationToken cancellationToken = default)
     {
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await EnterGateAsync(FileStagingOperation.Rebuild, cancellationToken).ConfigureAwait(false);
         try
         {
             var area = GetExistingArea(stagingId);
@@ -460,7 +486,7 @@ internal sealed class LocalPortableImportStaging
         PortableStagingId stagingId,
         CancellationToken cancellationToken = default)
     {
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await EnterGateAsync(FileStagingOperation.Delete, cancellationToken).ConfigureAwait(false);
         try
         {
             if (stagingId.Value == Guid.Empty)
@@ -484,6 +510,22 @@ internal sealed class LocalPortableImportStaging
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
+    /// <summary>
+    /// Takes the staging gate for one operation. A test hook runs first, outside the
+    /// gate, so a test can pause a specific transition and prove the ordering of two
+    /// concurrent operations; production instances have no hook.
+    /// </summary>
+    private async Task EnterGateAsync(
+        FileStagingOperation operation,
+        CancellationToken cancellationToken)
+    {
+        var beforeGate = _hooks?.BeforeAreaGateAsync;
+        if (beforeGate is not null)
+            await beforeGate(operation).ConfigureAwait(false);
+
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     private async Task<PortableStagingPayloadWrite> OpenPayloadWriteAsync(
         PortableStagingId stagingId,
         PortableArchivePayload descriptor,
@@ -491,7 +533,8 @@ internal sealed class LocalPortableImportStaging
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(descriptor);
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await EnterGateAsync(FileStagingOperation.OpenPayloadWrite, cancellationToken)
+            .ConfigureAwait(false);
         try
         {
             var area = GetExistingArea(stagingId);
@@ -562,7 +605,8 @@ internal sealed class LocalPortableImportStaging
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(write);
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await EnterGateAsync(FileStagingOperation.CompletePayload, cancellationToken)
+            .ConfigureAwait(false);
         try
         {
             var area = GetExistingArea(stagingId);
@@ -616,7 +660,7 @@ internal sealed class LocalPortableImportStaging
         bool manifest,
         CancellationToken cancellationToken)
     {
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await EnterGateAsync(FileStagingOperation.Read, cancellationToken).ConfigureAwait(false);
         try
         {
             var area = GetExistingArea(stagingId);
