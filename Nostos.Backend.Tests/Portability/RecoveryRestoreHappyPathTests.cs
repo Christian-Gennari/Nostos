@@ -158,8 +158,11 @@ public sealed class RecoveryRestoreHappyPathTests
 
         // Claim with the current revision, then write before the worker runs.
         await bed.RequestRestoreOnlyAsync();
+        var restoreId = bed.ReadRecoveryManifest()!.RestoreOperationId;
+        restoreId.Should().NotBeNull("the claim records the restore operation");
         await bed.WritePortableRevisionBumpAsync();
         var before = bed.SnapshotLiveGeneration();
+        var liveDatabaseSha = Sha256(bed.Paths.LiveDatabase);
 
         var result = await bed.ResumeRestoreAsync();
 
@@ -168,7 +171,21 @@ public sealed class RecoveryRestoreHappyPathTests
         bed.AssertGenerationEquals(before, "the intervening write must survive");
         bed.ReadRecoveryManifest()!.Status.Should().Be(MigrationRecoveryStatus.Available,
             "the copy returns to Available so the user can confirm a fresh revision");
+
+        // The authoritative recheck runs before any durable entry into the
+        // switch, so the crashed attempt left no journal behind and no live
+        // file was moved, renamed or rewritten.
+        bed.Journals.Read(restoreId!.Value).Should().BeNull(
+            "a refused recheck clears the retryable journal");
+        bed.Journals.ReadResolved(restoreId.Value).Should().BeNull();
+        Sha256(bed.Paths.LiveDatabase).Should().Be(
+            liveDatabaseSha, "the live database file itself is never touched");
+        ActivationBuildFixture.MediaSnapshot(bed.Paths.LiveMedia).Should().BeEquivalentTo(
+            before.Media, "every live media file keeps its path and its bytes");
     }
+
+    private static string Sha256(string path) =>
+        Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(path)));
 
     [Fact]
     public async Task ARepeatedRestoreRequest_AfterCompletion_IsAnIdempotentAlreadyRestored()

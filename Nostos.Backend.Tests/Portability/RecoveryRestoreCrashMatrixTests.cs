@@ -105,6 +105,34 @@ public sealed class RecoveryRestoreCrashMatrixTests
         bed.ReadRecoveryManifest()!.Status.Should().Be(MigrationRecoveryStatus.Restored);
     }
 
+    /// <summary>
+    /// The golden order test only sees files, so it cannot show which journal
+    /// phase the media-retention boundary writes. A crash observed at
+    /// <see cref="SelfHostedRecoveryRestoreSteps.AfterRetainMedia"/> must still
+    /// read <c>CutoverPrepared</c>: <c>PreviousMediaRetained</c> is published
+    /// only after that boundary, and the crash matrix's rollback decision hangs
+    /// on exactly that ordering.
+    /// </summary>
+    [Theory]
+    [InlineData(SelfHostedRecoveryRestoreSteps.AfterRetainMedia, SelfHostedActivationPhase.CutoverPrepared)]
+    [InlineData(SelfHostedRecoveryRestoreSteps.PhasePreviousMediaRetained, SelfHostedActivationPhase.PreviousMediaRetained)]
+    public async Task MediaRetentionJournalPhase_IsPublishedOnlyAfterItsBoundary(
+        string boundary,
+        SelfHostedActivationPhase expectedPhase)
+    {
+        await using var bed = await ActivationCoordinatorTestBed.CreateAsync(populated: true);
+        (await bed.ActivateAsync(confirm: true)).Outcome.Should().Be(SelfHostedActivationOutcome.Completed);
+        await bed.WritePortableRevisionBumpAsync();
+
+        await CrashAndStopAtAsync(bed, boundary);
+
+        var restoreId = bed.ReadRecoveryManifest()!.RestoreOperationId;
+        restoreId.Should().NotBeNull("the restore was durably claimed before the crash");
+        var journal = bed.Journals.Read(restoreId!.Value);
+        journal.Should().NotBeNull("the interrupted restore's journal must survive the crash");
+        journal!.Phase.Should().Be(expectedPhase);
+    }
+
     [Fact]
     public async Task WithoutTheMediaRecoveryStep_TheSameCrashAdmitsADetectableMixedGeneration()
     {
