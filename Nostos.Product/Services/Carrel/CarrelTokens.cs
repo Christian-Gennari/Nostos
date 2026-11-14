@@ -5,24 +5,43 @@ using System.Text;
 namespace Nostos.Backend.Services.Carrel;
 
 /// <summary>
-/// Device tokens and file hashes. A token is <c>stl_</c> plus 256 random bits
+/// Device tokens and file hashes. A token is <c>crl_</c> plus 256 random bits
 /// in unpadded base64url; the server keeps only its lowercase hex SHA-256, so a
 /// database read can never hand out a working credential. A file's hash is the
 /// protocol's content hash: SHA-256 of its UTF-8 bytes, lowercase hex.
+///
+/// <para>Tokens issued before the Stylos → Carrel rename carry
+/// <see cref="LegacyPrefix"/> instead. Devices paired then still hold one, so
+/// both prefixes authenticate; only <see cref="Prefix"/> is issued now.</para>
 /// </summary>
 public static class CarrelTokens
 {
-    public const string Prefix = "stl_";
+    /// <summary>The prefix of every token issued now.</summary>
+    public const string Prefix = "crl_";
+
+    /// <summary>
+    /// The prefix of tokens issued before the rename (issue #1588). Accepted so
+    /// a paired device never has to pair again; never issued.
+    /// </summary>
+    public const string LegacyPrefix = "stl_";
+
+    /// <summary>Both prefixes are four characters, so a token's length does not depend on which one it has.</summary>
+    public const int PrefixLength = 4;
 
     /// <summary><see cref="Prefix"/> plus 32 bytes in unpadded base64url.</summary>
-    public const int TokenLength = 4 + 43;
+    public const int TokenLength = PrefixLength + 43;
 
     public static string Create() => Prefix + Base64Url.EncodeToString(RandomNumberGenerator.GetBytes(32));
 
+    /// <summary>Whether <paramref name="token"/> has the shape of a token issued now or before the rename.</summary>
     public static bool LooksLikeToken(string? token) =>
         token is { Length: TokenLength }
-        && token.StartsWith(Prefix, StringComparison.Ordinal)
-        && token.AsSpan(Prefix.Length).IndexOfAnyExcept(Base64UrlAlphabet) < 0;
+        && HasKnownPrefix(token)
+        && token.AsSpan(PrefixLength).IndexOfAnyExcept(Base64UrlAlphabet) < 0;
+
+    private static bool HasKnownPrefix(string token) =>
+        token.StartsWith(Prefix, StringComparison.Ordinal)
+        || token.StartsWith(LegacyPrefix, StringComparison.Ordinal);
 
     public static string Hash(string token) =>
         Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(token)));

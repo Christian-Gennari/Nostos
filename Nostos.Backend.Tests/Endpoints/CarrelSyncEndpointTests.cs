@@ -71,7 +71,7 @@ public sealed class CarrelSyncEndpointTests : IClassFixture<LibraryEndpointFacto
         var pair = await StartPairingAsync("Approved Device");
         var token = await ApproveAndCollectAsync(pair);
 
-        token.Should().StartWith("stl_").And.HaveLength(47);
+        token.Should().StartWith("crl_").And.HaveLength(47);
 
         var listed = await Client.GetFromJsonAsync<JsonElement>("/api/carrel/devices");
         var listedDevice = listed.GetProperty("devices").EnumerateArray()
@@ -102,6 +102,30 @@ public sealed class CarrelSyncEndpointTests : IClassFixture<LibraryEndpointFacto
         pairing.Status.Should().Be(CarrelPairingStatus.Approved);
         pairing.DeviceId.Should().Be(device.Id);
         pairing.TokenEncrypted.Should().NotBeNull().And.NotContain(token);
+    }
+
+    [Fact]
+    public async Task A_token_issued_before_the_prefix_change_still_authenticates()
+    {
+        var pair = await StartPairingAsync("Legacy Device");
+        var issued = await ApproveAndCollectAsync(pair);
+        issued.Should().StartWith("crl_");
+
+        // What a device paired before the rename holds: the same 256 random
+        // bits, the old prefix. The server keeps only the hash, so rewriting
+        // the row is all that differs from a real pre-rename pairing.
+        var legacy = CarrelTokens.LegacyPrefix + new string('L', 43);
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<NostosDbContext>();
+            var device = await db.CarrelDevices.SingleAsync(d => d.Name == "Legacy Device");
+            device.TokenHash = CarrelTokens.Hash(legacy);
+            await db.SaveChangesAsync();
+        }
+
+        var authed = AuthedClient(legacy);
+        (await authed.GetAsync("/carrel/v1/files")).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await authed.GetAsync("/carrel/v1/library?since=0")).StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [Fact]
@@ -421,6 +445,56 @@ public sealed class CarrelSyncEndpointTests : IClassFixture<LibraryEndpointFacto
     }
 
     [Fact]
+    public async Task A_retried_put_of_the_same_bytes_is_the_same_save()
+    {
+        var token = await PairedTokenAsync();
+        var client = AuthedClient(token);
+        var fileId = Guid.NewGuid();
+        await PutNewFileAsync(client, fileId, "retry.md", "same bytes");
+        var before = await CursorAsync(client);
+
+        var retry = await client.PutAsJsonAsync($"/carrel/v1/files/{fileId}", new
+        {
+            path = "retry.md",
+            content = "same bytes",
+            base_rev = 1,
+        });
+
+        retry.StatusCode.Should().Be(HttpStatusCode.OK);
+        var success = (await retry.Content.ReadFromJsonAsync<CarrelPutResponse>())!;
+        success.Rev.Should().Be(1, "the bytes and the path did not change");
+        success.Hash.Should().Be(Sha256("same bytes"));
+
+        var after = await client.GetFromJsonAsync<JsonElement>($"/carrel/v1/files?since={before}");
+        after.GetProperty("files").GetArrayLength().Should().Be(0,
+            "a retried save is not a change to pull");
+    }
+
+    [Fact]
+    public async Task A_draft_deleted_in_the_studio_leaves_a_tombstone()
+    {
+        var token = await PairedTokenAsync();
+        var client = AuthedClient(token);
+        var fileId = Guid.NewGuid();
+        await PutNewFileAsync(client, fileId, "studio-delete.md", "gone from the Studio");
+        var before = await CursorAsync(client);
+
+        var writings = await Client.GetFromJsonAsync<WritingDto[]>("/api/writings");
+        var draft = writings!.Single(w => w.Name == "studio-delete");
+        (await Client.DeleteAsync($"/api/writings/{draft.Id}")).StatusCode
+            .Should().Be(HttpStatusCode.NoContent);
+
+        var list = await client.GetFromJsonAsync<JsonElement>($"/carrel/v1/files?since={before}");
+        var entry = list.GetProperty("files").EnumerateArray()
+            .Single(f => f.GetProperty("file_id").GetGuid() == fileId);
+        entry.GetProperty("deleted").GetBoolean().Should().BeTrue();
+        entry.GetProperty("rev").GetInt64().Should().Be(2);
+        entry.GetProperty("path").GetString().Should().Be("studio-delete.md");
+        (await client.GetAsync($"/carrel/v1/files/{fileId}")).StatusCode
+            .Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
     public async Task A_path_collision_names_the_file_that_owns_the_path()
     {
         var token = await PairedTokenAsync();
@@ -642,6 +716,48 @@ public sealed class CarrelSyncEndpointTests : IClassFixture<LibraryEndpointFacto
         books.Should().ContainSingle();
         books[0].GetProperty("title").GetString().Should().Be("Gilead");
         books[0].GetProperty("author").GetString().Should().Be("Marilynne Robinson");
+    }
+
+    [Fact]
+    public async Task The_library_renders_a_topic_reference_in_prose_as_its_words()
+    {
+        var token = await PairedTokenAsync();
+        var client = AuthedClient(token);
+        var book = await CreateBookAsync("Attention and Habit", "A Writer");
+        var note = await CreateNoteAsync(book.Id, new
+        {
+            content = "It is about [[Attention]] and how [[Habit]]s form.\n\n[[Attention]]",
+        });
+
+        var page = await client.GetFromJsonAsync<JsonElement>("/carrel/v1/library?since=0");
+        var item = page.GetProperty("items").EnumerateArray()
+            .Single(i => i.GetProperty("id").GetGuid() == note.Id);
+
+        item.GetProperty("text").GetString()
+            .Should().Be("It is about Attention and how Habits form.");
+        item.GetProperty("topics").EnumerateArray().Select(t => t.GetString())
+            .Should().BeEquivalentTo("Attention", "Habit");
+    }
+
+    [Fact]
+    public async Task The_library_leaves_text_that_only_looks_like_a_reference_as_typed()
+    {
+        var token = await PairedTokenAsync();
+        var client = AuthedClient(token);
+        var book = await CreateBookAsync("No Alias Syntax", "An Author");
+        var note = await CreateNoteAsync(book.Id, new
+        {
+            content = "Compare [[a|b]] with [[Attention]].\n\n[[]] and [[unclosed",
+        });
+
+        var page = await client.GetFromJsonAsync<JsonElement>("/carrel/v1/library?since=0");
+        var item = page.GetProperty("items").EnumerateArray()
+            .Single(i => i.GetProperty("id").GetGuid() == note.Id);
+
+        // There is no alias syntax: `[[a|b]]` is plain text everywhere else in
+        // Nostos, so a device is handed the words the person typed, not "b".
+        item.GetProperty("text").GetString()
+            .Should().Be("Compare [[a|b]] with Attention. [[]] and [[unclosed");
     }
 
     [Fact]

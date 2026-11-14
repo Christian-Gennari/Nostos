@@ -70,6 +70,19 @@ public static partial class TopicReferences
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
+    /// <summary>
+    /// <paramref name="text"/> with every valid <c>[[Name]]</c> reference
+    /// replaced by its name, and everything else left exactly as typed. Text
+    /// that only looks like a reference (<c>[[a|b]]</c>, <c>[[]]</c>, <c>[[</c>
+    /// with no close) is not one, so it survives as written.
+    /// </summary>
+    public static string? AsPlainWords(string? text)
+    {
+        if (string.IsNullOrEmpty(text) || !text.Contains("[[", StringComparison.Ordinal))
+            return text;
+        return ReplaceReferences(text, match => match.Groups[1].Value.Trim());
+    }
+
     public static bool Declares(string? content, string name)
     {
         var topic = name.Trim();

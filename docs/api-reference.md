@@ -1141,8 +1141,9 @@ the host's signed-in policy; SelfHosted has one local owner.
 ### Protocol v1 — `/carrel/v1`
 
 A device has no credential until pairing hands it one, so pairing is anonymous
-and everything else requires `Authorization: Bearer stl_…` from a paired device.
-Answers carry `Cache-Control: no-store`.
+and everything else requires `Authorization: Bearer crl_…` from a paired device.
+Devices paired before the prefix change hold a `stl_…` token, which still
+authenticates. Answers carry `Cache-Control: no-store`.
 
 | Method | Path | Behavior |
 | --- | --- | --- |

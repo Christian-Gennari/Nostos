@@ -57,6 +57,22 @@ public sealed class TopicReferencesTests
     public void Remove_drops_a_reference_from_a_line_of_references(string content, string name, string expected) =>
         TopicReferences.Remove(content, name).Should().Be(expected);
 
+    [Theory]
+    [InlineData("A thought about [[Attention]].", "A thought about Attention.")]
+    [InlineData("[[ Attention ]] is [[virtue]]", "Attention is virtue")]
+    [InlineData("[[a|b]] and [[c]]", "[[a|b]] and c")]
+    [InlineData("[[]] stays", "[[]] stays")]
+    [InlineData("[[unclosed stays", "[[unclosed stays")]
+    [InlineData("a stray ]] stays", "a stray ]] stays")]
+    [InlineData("no references", "no references")]
+    public void AsPlainWords_reads_references_as_words_and_leaves_the_rest_typed(
+        string text, string expected) =>
+        TopicReferences.AsPlainWords(text).Should().Be(expected);
+
+    [Fact]
+    public void AsPlainWords_passes_a_null_through() =>
+        TopicReferences.AsPlainWords(null).Should().BeNull();
+
     [Fact]
     public void Remove_matches_every_occurrence_trimmed_and_case_insensitively()
     {

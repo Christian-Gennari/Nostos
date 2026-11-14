@@ -127,15 +127,30 @@ public sealed class CarrelProtocolHelpersTests
     public void Tokens_are_long_random_looking_and_only_a_hash_is_kept()
     {
         var token = CarrelTokens.Create();
-        token.Should().StartWith("stl_").And.HaveLength(CarrelTokens.TokenLength);
+        token.Should().StartWith("crl_").And.HaveLength(CarrelTokens.TokenLength);
         CarrelTokens.LooksLikeToken(token).Should().BeTrue();
         CarrelTokens.LooksLikeToken(token + "x").Should().BeFalse();
         CarrelTokens.LooksLikeToken("nst_123").Should().BeFalse();
+
+        // A device paired before the rename still presents an stl_ token.
+        var legacy = CarrelTokens.LegacyPrefix + new string('A', 43);
+        CarrelTokens.LooksLikeToken(legacy).Should().BeTrue();
+        CarrelTokens.LooksLikeToken("stl_short").Should().BeFalse();
 
         var hash = CarrelTokens.Hash(token);
         hash.Should().HaveLength(64).And.NotContain(token);
         CarrelTokens.HashEquals(hash, CarrelTokens.Hash(token)).Should().BeTrue();
         CarrelTokens.HashEquals(hash, CarrelTokens.Hash(token + "x")).Should().BeFalse();
+    }
+
+    [Fact]
+    public void A_citation_escapes_the_markdown_a_title_could_be_read_as()
+    {
+        // The same escaper the Studio's Markdown export uses, so a citation a
+        // device shows reads the same as the export's.
+        CarrelLibrarySnapshotBuilder
+            .CitationMarkdown("A*B", "C[d]|e", "Page 4", null)
+            .Should().Be("A\\*B, *C\\[d\\]\\|e*, p. 4");
     }
 
     [Fact]

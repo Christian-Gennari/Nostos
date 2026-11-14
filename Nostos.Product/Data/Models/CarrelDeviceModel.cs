@@ -19,7 +19,10 @@ public class CarrelDeviceModel
 
     public const int MaxPublicKeyLength = 256;
 
-    /// <summary>Lowercase hex SHA-256 of the whole token, <c>stl_</c> prefix included.</summary>
+    /// <summary>
+    /// Lowercase hex SHA-256 of the whole token, <c>crl_</c> prefix included
+    /// (or <c>stl_</c> for a device paired before the rename).
+    /// </summary>
     public const int HashLength = 64;
 
     public Guid Id { get; set; } = Guid.NewGuid();
