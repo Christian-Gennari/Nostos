@@ -1,0 +1,16 @@
+dataBytes=9834
+dataSha256=de324eaa9b08552d9c030863172f6e913629d37dfe7299476555f290cce057f7
+works=4
+books=5
+notes=2
+topics=2
+noteTopics=3
+writings=2
+writingNotes=1
+collections=2
+collectionMemberships=3
+acquisitions=1
+assistantSettings=1
+noteImportBookLinks=1
+mediaEntries=9
+readingListEntries=2
