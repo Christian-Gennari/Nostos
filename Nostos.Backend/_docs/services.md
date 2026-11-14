@@ -152,7 +152,7 @@ A thread-safe singleton that manages the application's backup configuration and 
 
 ### Responsibilities
 1. **Settings Persistence:** Handles atomic reads/writes of `BackupSettings` to a local JSON file.
-2. **Maintenance Mode:** Projects the singleton `ILibraryMaintenanceCoordinator` through `IsInMaintenanceMode`. Compatibility enter/exit calls reference-count one exclusive coordinator lease; backup restore uses the asynchronous drain barrier directly.
+2. **Maintenance Mode:** Projects the singleton `ILibraryMaintenanceCoordinator` through `IsInMaintenanceMode`. Callers hold the coordinator's asynchronous lease directly; backup restore uses the drain barrier, not a synchronous shim.
 3. **Progress Tracking:** Provides a volatile storage for the current backup/restore step, percentage, and step count.
 
 ---

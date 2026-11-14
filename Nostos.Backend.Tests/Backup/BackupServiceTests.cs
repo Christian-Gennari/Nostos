@@ -38,7 +38,7 @@ public sealed class BackupServiceTests
     };
 
     [Fact]
-    public async Task BackupArchive_IncludesWhitelistedMetadata_WithExactValues()
+    public async Task BackupArchive_CarriesTheDatabaseAndNoMetadataJsonDump()
     {
         using var h = BackupHarness.Create();
         await SeedBooksAndNotesScenarioAsync(h);
@@ -50,13 +50,57 @@ public sealed class BackupServiceTests
         archivePath.Should().NotBeNull();
 
         using var zip = ZipFile.OpenRead(archivePath!);
-        zip.GetEntry("metadata/notes.json").Should().NotBeNull("the .nostos archive must include metadata/notes.json");
-        zip.GetEntry("metadata/topics.json").Should().NotBeNull();
-        zip.GetEntry("metadata/collections.json").Should().NotBeNull();
-        zip.GetEntry("metadata/writings.json").Should().NotBeNull();
+        zip.Entries.Should().NotContain(
+            e => e.FullName.StartsWith("metadata/"),
+            "restore reads only database/ and books/; the JSON dump was never read back");
         zip.GetEntry("database/nostos.db").Should().NotBeNull();
         zip.GetEntry("manifest.json").Should().NotBeNull();
         zip.Entries.Should().NotContain(e => e.FullName.StartsWith("books/"), "IncludeBookFiles=false must not copy book files");
+    }
+
+    [Fact]
+    public async Task Restore_AcceptsAnOlderArchiveThatStillCarriesTheMetadataJsonDump()
+    {
+        // Backups written before #1608 also contain metadata/*.json. Nothing
+        // reads it, but an existing archive must keep restoring exactly as it
+        // did, so the extra folder is ignored rather than rejected.
+        using var h = BackupHarness.Create();
+        await SeedBooksAndNotesScenarioAsync(h);
+
+        var created = await h.Service.CreateBackupAsync();
+        created.Status.Should().Be(BackupStatus.Completed);
+        var archivePath = h.Service.GetLocalArchivePath(created.Id)!;
+
+        using (var zip = ZipFile.Open(archivePath, ZipArchiveMode.Update))
+        {
+            var entry = zip.CreateEntry("metadata/books.json");
+            using var stream = entry.Open();
+            stream.Write("[]"u8);
+        }
+
+        // Rewriting the archive changes its bytes, so the live checksum no
+        // longer describes it. An old archive's record is not rewritten
+        // either; dropping the digest leaves the original restore path.
+        await using (var db = h.NewDbContext())
+        {
+            var row = await db.BackupRecords.SingleAsync(r => r.Id == created.Id);
+            row.ManifestJson = null;
+            await db.SaveChangesAsync();
+        }
+
+        await using (var db = h.NewDbContext())
+        {
+            db.Notes.RemoveRange(db.Notes);
+            db.Books.RemoveRange(db.Books);
+            await db.SaveChangesAsync();
+        }
+
+        var restored = await h.Service.RestoreBackupAsync(created.Id);
+        restored.Success.Should().BeTrue(restored.Message);
+
+        await using var after = h.NewDbContext();
+        (await after.Books.CountAsync()).Should().Be(2);
+        (await after.Notes.CountAsync()).Should().Be(1);
     }
 
     [Fact]
@@ -121,12 +165,6 @@ public sealed class BackupServiceTests
 
         var created = await h.Service.CreateBackupAsync();
         created.Status.Should().Be(BackupStatus.Completed);
-
-        using (var zip = ZipFile.OpenRead(h.Service.GetLocalArchivePath(created.Id)!))
-        {
-            using var reader = new StreamReader(zip.GetEntry("metadata/topics.json")!.Open());
-            (await reader.ReadToEndAsync()).Should().Contain(words, "the readable metadata carries the description too");
-        }
 
         await using (var db = h.NewDbContext())
         {
@@ -430,16 +468,6 @@ public sealed class BackupServiceTests
         {
             zip.GetEntry($"books/{bookId}/book.m4b")
                 .Should().NotBeNull("the imported recording itself must be in the archive");
-
-            var booksEntry = zip.GetEntry("metadata/books.json");
-            booksEntry.Should().NotBeNull();
-
-            using var reader = new StreamReader(booksEntry!.Open());
-            var booksJson = await reader.ReadToEndAsync();
-
-            booksJson.Should().Contain("librivox", "provenance is what says where the file came from");
-            booksJson.Should().Contain("8260");
-            booksJson.Should().Contain("librivox-mp3-sections");
         }
 
         // Lose the recording, then restore.
@@ -969,18 +997,25 @@ public sealed class BackupServiceTests
         var created = await h.Service.CreateBackupAsync();
         created.Status.Should().Be(BackupStatus.Completed);
 
-        using var zip = ZipFile.OpenRead(h.Service.GetLocalArchivePath(created.Id)!);
+        var archivePath = h.Service.GetLocalArchivePath(created.Id)!;
+        using var zip = ZipFile.OpenRead(archivePath);
         using var stream = zip.GetEntry("manifest.json")!.Open();
         var inArchive = (await JsonSerializer.DeserializeAsync<BackupManifestDto>(stream, TestJsonOpts))!;
         inArchive.BookFileCount.Should().Be(1);
         inArchive.DatabaseSizeBytes.Should().BeGreaterThan(0);
-        inArchive.TotalSizeBytes.Should().BeGreaterThan(inArchive.DatabaseSizeBytes);
+        zip.Entries.Should().NotContain(e => e.FullName.StartsWith("metadata/"));
+        inArchive.TotalSizeBytes.Should().Be(
+            zip.Entries.Where(e => e.FullName != "manifest.json").Sum(e => e.Length),
+            "TotalSizeBytes counts the real payload the archive carries: the database snapshot and its book files");
 
         await using var db = h.NewDbContext();
-        var stored = JsonSerializer.Deserialize<BackupManifestDto>(
-            (await db.BackupRecords.SingleAsync(r => r.Id == created.Id)).ManifestJson!, TestJsonOpts)!;
+        var row = await db.BackupRecords.SingleAsync(r => r.Id == created.Id);
+        var stored = JsonSerializer.Deserialize<BackupManifestDto>(row.ManifestJson!, TestJsonOpts)!;
         stored.BookFileCount.Should().Be(1);
         stored.DatabaseSizeBytes.Should().Be(inArchive.DatabaseSizeBytes);
+        stored.TotalSizeBytes.Should().Be(new FileInfo(archivePath).Length,
+            "the stored manifest describes the archive file the record points at");
+        row.SizeBytes.Should().Be(new FileInfo(archivePath).Length);
         stored.Checksum.Should().NotBeEmpty();
     }
 
