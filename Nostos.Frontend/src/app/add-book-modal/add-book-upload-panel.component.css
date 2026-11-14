@@ -1,5 +1,9 @@
 /* The focused upload view (#1275). A section inside the existing sheet, not a
    second card: the mark, the file's identity, one bar and the way out. */
+/* A component host is inline by default; the panel is a body of the sheet. */
+:host {
+  display: block;
+}
 .upload-view {
   display: flex;
   flex-direction: column;

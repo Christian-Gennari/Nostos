@@ -1,6 +1,11 @@
 /* The book record inside the sheet: essentials first, everything else behind
    one shallow disclosure. The shell owns the frame; the file step owns the
    arrival summary. */
+/* `display: block` because a component host defaults to inline; the form is a
+   body of the shell's flow, not a run of text inside it. */
+:host {
+  display: block;
+}
 .modal-form {
   display: flex;
   flex-direction: column;

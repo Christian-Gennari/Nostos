@@ -4,6 +4,11 @@
    account of what is happening while it runs.
    Colours come only from the existing token graph — no new literals, so the
    design-language ratchet is unaffected. */
+/* A component host is inline by default; this surface is a full body of the
+   sheet, not a phrase in one. */
+:host {
+  display: block;
+}
 .source-hint {
   display: block;
   margin: 0.4rem 0 0;
@@ -185,10 +190,12 @@
   opacity: 0.6;
 }
 /* nostos-book-cover at this row's own 34×52 box. */
+/* The cover's box belongs to its own `size="md"` rung (36×54). Declaring the
+   same properties here would win or lose a specificity tie against that rule
+   depending on which component's stylesheet the browser injected last, so the
+   row only owns the flex behaviour. */
 .source-cover {
   flex: 0 0 auto;
-  width: 34px;
-  height: 52px;
 }
 .source-result-text {
   display: flex;

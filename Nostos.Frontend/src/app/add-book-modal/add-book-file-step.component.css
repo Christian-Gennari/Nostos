@@ -1,5 +1,14 @@
 /* How the book arrived (a file, a source, paper, or nothing) and the drop zones
    that change it. The shell owns the sheet frame; this owns the file step. */
+/* The step's parts were direct children of the shell's `.review-flow` before the
+   split, where its `gap: 1rem` spaced them. The host replaces that container, so
+   it carries the same stack — an unstyled inline host left the summary, notices
+   and drop-zone sections flush against each other. */
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
 .acquisition-start {
   display: grid;
   grid-template-columns: auto 1fr;
@@ -12,6 +21,11 @@
   color: var(--color-text-main);
   font-size: 0.96rem;
   font-weight: 600;
+}
+/* The "Book file (optional)" heading owns this class too, so the shell's single
+   `.section-heading` margin has to travel with the step that uses it. */
+.section-heading {
+  margin-bottom: 0.85rem;
 }
 .acquisition-start__copy p,
 .section-heading p {
