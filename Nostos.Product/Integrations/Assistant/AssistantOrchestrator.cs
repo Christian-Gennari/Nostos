@@ -31,6 +31,17 @@ namespace Nostos.Backend.Integrations.Assistant;
 /// book → a page; externally played audiobook → a timestamp) instead of
 /// guessing. An explicitly skipped anchor still captures as <c>unknown</c>.</item>
 /// </list>
+///
+/// <para>
+/// The turn is split along those seams (issue #1598):
+/// <see cref="AssistantTurnClocks"/> owns the two wall clocks,
+/// <see cref="AssistantTurnMetering"/> the usage lease, metrics and provider
+/// failure settlement, <see cref="AssistantCapabilityDispatcher"/> every
+/// per-call guard, argument rewrite and bounded recovery, and
+/// <see cref="AssistantTurnFinalizer"/> the ending, the reply and its guards.
+/// This class keeps the turn's own observations and the loop that ties the four
+/// together.
+/// </para>
 /// </summary>
 public sealed class AssistantOrchestrator(
     AssistantCapabilityRegistry registry,
@@ -45,14 +56,20 @@ public sealed class AssistantOrchestrator(
     TimeProvider? timeProvider = null,
     IAssistantOwner? owner = null)
 {
-    private readonly IAiUsageAccountingService _usageAccounting =
-        usageAccounting ?? NoOpAiUsageAccountingService.Instance;
     private readonly TimeProvider _time = timeProvider ?? TimeProvider.System;
     private readonly IAssistantOwner _owner = owner ?? SingleAssistantOwner.Instance;
     private readonly AssistantConversationBuilder _conversation =
         new(registry, new AssistantContextPacker(options));
     private readonly AssistantCapturePolicy _capturePolicy = new(library);
     private readonly AssistantCaptureIntentGuard _captureIntentGuard = new(library);
+    private readonly AssistantTurnMetering _metering = new(
+        usageAccounting ?? NoOpAiUsageAccountingService.Instance,
+        logger);
+    private readonly AssistantTurnClocks _clocks = new(
+        options,
+        timeProvider ?? TimeProvider.System,
+        logger);
+    private readonly AssistantTurnFinalizer _finalizer = new(changesets, logger);
 
     /// <summary>
     /// Generous on purpose: a tool-calling turn can spend reasoning tokens even
@@ -124,18 +141,8 @@ public sealed class AssistantOrchestrator(
     public const string BookPromptKind = "book";
 
     private const int MaxBookContinuationAttempts = 3;
-    private const string CaptureCapability = "notes_capture";
-    private const string RewriteCaptureCapability = "notes_rewrite_capture";
-    private const string BookTextCapability = "book_text_search";
-    private const string FindQuoteCapability = "book_text_find_quote";
-    private const string KnowledgeSearchCapability = "knowledge_search";
-    private const string KnowledgeReadCapability = "knowledge_read_evidence";
-    private const string NotesListForBookCapability = "notes_list_for_book";
-    private const string NotesSearchCapability = "notes_search";
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-
-    private const string TopicProposalCapability = "topics_propose_links";
 
     /// <summary>
     /// Reads that return text the user did not write in this conversation:
@@ -144,13 +151,13 @@ public sealed class AssistantOrchestrator(
     /// </summary>
     private static readonly HashSet<string> UntrustedContentCapabilities = new(StringComparer.Ordinal)
     {
-        BookTextCapability,
-        FindQuoteCapability,
-        KnowledgeSearchCapability,
-        KnowledgeReadCapability,
+        AssistantCapabilityNames.BookTextSearch,
+        AssistantCapabilityNames.FindQuote,
+        AssistantCapabilityNames.KnowledgeSearch,
+        AssistantCapabilityNames.KnowledgeRead,
         "knowledge_overview",
-        NotesListForBookCapability,
-        NotesSearchCapability,
+        AssistantCapabilityNames.NotesListForBook,
+        AssistantCapabilityNames.NotesSearch,
         "notes_list_unlinked",
         "notes_read_for_review",
         "library_get_book",
@@ -245,7 +252,7 @@ public sealed class AssistantOrchestrator(
         var messages = _conversation.BuildConversation(request with { Context = turnContext });
         var tools = _conversation.BuildTools()
             .Where(tool => !captureSuppressed
-                || !string.Equals(tool.Name, CaptureCapability, StringComparison.Ordinal))
+                || !string.Equals(tool.Name, AssistantCapabilityNames.Capture, StringComparison.Ordinal))
             .ToList();
 
         var suggestions = new List<AssistantSuggestionDto>();
@@ -263,15 +270,10 @@ public sealed class AssistantOrchestrator(
         var readUntrustedContent = false;
         AssistantAnchorPromptDto? anchorPrompt = null;
         string? acknowledgement = null;
-        string? finalContent = null;
         string? lastAssistantContent = null;
         string? capturedNoteId = null;
         AssistantTurnErrorDto? terminalError = null;
         var retrieval = new AssistantRetrievalTurnState(turnContext);
-        // A quote looked up by its first and last words that did not resolve
-        // to one passage leaves nothing to save this turn: the dictated words
-        // are not the quote, and saving them would pass them off as one.
-        var quoteLookupUnresolved = false;
         var earlierUserMessages = (request.History ?? [])
             .Where(message => string.Equals(message.Role, "user", StringComparison.OrdinalIgnoreCase))
             .Select(message => message.Text)
@@ -285,6 +287,28 @@ public sealed class AssistantOrchestrator(
         // canonical writes, i.e. the model had nothing left to do but reply.
         var lastRoundOnlySucceededMutations = false;
 
+        var dispatcher = new AssistantCapabilityDispatcher(
+            registry,
+            _capturePolicy,
+            continuations,
+            draft,
+            retrieval,
+            turnContext,
+            request.History,
+            request.Message,
+            earlierUserMessages,
+            captureSuppressed,
+            _owner.Key,
+            conversationKey,
+            turnId,
+            proposalUsesReadEvidence: args => AssistantTopicProposals.UsesReadEvidence(
+                args,
+                turnContext.BrainReviewNoteId,
+                reviewedNoteIds,
+                inspectedTopicIds,
+                topicsInspected),
+            activity);
+
         var iterations = Math.Max(1, options.MaxToolIterations);
         for (var iteration = 0; iteration < iterations; iteration++)
         {
@@ -294,115 +318,47 @@ public sealed class AssistantOrchestrator(
                 break;
             }
 
-            // The turn's clocks (#406, #1561), innermost first:
-            //   1. per provider request — RequestTimeoutSeconds, typed as a
-            //      provider timeout;
-            //   2. the whole turn — MaxTurnElapsedMilliseconds, typed as the
-            //      execution budget.
-            // Both use the turn's TimeProvider. A request gets the smaller of
-            // its own timeout and the remaining turn budget; when the turn has
-            // less than a full request timeout left, the turn clock is the one
-            // that fires, because it has nothing left to order against. The
-            // startup validation guarantees a full request timeout fits inside
-            // this turn budget in a fresh turn.
+            // The turn's clocks (#406, #1561) live in AssistantTurnClocks: a
+            // per-request timeout inside a whole-turn budget, both on the turn's
+            // TimeProvider. The ceiling is checked before anything is spent, so
+            // a reached budget never buys another upstream call.
             var usageBeforeCall = executionMeter.Snapshot();
-            var exceededCeiling = AssistantExecutionBudget.ExceededCeiling(usageBeforeCall, options);
-            if (exceededCeiling is not null)
-            {
-                logger.LogDebug(
-                    "Assistant turn stopped at the {Ceiling} execution ceiling.",
-                    exceededCeiling);
-                stopReason = AssistantTurnStopReason.SafetyCeiling;
-                break;
-            }
-
-            var requestTimeoutMilliseconds =
-                AssistantExecutionBudget.RequestTimeoutMilliseconds(options);
-            long? remainingTurnMilliseconds = options.MaxTurnElapsedMilliseconds > 0
-                ? options.MaxTurnElapsedMilliseconds - usageBeforeCall.ElapsedMilliseconds
-                : null;
-            if (remainingTurnMilliseconds is <= 0)
+            if (_clocks.Open(usageBeforeCall) is not { } window)
             {
                 stopReason = AssistantTurnStopReason.SafetyCeiling;
                 break;
-            }
-
-            CancellationTokenSource? turnTimer = null;
-            CancellationTokenSource? requestTimer = null;
-            CancellationTokenSource? upstreamLink = null;
-            var upstreamCancellation = ct;
-            if (remainingTurnMilliseconds is { } turnMilliseconds)
-            {
-                turnTimer = new CancellationTokenSource(
-                    TimeSpan.FromMilliseconds(turnMilliseconds),
-                    _time);
-            }
-
-            // Only a request that can finish inside what is left of the turn gets
-            // its own clock; otherwise the turn clock is the deliberate failure.
-            if (requestTimeoutMilliseconds > 0
-                && (remainingTurnMilliseconds is not { } remaining
-                    || requestTimeoutMilliseconds < remaining))
-            {
-                requestTimer = new CancellationTokenSource(
-                    TimeSpan.FromMilliseconds(requestTimeoutMilliseconds),
-                    _time);
-            }
-
-            if (turnTimer is not null || requestTimer is not null)
-            {
-                var tokens = new List<CancellationToken>(3) { ct };
-                if (requestTimer is not null) tokens.Add(requestTimer.Token);
-                if (turnTimer is not null) tokens.Add(turnTimer.Token);
-                upstreamLink = CancellationTokenSource.CreateLinkedTokenSource(tokens.ToArray());
-                upstreamCancellation = upstreamLink.Token;
             }
 
             // A host can reserve usage before the first provider call. SelfHosted
             // uses a no-op accounting service.
-            usageLease ??= await _usageAccounting.BeginLlmTurnAsync(ct);
+            usageLease ??= await _metering.BeginAsync(ct);
             executionMeter.RecordUpstreamRequest();
 
-            LlmCompletion completion;
-            try
+            AssistantUpstreamResult upstream;
+            using (var call = _clocks.Begin(window, ct))
             {
-                completion = await llm.CompleteAsync(
-                    new LlmCompletionRequest(messages, tools, MaxResponseTokens),
-                    upstreamCancellation);
+                upstream = await call.CompleteAsync(
+                    llm,
+                    new LlmCompletionRequest(messages, tools, MaxResponseTokens));
             }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+
+            if (upstream.Outcome == AssistantUpstreamOutcome.Cancelled)
             {
                 stopReason = AssistantTurnStopReason.Cancelled;
                 break;
             }
-            catch (OperationCanceledException) when (requestTimer?.IsCancellationRequested == true)
+
+            if (upstream.Outcome == AssistantUpstreamOutcome.TurnCeilingReached)
             {
-                // The request's own clock fired before the turn's, so the person
-                // gets the retryable provider timeout, not "execution limit".
-                logger.LogDebug(
-                    "Ask Nostos provider request exceeded its {TimeoutSeconds} s timeout; " +
-                    "the turn budget was not reached.",
-                    options.RequestTimeoutSeconds);
-                throw await FinishProviderFailureAsync(
-                    LlmException.TimedOut(),
-                    executionMeter,
-                    usageLease,
-                    CommittedOutcomesOrNull(
-                        mutationCompleted, acknowledgement, capturedNoteId,
-                        executedCapabilities, sourceReferences, evidenceReferences,
-                        retrieval.ResolvedBook));
-            }
-            catch (OperationCanceledException) when (turnTimer?.IsCancellationRequested == true)
-            {
-                logger.LogDebug(
-                    "Assistant turn stopped at the wall-clock execution ceiling during an upstream call.");
                 stopReason = AssistantTurnStopReason.SafetyCeiling;
                 break;
             }
-            catch (LlmException exception)
+
+            if (upstream.Outcome is AssistantUpstreamOutcome.RequestTimedOut
+                or AssistantUpstreamOutcome.ProviderFailed)
             {
-                throw await FinishProviderFailureAsync(
-                    exception,
+                throw await _metering.FailAsync(
+                    upstream.Failure!,
                     executionMeter,
                     usageLease,
                     CommittedOutcomesOrNull(
@@ -410,13 +366,8 @@ public sealed class AssistantOrchestrator(
                         executedCapabilities, sourceReferences, evidenceReferences,
                         retrieval.ResolvedBook));
             }
-            finally
-            {
-                upstreamLink?.Dispose();
-                requestTimer?.Dispose();
-                turnTimer?.Dispose();
-            }
 
+            var completion = upstream.Completion!;
             executionMeter.RecordCompletion(completion);
 
             if (ct.IsCancellationRequested)
@@ -425,7 +376,6 @@ public sealed class AssistantOrchestrator(
                 break;
             }
 
-            finalContent = completion.Content;
             if (!string.IsNullOrWhiteSpace(completion.Content))
             {
                 lastAssistantContent = completion.Content;
@@ -474,218 +424,54 @@ public sealed class AssistantOrchestrator(
                     continue;
                 }
 
-                JsonElement args;
-                var implicitReaderScope = false;
-                AssistantCapturePreparation? capture = null;
+                var dispatched = await dispatcher.DispatchAsync(call, capability, execution, ct);
 
-                if (capability.Trust == AssistantTrustClass.Capture
-                    && string.Equals(capability.Name, CaptureCapability, StringComparison.Ordinal))
-                {
-                    if (captureSuppressed)
-                    {
-                        // Durable writes must not depend on the model correctly
-                        // interpreting an explicit "do not save" instruction or
-                        // a short source clarification. The tool is also omitted
-                        // from the advertised catalogue for these turns; this is
-                        // the server-side backstop if a provider still emits it.
-                        lastAssistantContent = null;
-                        messages.Add(LlmMessage.Tool(call.Id, ToolJson(new
-                        {
-                            status = "capture_rejected",
-                            message = "This turn is conversational control, not a capture. Nothing was saved. Do not call notes_capture again for this turn.",
-                        })));
-                        continue;
-                    }
+                if (dispatched.ClearsLastAssistantContent)
+                    lastAssistantContent = null;
 
-                    if (quoteLookupUnresolved
-                        && string.IsNullOrWhiteSpace(ReadString(
-                            AssistantToolArguments.ParseElement(call.ArgumentsJson), "quoteRef")))
-                    {
-                        lastAssistantContent = null;
-                        messages.Add(LlmMessage.Tool(call.Id, ToolJson(new
-                        {
-                            status = "capture_rejected",
-                            message = "book_text_find_quote did not find one passage, so there is nothing to save. Nothing was saved. Tell the user what book_text_find_quote said.",
-                        })));
-                        continue;
-                    }
-
-                    capture = await _capturePolicy.PrepareAsync(
-                        call.ArgumentsJson,
-                        turnContext,
-                        request.Message,
-                        fallbackContent: null,
-                        ct,
-                        earlierUserMessages);
-
-                    if (capture.Prompt is { } prompt)
-                    {
-                        var storedContinuation = continuations.Create(
-                            _owner.Key,
-                            conversationKey,
-                            turnId,
-                            prompt.Kind,
-                            call.ArgumentsJson,
-                            request.Message,
-                            turnContext);
-
-                        anchorPrompt = prompt with
-                        {
-                            ContinuationId = storedContinuation.ContinuationId,
-                        };
-                        messages.Add(LlmMessage.Tool(call.Id, ToolJson(new
-                        {
-                            status = capture.PromptStatus,
-                            kind = prompt.Kind,
-                            question = prompt.Question,
-                            continuationId = storedContinuation.ContinuationId,
-                            message = capture.PromptMessage,
-                        })));
-                        continue;
-                    }
-
-                    args = capture.Arguments!.Value;
-                }
-                else
-                {
-                    args = AssistantToolArguments.ParseElement(call.ArgumentsJson);
-                    // A rewrite is the user's to ask for, never the model's to
-                    // offer: without a request in their own words, nothing changes.
-                    // Which notes it may touch is the note service's check.
-                    if (string.Equals(capability.Name, RewriteCaptureCapability, StringComparison.Ordinal)
-                        && !AssistantRewriteIntent.Requested(request.Message))
-                    {
-                        messages.Add(LlmMessage.Tool(call.Id, ToolJson(new
-                        {
-                            status = "rewrite_rejected",
-                            message = "The user did not ask for a rewrite in this message. Nothing was changed.",
-                        })));
-                        continue;
-                    }
-
-                    // Like a capture, the open book is the app's: the quote is
-                    // looked up in the book the user is reading, never one the
-                    // model went and found.
-                    if (string.Equals(capability.Name, FindQuoteCapability, StringComparison.Ordinal)
-                        && Guid.TryParse(turnContext.BookId, out var openBookId))
-                    {
-                        var findArgs = AssistantToolArguments.ParseObject(call.ArgumentsJson);
-                        findArgs["bookId"] = openBookId.ToString();
-                        args = JsonSerializer.SerializeToElement(findArgs);
-                    }
-
-                    if (string.Equals(capability.Name, BookTextCapability, StringComparison.Ordinal)
-                        || string.Equals(capability.Name, KnowledgeSearchCapability, StringComparison.Ordinal))
-                    {
-                        args = retrieval.ApplyImplicitBookScope(
-                            args,
-                            request.History,
-                            out implicitReaderScope);
-                    }
-                }
-
-                // The receipt key identifies the logical mutation, not its
-                // position in the model's tool sequence. A retried delivery is
-                // free to reorder, add, or drop calls, so a positional key can
-                // miss an earlier write (a duplicate) or land on a different
-                // command's receipt (a wrong replay). One logical operation —
-                // same TurnId, capability and effective arguments — reuses one
-                // identity and replays instead of writing again; genuinely
-                // different mutations stay distinct. Capture fingerprints the
-                // server-prepared arguments, so model-chosen book or anchor
-                // noise cannot change the identity.
-                var toolContext = new AssistantToolContext(
-                    ClientId: conversationKey,
-                    IdempotencyKey: AssistantMutationIdentity.Key(turnId, capability.Name, args),
-                    Changeset: draft);
-
-                if (AssistantTurnActivities.ForCapability(capability) is { } turnActivity
-                    && activity is not null)
-                {
-                    await activity(turnActivity);
-                }
-
-                var mutation = capability.Trust is
-                    AssistantTrustClass.Capture or AssistantTrustClass.Act;
-
-                // Stop and canonical write-start share one lifecycle gate.
-                // If Stop wins, no write begins. If the mutation lease wins,
-                // that write is already considered in-flight and is allowed to
-                // reach its truthful terminal state before the turn stops.
-                AssistantTurnMutationLease? mutationLease = null;
-                if (mutation)
-                {
-                    mutationLease = execution?.TryBeginMutation();
-                    if ((execution is not null && mutationLease is null)
-                        || (execution is null && ct.IsCancellationRequested))
-                    {
-                        stopReason = AssistantTurnStopReason.Cancelled;
-                        break;
-                    }
-                }
-
-                AssistantToolResult result;
-                try
-                {
-                    result = string.Equals(capability.Name, TopicProposalCapability, StringComparison.Ordinal)
-                        && !ProposalUsesReadEvidence(
-                            args, turnContext.BrainReviewNoteId,
-                            reviewedNoteIds, inspectedTopicIds, topicsInspected)
-                        ? AssistantToolResult.Fail(
-                            AssistantErrorCodes.InvalidArguments,
-                            "Read the target note and existing topic evidence in this turn before proposing those IDs.")
-                        : await registry.InvokeAsync(
-                            capability.Name,
-                            args,
-                            toolContext,
-                            mutation ? CancellationToken.None : ct);
-
-                    // One bounded server-owned recovery protects retrieval from a
-                    // weak query rewrite. Keep the model's exact scope, but when
-                    // a ready source returned no passage, retry once with the
-                    // distinctive lexical terms the user actually typed.
-                    if (result.Success
-                        && string.Equals(capability.Name, BookTextCapability, StringComparison.Ordinal)
-                        && result.Data is { } bookTextData
-                        && retrieval.BuildBookTextFallbackArguments(
-                            args,
-                            request.Message,
-                            bookTextData) is { } fallbackArgs)
-                    {
-                        result = await registry.InvokeAsync(
-                            capability.Name,
-                            fallbackArgs,
-                            toolContext,
-                            ct);
-                        args = fallbackArgs;
-                    }
-                    else if (result.Success
-                        && string.Equals(capability.Name, KnowledgeSearchCapability, StringComparison.Ordinal)
-                        && result.Data is { } knowledgeData
-                        && retrieval.BuildKnowledgeScopeFallbackArguments(
-                            args,
-                            knowledgeData,
-                            implicitReaderScope) is { } widenedArgs)
-                    {
-                        // Keep the original scoped args for turn-state truth:
-                        // this turn did attempt a reader-scoped lookup before
-                        // the bounded whole-library fallback.
-                        result = await registry.InvokeAsync(
-                            capability.Name,
-                            widenedArgs,
-                            toolContext,
-                            ct);
-                    }
-                }
-                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                if (dispatched.Status == AssistantCapabilityCallStatus.Stopped)
                 {
                     stopReason = AssistantTurnStopReason.Cancelled;
                     break;
                 }
-                finally
+
+                if (dispatched.Status == AssistantCapabilityCallStatus.Rejected)
                 {
-                    mutationLease?.Dispose();
+                    messages.Add(LlmMessage.Tool(call.Id, ToolJson(new
+                    {
+                        status = dispatched.RejectionStatus,
+                        message = dispatched.RejectionMessage,
+                    })));
+                    continue;
                 }
+
+                if (dispatched.Status == AssistantCapabilityCallStatus.CapturePrompt)
+                {
+                    // Asking for deterministic capture input ends this turn. The
+                    // user's actual answer arrives as the next Message plus this
+                    // continuation id; it is never hidden in context or replayed
+                    // as the original message.
+                    var prompt = dispatched.Prompt!;
+                    anchorPrompt = prompt;
+                    messages.Add(LlmMessage.Tool(call.Id, ToolJson(new
+                    {
+                        status = dispatched.PromptStatus,
+                        kind = prompt.Kind,
+                        question = prompt.Question,
+                        continuationId = prompt.ContinuationId,
+                        message = dispatched.PromptMessage,
+                    })));
+                    continue;
+                }
+
+                var result = dispatched.Result!;
+                // The effective arguments the capability ran with: a prepared
+                // capture, the app's open book, an implicit reader scope, or a
+                // bounded retrieval retry. Turn-state truth reads this, not the
+                // model's original call.
+                var args = dispatched.Arguments;
+                var mutation = capability.Trust is
+                    AssistantTrustClass.Capture or AssistantTrustClass.Act;
 
                 // Evidence joins the turn's list before the model reads it, so
                 // each item can carry its citation number (issue #1002).
@@ -741,23 +527,28 @@ public sealed class AssistantOrchestrator(
                 if (result.Success && capability.Trust == AssistantTrustClass.Suggest)
                 {
                     if (string.Equals(capability.Name, "notes_read_for_review", StringComparison.Ordinal)
-                        && Guid.TryParse(ReadString(args, "noteId"), out var readNoteId))
+                        && AssistantCapabilityPayloads.ReadNoteId(args) is { } readNoteId)
                         reviewedNoteIds.Add(readNoteId);
 
                     if (string.Equals(capability.Name, "topics_list", StringComparison.Ordinal)
                         || string.Equals(capability.Name, "topics_search", StringComparison.Ordinal))
                     {
                         topicsInspected = true;
-                        if (result.Data is { } topicRows && topicRows.ValueKind == JsonValueKind.Array)
-                            foreach (var row in topicRows.EnumerateArray())
-                                if (row.ValueKind == JsonValueKind.Object
-                                    && Guid.TryParse(ReadString(row, "id"), out var readTopicId))
-                                    inspectedTopicIds.Add(readTopicId);
+                        inspectedTopicIds.UnionWith(AssistantCapabilityPayloads.ReadTopicIds(result.Data));
                     }
 
-                    MergeSuggestions(suggestions, ExtractSuggestions(capability.Name, result.Data));
+                    if (string.Equals(
+                            capability.Name,
+                            AssistantCapabilityNames.TopicProposal,
+                            StringComparison.Ordinal))
+                    {
+                        AssistantTopicProposals.Merge(
+                            suggestions,
+                            AssistantTopicProposals.ExtractSuggestions(result.Data),
+                            MaxTopicSuggestions);
+                    }
 
-                    if (string.Equals(capability.Name, BookTextCapability, StringComparison.Ordinal))
+                    if (string.Equals(capability.Name, AssistantCapabilityNames.BookTextSearch, StringComparison.Ordinal))
                     {
                         var sources = AssistantEvidenceProjection
                             .ExtractBookTextSources(result.Data)
@@ -765,7 +556,7 @@ public sealed class AssistantOrchestrator(
                         sourceReferences.AddRange(sources);
                         retrieval.RecordSources(sources);
                     }
-                    else if (string.Equals(capability.Name, KnowledgeSearchCapability, StringComparison.Ordinal))
+                    else if (string.Equals(capability.Name, AssistantCapabilityNames.KnowledgeSearch, StringComparison.Ordinal))
                     {
                         var sources = AssistantEvidenceProjection
                             .ExtractKnowledgeSearchSources(result.Data)
@@ -773,7 +564,7 @@ public sealed class AssistantOrchestrator(
                         sourceReferences.AddRange(sources);
                         retrieval.RecordSources(sources);
                     }
-                    else if (string.Equals(capability.Name, KnowledgeReadCapability, StringComparison.Ordinal))
+                    else if (string.Equals(capability.Name, AssistantCapabilityNames.KnowledgeRead, StringComparison.Ordinal))
                     {
                         var sources = AssistantEvidenceProjection
                             .ExtractKnowledgeReadSources(result.Data)
@@ -785,20 +576,15 @@ public sealed class AssistantOrchestrator(
                     }
                 }
 
-                if (string.Equals(capability.Name, FindQuoteCapability, StringComparison.Ordinal))
-                {
-                    quoteLookupUnresolved = !(result.Success
-                        && result.Data is { ValueKind: JsonValueKind.Object } found
-                        && string.Equals(ReadString(found, "status"), "found", StringComparison.Ordinal));
-                }
-
                 if (result.Success
                     && capability.Trust == AssistantTrustClass.Capture
-                    && string.Equals(capability.Name, CaptureCapability, StringComparison.Ordinal))
+                    && string.Equals(capability.Name, AssistantCapabilityNames.Capture, StringComparison.Ordinal))
                 {
                     acknowledgement = AssistantCapturePolicy.BuildAcknowledgement(
-                        capture!.BookTitle, capture.QuoteFidelity, Rewritten(result.Data));
-                    capturedNoteId = ReadNoteId(result.Data);
+                        dispatched.Capture!.BookTitle,
+                        dispatched.Capture.QuoteFidelity,
+                        AssistantCapabilityPayloads.IsRewritten(result.Data));
+                    capturedNoteId = AssistantCapabilityPayloads.ReadCapturedNoteId(result.Data);
                 }
 
                 if (ct.IsCancellationRequested)
@@ -824,208 +610,53 @@ public sealed class AssistantOrchestrator(
 
         }
 
-        // The turn's library changes, judged as one changeset. A stopped turn
-        // applies nothing it staged; a turn cut short by a guard can only ever
-        // offer its changes for review, never apply them unseen.
-        // A retried delivery of a turn whose changes already applied reports
-        // them again, whether or not the model repeated its tool calls.
-        var changeOutcome = AssistantChangesetOutcome.None;
-        if (stopReason != AssistantTurnStopReason.Cancelled)
-        {
-            // The server cannot tell whether a model stopped by a guard had
-            // finished staging, so its changes are only ever offered for review.
-            var incomplete = stopReason is
-                AssistantTurnStopReason.SafetyCeiling or
-                AssistantTurnStopReason.RepeatedToolLoop;
-            using var applyLease = draft.IsEmpty ? null : execution?.TryBeginMutation();
-            if (!draft.IsEmpty && execution is not null && applyLease is null)
-            {
-                stopReason = AssistantTurnStopReason.Cancelled;
-            }
-            else
-            {
-                changeOutcome = await changesets.FinishTurnAsync(
-                    conversationKey, turnId, draft, readUntrustedContent, incomplete, ct);
-                if (changeOutcome.Applied)
-                    mutationCompleted = true;
-            }
-        }
+        // The turn's ending — changeset, ceiling, error precedence, reply and the
+        // three reply guards — belongs to AssistantTurnFinalizer. The loop above
+        // only reports what it observed.
+        var final = await _finalizer.CompleteAsync(
+            new AssistantTurnFinalInput(
+                conversationKey,
+                turnId,
+                request.Message,
+                draft,
+                retrieval,
+                stopReason,
+                readUntrustedContent,
+                mutationCompleted,
+                mutationFailed,
+                lastRoundOnlySucceededMutations,
+                acknowledgement,
+                capturedNoteId,
+                lastAssistantContent,
+                anchorPrompt,
+                terminalError,
+                successfulCapabilities,
+                evidenceReferences.Count,
+                execution),
+            ct);
 
-        var ceilingOutcome = CeilingOutcome.None;
-        if (stopReason == AssistantTurnStopReason.Cancelled)
-        {
-            terminalError = new AssistantTurnErrorDto(
-                AssistantErrorCodes.TurnCancelled,
-                mutationCompleted
-                    ? "Stopped. Changes that already completed remain applied."
-                    : "Stopped.");
-        }
-        else if (stopReason == AssistantTurnStopReason.SafetyCeiling)
-        {
-            // The ceiling is a runaway guard, not a rollback: a committed write
-            // must never be reported as a failed turn (#647).
-            ceilingOutcome = !mutationCompleted
-                ? CeilingOutcome.NothingCommitted
-                : !mutationFailed && lastRoundOnlySucceededMutations
-                    ? CeilingOutcome.Completed
-                    : CeilingOutcome.PartiallyCompleted;
-
-            terminalError = ceilingOutcome switch
-            {
-                CeilingOutcome.Completed => null,
-                CeilingOutcome.PartiallyCompleted => new AssistantTurnErrorDto(
-                    AssistantErrorCodes.PartiallyCompleted,
-                    PartiallyCompletedReply),
-                _ => new AssistantTurnErrorDto(
-                    AssistantErrorCodes.ExecutionBudgetExhausted,
-                    "This turn reached its execution limit before it could finish."),
-            };
-        }
-        else if (terminalError is null)
-        {
-            terminalError = retrieval.TerminalFailure(request.Message);
-        }
-
-        // A review card states that the turn stopped early, so the stop is not
-        // also reported as a failure beside it.
-        if (changeOutcome.AwaitingReview)
-            terminalError = null;
-
-        // Server-known boundaries outrank model narration. A provider can attach
-        // prose such as "Saved" or "Done" to a tool call even when Nostos knows
-        // it still needs input/approval or stopped at an execution guard.
-        var stoppedByExecutionGuard = stopReason is
-            AssistantTurnStopReason.SafetyCeiling or
-            AssistantTurnStopReason.RepeatedToolLoop;
-
-        string reply;
-        if (stopReason == AssistantTurnStopReason.Cancelled)
-        {
-            reply = string.Empty;
-        }
-        else if (anchorPrompt is not null)
-        {
-            reply = anchorPrompt.Question;
-        }
-        else if (changeOutcome.AwaitingReview)
-        {
-            reply = AssistantChangesetCoordinator.ReviewReply;
-        }
-        else if (changeOutcome.Error is { } changeError)
-        {
-            terminalError = changeError;
-            reply = changeError.Message;
-        }
-        else if (stoppedByExecutionGuard && acknowledgement is null)
-        {
-            reply = ceilingOutcome switch
-            {
-                CeilingOutcome.Completed => CompletedBeforeCeilingReply,
-                CeilingOutcome.PartiallyCompleted => PartiallyCompletedReply,
-                _ => IncompleteTurnReply,
-            };
-        }
-        else
-        {
-            reply = lastAssistantContent?.Trim() ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(reply) && acknowledgement is null)
-            {
-                reply = IncompleteTurnReply;
-            }
-        }
-
-        // A model may narrate a write or empty search result without ever
-        // executing the capability. Only server-observed successful calls can
-        // support those completion claims; otherwise fail closed with an honest
-        // typed turn result instead of presenting invented state as fact.
-        if (AssistantCompletionClaimGuard.Evaluate(reply, successfulCapabilities) is { } unverifiedClaim)
-        {
-            logger.LogWarning(
-                "Assistant completion-claim guard replaced an unverified {ClaimKind} claim; reply content is not logged.",
-                unverifiedClaim.Kind);
-            reply = unverifiedClaim.ReplacementReply;
-            terminalError ??= new AssistantTurnErrorDto(
-                AssistantErrorCodes.UnverifiedCompletionClaim,
-                unverifiedClaim.ReplacementReply);
-        }
-
-        // The conversational reply is the only text the guard may rewrite. Note
-        // content, quotes, processing results and plan summaries are the user's
-        // own words and must never be touched, so this runs here and nowhere else.
-        var selfAssertedVendor = AssistantIdentityGuard.MatchVendorSelfAssertion(reply);
-        if (selfAssertedVendor is not null)
-        {
-            // The matched term only: never the reply, the user's message, or the
-            // content that was removed.
-            logger.LogWarning(
-                "Assistant identity guard replaced a self-asserted vendor/model mention; reply content is not logged.");
-            reply = AssistantIdentityGuard.Apply(reply);
-        }
-
-        // A citation marker only survives when it points at this turn's evidence.
-        reply = AssistantCitations.Normalize(reply, evidenceReferences.Count);
-
-        var finalMetrics = executionMeter.Finish(stopReason);
-        LogExecutionMetrics(finalMetrics);
-        await CompleteUsageAsync(usageLease, finalMetrics);
+        var finalMetrics = executionMeter.Finish(final.StopReason);
+        _metering.Log(finalMetrics);
+        await _metering.CompleteAsync(usageLease, finalMetrics);
 
         logger.LogDebug(
             "Assistant turn handled: {Suggestions} suggestion(s), changeset {Changeset}, anchor prompt {HasPrompt}.",
             suggestions.Count,
-            changeOutcome.Changeset?.Status ?? "none",
+            final.Changeset?.Status ?? "none",
             anchorPrompt is not null);
 
-        var resolvedBook = retrieval.ResolvedBook;
-
         return new AssistantTurnResponse(
-            reply,
+            final.Reply,
             acknowledgement,
             anchorPrompt,
             suggestions,
-            changeOutcome.Changeset,
+            final.Changeset,
             capturedNoteId,
             executedCapabilities,
             sourceReferences,
-            terminalError,
+            final.Error,
             evidenceReferences,
-            resolvedBook);
-    }
-
-    private enum CeilingOutcome
-    {
-        None,
-        NothingCommitted,
-        Completed,
-        PartiallyCompleted,
-    }
-
-    /// <summary>
-    /// Records a provider failure as a provider-error stop and returns the exception
-    /// for the caller to throw. The panel shows plain words; the provider's own
-    /// detail (the HTTP status, the gateway's message, an unreachable host) is what
-    /// an owner needs to fix a misconfigured endpoint, so it goes to the log and
-    /// never carries the key.
-    ///
-    /// When the turn already committed something, the returned exception wraps
-    /// the typed failure together with those outcomes (#1558) so the endpoint can
-    /// report them beside the failure instead of dropping them.
-    /// </summary>
-    private async Task<Exception> FinishProviderFailureAsync(
-        LlmException exception,
-        AssistantExecutionMeter executionMeter,
-        AiUsageLease? usageLease,
-        AssistantTurnResponse? committed)
-    {
-        logger.LogWarning(
-            "Ask Nostos provider call failed ({Code}): {Detail}",
-            exception.Code,
-            exception.Message);
-        var metrics = executionMeter.Finish(AssistantTurnStopReason.ProviderError);
-        LogExecutionMetrics(metrics);
-        await CompleteUsageAsync(usageLease, metrics);
-        return committed is null
-            ? exception
-            : new AssistantTurnAbortedException(exception, committed);
+            retrieval.ResolvedBook);
     }
 
     /// <summary>
@@ -1056,45 +687,6 @@ public sealed class AssistantOrchestrator(
                 Evidence: [.. evidenceReferences],
                 ResolvedBook: resolvedBook)
             : null;
-
-    private Task CompleteUsageAsync(
-        AiUsageLease? lease,
-        AssistantExecutionMetrics metrics) =>
-        _usageAccounting.CompleteLlmTurnAsync(
-            lease,
-            new LlmProviderUsage(
-                metrics.UpstreamCallCount,
-                metrics.PromptTokens,
-                metrics.OutputTokens,
-                metrics.ThinkingTokens,
-                metrics.ReportedTotalTokens,
-                metrics.ToolLoopIterations,
-                metrics.StopReason.ToString(),
-                metrics.ProviderFinishReason),
-            CancellationToken.None);
-
-    private void LogExecutionMetrics(AssistantExecutionMetrics metrics)
-    {
-        // Content-free by design: this is safe to promote into Cloud usage
-        // accounting later without storing prompts, replies, tool arguments or
-        // private library results.
-        logger.LogDebug(
-            "Assistant turn execution: {UpstreamCalls} upstream call(s), {ToolCalls} tool call(s), " +
-            "{ToolLoopIterations} tool-loop iteration(s), prompt tokens {PromptTokens}, " +
-            "output tokens {OutputTokens}, thinking tokens {ThinkingTokens}, " +
-            "reported total tokens {ReportedTotalTokens}, elapsed {ElapsedMilliseconds} ms, " +
-            "stop {StopReason}, provider finish {ProviderFinishReason}.",
-            metrics.UpstreamCallCount,
-            metrics.ToolCallCount,
-            metrics.ToolLoopIterations,
-            metrics.PromptTokens,
-            metrics.OutputTokens,
-            metrics.ThinkingTokens,
-            metrics.ReportedTotalTokens,
-            metrics.ElapsedMilliseconds,
-            metrics.StopReason,
-            metrics.ProviderFinishReason ?? "(none)");
-    }
 
     // ------------------------------------------------------------------
     // Deterministic capture continuation — no model authority
@@ -1227,7 +819,7 @@ public sealed class AssistantOrchestrator(
             ClientId: conversationKey,
             IdempotencyKey: AssistantMutationIdentity.Key(
                 stored.OriginalTurnId,
-                CaptureCapability,
+                AssistantCapabilityNames.Capture,
                 capture.Arguments!.Value));
 
         if (ct.IsCancellationRequested)
@@ -1256,7 +848,7 @@ public sealed class AssistantOrchestrator(
         try
         {
             result = await registry.InvokeAsync(
-                CaptureCapability,
+                AssistantCapabilityNames.Capture,
                 capture.Arguments!.Value,
                 toolContext,
                 CancellationToken.None);
@@ -1285,11 +877,11 @@ public sealed class AssistantOrchestrator(
             Acknowledgement: AssistantCapturePolicy.BuildAcknowledgement(
                 capture.BookTitle,
                 capture.QuoteFidelity,
-                Rewritten(result.Data)),
+                AssistantCapabilityPayloads.IsRewritten(result.Data)),
             AnchorPrompt: null,
             Suggestions: [],
             Changeset: null,
-            CapturedNoteId: ReadNoteId(result.Data),
+            CapturedNoteId: AssistantCapabilityPayloads.ReadCapturedNoteId(result.Data),
             ExecutedCapabilities: [],
             Sources: [],
             Error: ct.IsCancellationRequested
@@ -1313,147 +905,6 @@ public sealed class AssistantOrchestrator(
             ExecutedCapabilities: [],
             Sources: [],
             Error: new AssistantTurnErrorDto(code, message));
-
-    // ------------------------------------------------------------------
-    // Suggestions (non-mutating)
-    // ------------------------------------------------------------------
-
-    private static bool ProposalUsesReadEvidence(
-        JsonElement args,
-        string? currentReviewNoteId,
-        HashSet<Guid> reviewedNoteIds,
-        HashSet<Guid> inspectedTopicIds,
-        bool topicsInspected)
-    {
-        if (args.ValueKind != JsonValueKind.Object
-            || !Guid.TryParse(ReadString(args, "noteId"), out var noteId)
-            || !reviewedNoteIds.Contains(noteId)
-            || (Guid.TryParse(currentReviewNoteId, out var currentNoteId) && currentNoteId != noteId)
-            || !topicsInspected
-            || !args.TryGetProperty("candidates", out var candidates)
-            || candidates.ValueKind != JsonValueKind.Array)
-            return false;
-
-        return candidates.EnumerateArray().All(candidate =>
-            candidate.ValueKind == JsonValueKind.Object
-            && Guid.TryParse(ReadString(candidate, "topicId"), out var topicId)
-            && inspectedTopicIds.Contains(topicId));
-    }
-
-    /// <summary>
-    /// Only an explicit, validated proposal capability can produce suggestions.
-    /// Ordinary topic reads are evidence, never implicit clickable actions.
-    /// </summary>
-    private static IEnumerable<AssistantSuggestionDto> ExtractSuggestions(
-        string capabilityName,
-        JsonElement? data)
-    {
-        if (!string.Equals(capabilityName, TopicProposalCapability, StringComparison.Ordinal)
-            || data is not { } element
-            || element.ValueKind != JsonValueKind.Object
-            || !element.TryGetProperty("candidates", out var candidates)
-            || candidates.ValueKind != JsonValueKind.Array)
-        {
-            yield break;
-        }
-
-        var noteId = ReadString(element, "noteId");
-        foreach (var item in candidates.EnumerateArray())
-        {
-            if (item.ValueKind != JsonValueKind.Object)
-            {
-                continue;
-            }
-
-            var name = ReadString(item, "name");
-            if (string.IsNullOrWhiteSpace(name))
-            {
-                continue;
-            }
-
-            var reason = ReadString(item, "reason");
-            if (string.IsNullOrWhiteSpace(reason)) continue;
-
-            yield return new AssistantSuggestionDto(
-                "topic",
-                name,
-                reason,
-                ReadString(item, "id"),
-                noteId);
-        }
-    }
-
-    /// <summary>
-    /// Adds incoming suggestions to the response, de-duplicated by identity and
-    /// capped for topics. The cap is what makes the review a small set rather
-    /// than a dump of the library; de-duplication handles repeated explicit
-    /// proposals in one turn. Nothing here creates or mutates anything.
-    /// </summary>
-    private static void MergeSuggestions(
-        List<AssistantSuggestionDto> target,
-        IEnumerable<AssistantSuggestionDto> incoming)
-    {
-        foreach (var suggestion in incoming)
-        {
-            var key = suggestion.Value ?? suggestion.Label;
-            if (target.Any(existing =>
-                    string.Equals(existing.Kind, suggestion.Kind, StringComparison.Ordinal)
-                    && string.Equals(existing.Value ?? existing.Label, key, StringComparison.OrdinalIgnoreCase)))
-            {
-                continue;
-            }
-
-            if (string.Equals(suggestion.Kind, "topic", StringComparison.Ordinal)
-                && target.Count(existing => string.Equals(existing.Kind, "topic", StringComparison.Ordinal))
-                    >= MaxTopicSuggestions)
-            {
-                continue;
-            }
-
-            target.Add(suggestion);
-        }
-    }
-
-    // ------------------------------------------------------------------
-    // Small JSON helpers
-    // ------------------------------------------------------------------
-
-    private static string? ReadString(JsonElement obj, string name) =>
-        obj.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
-            ? value.GetString()
-            : null;
-
-    /// <summary>
-    /// The id of the note a successful <c>notes_capture</c> produced, read from
-    /// the canonical result envelope. Null when the shape is not what we expect:
-    /// the surface then simply does not offer its raw-transcript affordance.
-    /// </summary>
-    private static string? ReadNoteId(JsonElement? data)
-    {
-        if (data is not { ValueKind: JsonValueKind.Object } element)
-        {
-            return null;
-        }
-
-        return element.TryGetProperty("value", out var value)
-            && value.ValueKind == JsonValueKind.Object
-            && value.TryGetProperty("id", out var id)
-            && id.ValueKind == JsonValueKind.String
-                ? id.GetString()
-                : null;
-    }
-
-    /// <summary>
-    /// True when the saved note is a rewrite of the user's words, read from the
-    /// stored note: a rewrite that fell back to the original reports verbatim.
-    /// </summary>
-    private static bool Rewritten(JsonElement? data) =>
-        data is { ValueKind: JsonValueKind.Object } element
-        && element.TryGetProperty("value", out var value)
-        && value.ValueKind == JsonValueKind.Object
-        && value.TryGetProperty("processingMode", out var mode)
-        && mode.ValueKind == JsonValueKind.String
-        && !ThoughtProcessingModes.IsVerbatim(mode.GetString());
 
     private static string ToolJson(object value) => JsonSerializer.Serialize(value, JsonOptions);
 
