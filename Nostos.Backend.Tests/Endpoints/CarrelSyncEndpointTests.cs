@@ -421,6 +421,56 @@ public sealed class CarrelSyncEndpointTests : IClassFixture<LibraryEndpointFacto
     }
 
     [Fact]
+    public async Task A_retried_put_of_the_same_bytes_is_the_same_save()
+    {
+        var token = await PairedTokenAsync();
+        var client = AuthedClient(token);
+        var fileId = Guid.NewGuid();
+        await PutNewFileAsync(client, fileId, "retry.md", "same bytes");
+        var before = await CursorAsync(client);
+
+        var retry = await client.PutAsJsonAsync($"/carrel/v1/files/{fileId}", new
+        {
+            path = "retry.md",
+            content = "same bytes",
+            base_rev = 1,
+        });
+
+        retry.StatusCode.Should().Be(HttpStatusCode.OK);
+        var success = (await retry.Content.ReadFromJsonAsync<CarrelPutResponse>())!;
+        success.Rev.Should().Be(1, "the bytes and the path did not change");
+        success.Hash.Should().Be(Sha256("same bytes"));
+
+        var after = await client.GetFromJsonAsync<JsonElement>($"/carrel/v1/files?since={before}");
+        after.GetProperty("files").GetArrayLength().Should().Be(0,
+            "a retried save is not a change to pull");
+    }
+
+    [Fact]
+    public async Task A_draft_deleted_in_the_studio_leaves_a_tombstone()
+    {
+        var token = await PairedTokenAsync();
+        var client = AuthedClient(token);
+        var fileId = Guid.NewGuid();
+        await PutNewFileAsync(client, fileId, "studio-delete.md", "gone from the Studio");
+        var before = await CursorAsync(client);
+
+        var writings = await Client.GetFromJsonAsync<WritingDto[]>("/api/writings");
+        var draft = writings!.Single(w => w.Name == "studio-delete");
+        (await Client.DeleteAsync($"/api/writings/{draft.Id}")).StatusCode
+            .Should().Be(HttpStatusCode.NoContent);
+
+        var list = await client.GetFromJsonAsync<JsonElement>($"/carrel/v1/files?since={before}");
+        var entry = list.GetProperty("files").EnumerateArray()
+            .Single(f => f.GetProperty("file_id").GetGuid() == fileId);
+        entry.GetProperty("deleted").GetBoolean().Should().BeTrue();
+        entry.GetProperty("rev").GetInt64().Should().Be(2);
+        entry.GetProperty("path").GetString().Should().Be("studio-delete.md");
+        (await client.GetAsync($"/carrel/v1/files/{fileId}")).StatusCode
+            .Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
     public async Task A_path_collision_names_the_file_that_owns_the_path()
     {
         var token = await PairedTokenAsync();
@@ -642,6 +692,27 @@ public sealed class CarrelSyncEndpointTests : IClassFixture<LibraryEndpointFacto
         books.Should().ContainSingle();
         books[0].GetProperty("title").GetString().Should().Be("Gilead");
         books[0].GetProperty("author").GetString().Should().Be("Marilynne Robinson");
+    }
+
+    [Fact]
+    public async Task The_library_renders_a_topic_reference_in_prose_as_its_words()
+    {
+        var token = await PairedTokenAsync();
+        var client = AuthedClient(token);
+        var book = await CreateBookAsync("Attention and Habit", "A Writer");
+        var note = await CreateNoteAsync(book.Id, new
+        {
+            content = "It is about [[Attention]] and how [[Habit]]s form.\n\n[[Attention]]",
+        });
+
+        var page = await client.GetFromJsonAsync<JsonElement>("/carrel/v1/library?since=0");
+        var item = page.GetProperty("items").EnumerateArray()
+            .Single(i => i.GetProperty("id").GetGuid() == note.Id);
+
+        item.GetProperty("text").GetString()
+            .Should().Be("It is about Attention and how Habits form.");
+        item.GetProperty("topics").EnumerateArray().Select(t => t.GetString())
+            .Should().BeEquivalentTo("Attention", "Habit");
     }
 
     [Fact]
