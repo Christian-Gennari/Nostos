@@ -16,7 +16,7 @@ jobs:
   selfhosted:
     if: ${{ !inputs.docs_only }}
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     env:
       NOSTOS_POSTGRES_SPIKE_CONNECTION: ""
       GH_TOKEN: ""
@@ -52,3 +52,19 @@ jobs:
 
       - name: Start the public host and verify SelfHosted SQLite bootstrap
         run: bash scripts/verify-selfhosted-smoke.sh Debug
+
+      # Issue #1730: the real-host drills are opt-in (NOSTOS_RUN_ACTIVATION_DRILLS=1)
+      # and stay skipped in ci.yml's ordinary backend regression, so no test runs
+      # twice. This step is their one automatic path. Never add continue-on-error:
+      # a failed drill is a real failure.
+      - name: Real-host activation and restore drills
+        timeout-minutes: 12
+        env:
+          NOSTOS_RUN_ACTIVATION_DRILLS: "1"
+        run: >-
+          dotnet test Nostos.Backend.Tests/Nostos.Backend.Tests.csproj
+          --configuration Debug
+          --no-build
+          --no-restore
+          --filter "FullyQualifiedName~ActivationRealHostDrillTests"
+          --logger "console;verbosity=minimal"
