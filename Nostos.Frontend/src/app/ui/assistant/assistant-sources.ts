@@ -106,8 +106,12 @@ export function buildEntrySourceView(entry: AssistantEntry): EntrySourceView {
 
   if (evidenceArtifacts.length > 0) {
     const seen = new Set<string>();
+    // A reply that cites by number lists only what it cites; every retrieved
+    // row is not a source of the answer (issue #1748).
+    const cited = citedNumbers(entry);
 
     for (const [index, artifact] of evidenceArtifacts.entries()) {
+      if (cited && !cited.has(index + 1)) continue;
       const evidence = artifact.evidence;
       const dedupeKey = canonicalEvidenceKey(evidence);
       if (seen.has(dedupeKey)) continue;
@@ -209,6 +213,14 @@ export function buildEntrySourceView(entry: AssistantEntry): EntrySourceView {
       };
     }),
   };
+}
+
+/** The numbers the reply's markers cite; null when it cites none. */
+export function citedNumbers(entry: AssistantEntry): ReadonlySet<number> | null {
+  if (entry.kind !== 'assistant') return null;
+  const numbers = new Set<number>();
+  for (const match of entry.text.matchAll(/\[\^(\d+)\]/g)) numbers.add(Number(match[1]));
+  return numbers.size > 0 ? numbers : null;
 }
 
 /** Whether the reply cites its sources by number, so the sources row shows the numbers. */

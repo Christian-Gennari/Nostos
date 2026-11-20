@@ -565,11 +565,33 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
 
       it('numbers the sources row to match, and only when the reply cites', () => {
         renderEntry(entry({
-          text: 'Cited once[^2].',
+          text: 'Cited twice[^1][^2].',
           artifacts: evidenceArtifacts(pdfEvidence(1, 3), epubEvidence(1, 'epubcfi(/6/2!/4/2:0)')),
         }));
         const numbers = Array.from(sourceItems()).map((item) => item.querySelector('.entry-source-number')?.textContent?.trim());
         expect(numbers).toEqual(['1', '2']);
+      });
+
+      it('lists only the sources the reply cites (issue #1748)', () => {
+        renderEntry(entry({
+          text: 'Cited once[^2].',
+          artifacts: evidenceArtifacts(pdfEvidence(1, 3), epubEvidence(1, 'epubcfi(/6/2!/4/2:0)')),
+        }));
+        const numbers = Array.from(sourceItems()).map((item) => item.querySelector('.entry-source-number')?.textContent?.trim());
+        expect(numbers).toEqual(['2']);
+      });
+
+      it('shows a book group as one row when the reply cites one of its passages (issue #1748)', () => {
+        renderEntry(entry({
+          text: 'The train was late[^1].',
+          artifacts: evidenceArtifacts(
+            epubEvidence(1, 'epubcfi(/6/2!/4/2:0)'),
+            epubEvidence(2, 'epubcfi(/6/4!/4/2:0)'),
+            epubEvidence(3, 'epubcfi(/6/6!/4/2:0)'),
+          ),
+        }));
+        expect(sourceGroups().length).toBe(0);
+        expect(sourceItems().length).toBe(1);
       });
 
       it('leaves a reply without markers exactly as before', () => {
@@ -1220,9 +1242,13 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     );
     fixture.detectChanges();
 
+    // Asked once, in the "One detail" block (issue #1748).
+    expect(
+      fixture.nativeElement.querySelector('[data-testid="assistant-anchor-prompt"]').textContent,
+    ).toContain('What page are you on?');
     expect(
       fixture.nativeElement.querySelector('[data-testid="assistant-transcript"]').textContent,
-    ).toContain('What page are you on?');
+    ).not.toContain('What page are you on?');
 
     assistant.updateDraft('Page 247.');
     assistant.submit();
@@ -1240,6 +1266,10 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     expect(
       fixture.nativeElement.querySelector('.entry .entry-anchor').textContent,
     ).toContain('The Magic Mountain · p. 247');
+    // Answered: the question stays in the conversation as history.
+    expect(
+      fixture.nativeElement.querySelector('[data-testid="assistant-transcript"]').textContent,
+    ).toContain('What page are you on?');
 
     // The captured note shows its topics as pills, with + Topic (issue #1449).
     http.expectOne('/api/topics').flush([]);
@@ -1284,9 +1314,13 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     expect(
       fixture.nativeElement.querySelector('[data-testid="assistant-anchor-prompt"]').textContent,
     ).toContain('What page are you on?');
+    // The "One detail" block asks it; the transcript does not repeat it (#1748).
     expect(
       fixture.nativeElement.querySelector('[data-testid="assistant-transcript"]').textContent,
-    ).toContain('What page are you on?');
+    ).not.toContain('What page are you on?');
+    expect(
+      fixture.nativeElement.querySelector('[data-testid="assistant-transcript"]').textContent,
+    ).toContain('A thought for The Magic Mountain');
     http.expectNone('/api/assistant/turn/stream');
   });
 
@@ -2306,6 +2340,129 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     expect(applied.textContent).toContain('I deleted 3 collections, created 2 collections and refiled 1 book.');
     expect(applied.querySelector('[data-testid="assistant-changeset-undo"]')).toBeTruthy();
     expect(applied.querySelector('[data-testid="assistant-changeset-apply"]')).toBeNull();
+  });
+
+  describe('copy that follows the card state (issue #1748)', () => {
+    const REVIEW_SENTENCE = "Here's what I'd change. Nothing changes until you apply it.";
+
+    function proposeReview(reply = REVIEW_SENTENCE): void {
+      assistant.open();
+      assistant.updateDraft('Regroup.');
+      assistant.submit();
+      http.expectOne('/api/assistant/turn/stream').flush(turn({ reply, changeset: reviewChangeset() }));
+      fixture.detectChanges();
+    }
+
+    function transcriptText(): string {
+      return fixture.nativeElement.querySelector('[data-testid="assistant-transcript"]').textContent ?? '';
+    }
+
+    it('drops the review sentence once the card is applied', () => {
+      proposeReview();
+      expect(transcriptText()).toContain(REVIEW_SENTENCE);
+
+      (fixture.nativeElement.querySelector('[data-testid="assistant-changeset-apply"]') as HTMLButtonElement).click();
+      http.expectOne('/api/assistant/changesets/cs-9/apply').flush({
+        success: true, errorCode: null, errorMessage: null, conflicts: [],
+        changeset: reviewChangeset({ status: 'applied', canUndo: true }),
+      });
+      fixture.detectChanges();
+
+      expect(transcriptText()).not.toContain('Nothing changes until you apply it');
+      expect(transcriptText()).toContain('I deleted 3 collections');
+    });
+
+    it('keeps an answer above the review and drops only the sentence after the apply', () => {
+      proposeReview(`You noted that seeing comes first [^1].\n\n${REVIEW_SENTENCE}`);
+      expect(transcriptText()).toContain('You noted that seeing comes first');
+      expect(transcriptText()).toContain(REVIEW_SENTENCE);
+
+      (fixture.nativeElement.querySelector('[data-testid="assistant-changeset-apply"]') as HTMLButtonElement).click();
+      http.expectOne('/api/assistant/changesets/cs-9/apply').flush({
+        success: true, errorCode: null, errorMessage: null, conflicts: [],
+        changeset: reviewChangeset({ status: 'applied', canUndo: true }),
+      });
+      fixture.detectChanges();
+
+      expect(transcriptText()).toContain('You noted that seeing comes first');
+      expect(transcriptText()).not.toContain(REVIEW_SENTENCE);
+    });
+
+    it('does not describe undone changes as if they stood', () => {
+      proposeReview();
+      (fixture.nativeElement.querySelector('[data-testid="assistant-changeset-apply"]') as HTMLButtonElement).click();
+      http.expectOne('/api/assistant/changesets/cs-9/apply').flush({
+        success: true, errorCode: null, errorMessage: null, conflicts: [],
+        changeset: reviewChangeset({ status: 'applied', canUndo: true }),
+      });
+      fixture.detectChanges();
+
+      (fixture.nativeElement.querySelector('[data-testid="assistant-changeset-undo"]') as HTMLButtonElement).click();
+      http.expectOne('/api/assistant/changesets/cs-9/undo').flush({
+        success: true, errorCode: null, errorMessage: null, conflicts: [],
+        changeset: reviewChangeset({ status: 'undone', canUndo: false }),
+      });
+      fixture.detectChanges();
+
+      const card = fixture.nativeElement.querySelector('[data-testid="assistant-changeset"]') as HTMLElement;
+      expect(card.getAttribute('data-status')).toBe('undone');
+      expect(card.querySelector('[data-testid="assistant-changeset-headline"]')?.textContent?.trim())
+        .toBe('These changes were undone.');
+      expect(card.textContent).not.toContain('I deleted');
+    });
+
+    it('names an action by what it did, never by its capability', () => {
+      assistant.open();
+      assistant.updateDraft('Start a draft and add Piranesi to my To read list.');
+      assistant.submit();
+      http.expectOne('/api/assistant/turn/stream').flush(turn({
+        reply: 'Done.',
+        executedCapabilities: ['writings_create', 'reading_list_add', 'library_create_or_match_book'],
+      }));
+      fixture.detectChanges();
+
+      const text = transcriptText();
+      expect(text).toContain('Changed · draft created');
+      expect(text).toContain('Changed · added to To read');
+      expect(text).toContain('Changed · book added');
+      expect(text).not.toMatch(/writings create|reading list add/);
+    });
+
+    it('shows the words of a saved quote when the reply does not', () => {
+      assistant.open();
+      assistant.updateDraft('Save the quote where Harker says he found his smattering of German very useful.');
+      assistant.submit();
+      http.expectOne('/api/assistant/turn/stream').flush(turn({ reply: 'Saved the quote.', capturedNoteId: 'note-q' }));
+      fixture.detectChanges();
+
+      http.expectOne('/api/topics').flush([]);
+      http.expectOne('/api/notes/note-q').flush({
+        id: 'note-q', bookId: 'b1', bookTitle: 'Dracula', content: '',
+        selectedText: 'I found my smattering of German very useful here', snippet: null,
+        topicNames: [], createdAt: '2026-11-20T00:00:00Z',
+      });
+      fixture.detectChanges();
+
+      const quote = fixture.nativeElement.querySelector('[data-testid="assistant-captured-quote"]') as HTMLElement;
+      expect(quote.textContent).toContain('I found my smattering of German very useful here');
+    });
+
+    it('does not repeat a captured thought the transcript already shows', () => {
+      assistant.open();
+      assistant.updateDraft('Save this thought: a library is a record of attention.');
+      assistant.submit();
+      http.expectOne('/api/assistant/turn/stream').flush(turn({ reply: 'Saved.', capturedNoteId: 'note-t' }));
+      fixture.detectChanges();
+
+      http.expectOne('/api/topics').flush([]);
+      http.expectOne('/api/notes/note-t').flush({
+        id: 'note-t', bookId: 'b1', bookTitle: 'Dracula', content: 'a library is a record of attention.',
+        selectedText: null, snippet: null, topicNames: [], createdAt: '2026-11-20T00:00:00Z',
+      });
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('[data-testid="assistant-captured-quote"]')).toBeNull();
+    });
   });
 
   it('unticking a step asks the server what the rest would do and greys out its dependants', () => {

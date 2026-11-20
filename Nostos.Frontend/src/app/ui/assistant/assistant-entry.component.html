@@ -6,12 +6,14 @@
 <span class="entry-speaker visually-hidden" data-testid="assistant-entry-assistant-label">Nostos</span>
 }
 @if (entry().kind === 'assistant') {
+@if (replyText()) {
 <div
   class="entry-text entry-markdown"
   data-testid="assistant-entry-markdown"
-  [innerHTML]="entry().text | assistantMarkdown: previews()"
+  [innerHTML]="replyText() | assistantMarkdown: previews()"
   (click)="onReplyClick($event)"
 ></div>
+}
 } @else if (entry().kind !== 'error') {
 <blockquote class="entry-text">{{ entry().text }}</blockquote>
 }
@@ -218,7 +220,7 @@
     </footer>
     }
     @if (artifact.kind === 'capture') {
-    <app-captured-note-topics [noteId]="artifact.noteId" data-testid="assistant-capture-topics" />
+    <app-captured-note-topics [noteId]="artifact.noteId" [shownText]="replyText()" data-testid="assistant-capture-topics" />
     }
     @if (artifact.kind === 'changeset') {
     <app-assistant-changeset-card
