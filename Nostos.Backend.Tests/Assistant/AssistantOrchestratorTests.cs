@@ -3214,6 +3214,75 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
     }
 
     [Fact]
+    public async Task Knowledge_search_finds_notes_filed_under_a_matching_topic_without_text_match()
+    {
+        var h = CreateHarness(useRealKnowledge: true);
+        var book = await SeedBookAsync(h, "The Salt Meridian");
+        var tagged = await SeedNoteAsync(
+            h,
+            book.Id,
+            "The keeper trims each wick at dusk and climbs to the gallery once at midnight. A steady lamp is kept, never chased.");
+        var textMatch = await SeedNoteAsync(
+            h,
+            book.Id,
+            "Repair philosophy: attention first, tools second.");
+        var attention = await SeedTopicAsync(h, "Attention");
+        var boatRepair = await SeedTopicAsync(h, "Boat Repair");
+        h.Db.NoteTopics.AddRange(
+            new NoteTopicModel { NoteId = tagged.Id, TopicId = attention.Id },
+            new NoteTopicModel { NoteId = textMatch.Id, TopicId = boatRepair.Id });
+        await h.Db.SaveChangesAsync();
+
+        h.Llm
+            .CallsTool("knowledge_search", """{"query":"What did I note about attention?"}""")
+            .Returns("You noted the keeper trimming each wick [^1] and repair attention [^2].");
+
+        var knowledgeResponse = await h.Orchestrator.HandleTurnAsync(
+            Turn("What did I note about attention?", Context(surface: "second-brain", route: "/second-brain")));
+
+        knowledgeResponse.Evidence.Should().NotBeNull();
+        knowledgeResponse.Evidence!.Select(e => e.Handle.NoteId).Should().Contain([tagged.Id, textMatch.Id]);
+
+        var toolMessage = h.Llm.Requests[1].Messages.Single(m => m.Role == "tool");
+        using var toolJson = JsonDocument.Parse(toolMessage.Content!);
+        var attentionTopicJson = toolJson.RootElement.GetProperty("data").GetProperty("topics")
+            .EnumerateArray()
+            .Single(t => t.GetProperty("name").GetString() == "Attention");
+        attentionTopicJson.GetProperty("supportingNotes").GetArrayLength().Should().Be(1);
+        attentionTopicJson.GetProperty("supportingNotes")[0].GetProperty("noteId").GetGuid().Should().Be(tagged.Id);
+    }
+
+    [Fact]
+    public async Task Notes_search_finds_notes_filed_under_a_matching_topic_without_text_match()
+    {
+        var h = CreateHarness();
+        var book = await SeedBookAsync(h, "The Salt Meridian");
+        var tagged = await SeedNoteAsync(
+            h,
+            book.Id,
+            "The keeper trims each wick at dusk and climbs to the gallery once at midnight. A steady lamp is kept, never chased.");
+        var textMatch = await SeedNoteAsync(
+            h,
+            book.Id,
+            "Repair philosophy: attention first, tools second.");
+        var attention = await SeedTopicAsync(h, "Attention");
+        var boatRepair = await SeedTopicAsync(h, "Boat Repair");
+        h.Db.NoteTopics.AddRange(
+            new NoteTopicModel { NoteId = tagged.Id, TopicId = attention.Id },
+            new NoteTopicModel { NoteId = textMatch.Id, TopicId = boatRepair.Id });
+        await h.Db.SaveChangesAsync();
+
+        h.Llm
+            .CallsTool("notes_search", """{"query":"attention"}""")
+            .Returns("Both notes cover attention [^1] [^2].");
+
+        var notesResponse = await h.Orchestrator.HandleTurnAsync(
+            Turn("What did I note about attention?", Context(surface: "second-brain", route: "/second-brain")));
+
+        notesResponse.Evidence!.Select(e => e.Handle.NoteId).Should().BeEquivalentTo([tagged.Id, textMatch.Id]);
+    }
+
+    [Fact]
     public async Task Book_text_search_sources_are_server_grounded_and_preserve_pdf_locator()
     {
         var bookId = Guid.NewGuid();
@@ -4591,7 +4660,8 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         IKnowledgeRetrievalService? knowledge = null,
         Func<IDbContextFactory<NostosDbContext>, ILibraryService, IBookTextSearchService>? bookTextFactory = null,
         IThoughtProcessor? thoughts = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        bool useRealKnowledge = false)
     {
         var path = _fixture.CreateDatabasePath();
         var options = new DbContextOptionsBuilder<NostosDbContext>()
@@ -4614,6 +4684,19 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
             new BookLookupService(new NoopHttpClientFactory(), new SilentLogger<BookLookupService>()));
 
         var bookTextService = bookText ?? bookTextFactory?.Invoke(factory, libraryService);
+        var index = new SqliteBookTextIndex(factory);
+        if (knowledge is null && useRealKnowledge)
+        {
+            index.EnsureSchemaAsync().GetAwaiter().GetResult();
+            knowledge = new KnowledgeRetrievalService(
+                noteService,
+                new NoteRepository(db),
+                topics,
+                libraryService,
+                bookTextService ?? new BookTextSearchService(index, libraryService, new BookTextOptions()),
+                index,
+                []);
+        }
 
         var registry = new AssistantCapabilityRegistry(
             AssistantCapabilities.Build(
@@ -4622,7 +4705,7 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
                 topics,
                 knowledge ?? NoOpKnowledgeRetrievalService.Instance,
                 bookTextService,
-                new BookTextQuoteFinder(new SqliteBookTextIndex(factory), libraryService)));
+                new BookTextQuoteFinder(index, libraryService)));
 
         var llm = new FakeLlmProvider();
         var assistantOptions = new AssistantOptions

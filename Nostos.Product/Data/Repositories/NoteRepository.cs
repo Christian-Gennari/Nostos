@@ -187,10 +187,10 @@ public class NoteRepository : INoteRepository
 
     /// <summary>
     /// Notes where EVERY term appears in at least one of the fields a person
-    /// would describe a note by: its text, its quotation, its passage title, or
-    /// its book's title or author (issue #1038). One term is the plain phrase
-    /// search; several let "schopenhauer will" find his notes about the will
-    /// although no single field holds both words.
+    /// would describe a note by: its text, its quotation, its passage title,
+    /// its linked topic names, or its book's title or author (issue #1038, #1744).
+    /// One term is the plain phrase search; several let "schopenhauer will"
+    /// find his notes about the will although no single field holds both words.
     /// </summary>
     public async Task<List<NoteModel>> SearchByAllTermsAsync(
         IReadOnlyList<string> terms,
@@ -383,6 +383,10 @@ public class NoteRepository : INoteRepository
                 n.Content,
                 n.SelectedText,
                 n.PassageTitle,
+                Topics = n.NoteTopics
+                    .Where(nt => nt.Topic != null)
+                    .Select(nt => nt.Topic!.Topic)
+                    .ToList(),
                 BookTitle = n.Book != null ? n.Book.Title : null,
                 BookAuthor = n.Book != null ? n.Book.Author : null,
             })
@@ -391,7 +395,7 @@ public class NoteRepository : INoteRepository
         var candidates = rows
             .Select(r => new FuzzyRow(
                 r.Id,
-                $"{r.Content} {r.SelectedText} {r.PassageTitle}",
+                $"{r.Content} {r.SelectedText} {r.PassageTitle} {string.Join(' ', r.Topics)}",
                 $"{r.BookTitle} {r.BookAuthor}"))
             .ToList();
 
@@ -450,9 +454,9 @@ public class NoteRepository : INoteRepository
 
     /// <summary>
     /// Notes where <paramref name="term"/> appears in a field a person would
-    /// describe the note by: its text, its quotation, its passage title, or its
-    /// book's title or author (issue #1038). Search and Browse share this so the
-    /// two boxes never disagree.
+    /// describe the note by: its text, its quotation, its passage title, its
+    /// linked topic names, or its book's title or author (issue #1038, #1744).
+    /// Search and Browse share this so the two boxes never disagree.
     ///
     /// Each field is tried as typed and lower-cased. SQLite's LIKE ignores ASCII
     /// case but its lower() leaves "Å" alone, so the as-typed form keeps "Åsa"
@@ -485,7 +489,10 @@ public class NoteRepository : INoteRepository
                         || EF.Functions.Like(n.Book.Title.ToLower(), lower, SqlLikePatternHelper.EscapeChar)))
                 || (n.Book != null && n.Book.Author != null
                     && (EF.Functions.Like(n.Book.Author, typed, SqlLikePatternHelper.EscapeChar)
-                        || EF.Functions.Like(n.Book.Author.ToLower(), lower, SqlLikePatternHelper.EscapeChar))));
+                        || EF.Functions.Like(n.Book.Author.ToLower(), lower, SqlLikePatternHelper.EscapeChar)))
+                || n.NoteTopics.Any(nt => nt.Topic != null
+                    && (EF.Functions.Like(nt.Topic.Topic, typed, SqlLikePatternHelper.EscapeChar)
+                        || EF.Functions.Like(nt.Topic.Topic.ToLower(), lower, SqlLikePatternHelper.EscapeChar))));
         }
 
         return notes.Where(n =>
@@ -502,7 +509,10 @@ public class NoteRepository : INoteRepository
                     || EF.Functions.Like(n.Book.Title.ToLower(), lower, SqlLikePatternHelper.EscapeChar)))
             || (n.Book != null && n.Book.Author != null
                 && (EF.Functions.Like(n.Book.Author, typed, SqlLikePatternHelper.EscapeChar)
-                    || EF.Functions.Like(n.Book.Author.ToLower(), lower, SqlLikePatternHelper.EscapeChar))));
+                    || EF.Functions.Like(n.Book.Author.ToLower(), lower, SqlLikePatternHelper.EscapeChar)))
+            || n.NoteTopics.Any(nt => nt.Topic != null
+                && (EF.Functions.Like(nt.Topic.Topic, typed, SqlLikePatternHelper.EscapeChar)
+                    || EF.Functions.Like(nt.Topic.Topic.ToLower(), lower, SqlLikePatternHelper.EscapeChar))));
     }
 
 }

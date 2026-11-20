@@ -150,7 +150,10 @@ public sealed class NoteSearchService
         tokens.Count(token =>
             note.Content.Contains(token, StringComparison.OrdinalIgnoreCase)
             || (note.SelectedText?.Contains(token, StringComparison.OrdinalIgnoreCase) ?? false)
-            || (note.PassageTitle?.Contains(token, StringComparison.OrdinalIgnoreCase) ?? false));
+            || (note.PassageTitle?.Contains(token, StringComparison.OrdinalIgnoreCase) ?? false)
+            || note.NoteTopics.Any(link =>
+                link.Topic is not null
+                && link.Topic.Topic.Contains(token, StringComparison.OrdinalIgnoreCase)));
 
     private static int SpecificityWeight(
         string term,

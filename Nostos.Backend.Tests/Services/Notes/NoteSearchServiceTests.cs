@@ -79,4 +79,32 @@ public sealed class NoteSearchServiceTests : IClassFixture<SqliteTestFixture>
 
         hits.Should().ContainSingle().Which.Id.Should().Be(hit.Id);
     }
+
+    [Fact]
+    public async Task Notes_filed_under_a_matching_topic_are_included_without_text_match()
+    {
+        using var h = new NoteServiceTestContext(_fixture.CreateDatabasePath());
+        var book = await h.SeedBookAsync<EBookModel>("The Salt Meridian", author: null);
+        var topicTagged = await h.SeedNoteAsync(
+            book.Id,
+            "The keeper trims each wick at dusk and climbs to the gallery once at midnight.");
+        var textMatched = await h.SeedNoteAsync(
+            book.Id,
+            "Repair philosophy: attention first, tools second.");
+        var distractor = await h.SeedNoteAsync(
+            book.Id,
+            "A quick note on boat varnish and cedar planks.");
+
+        var topic = new TopicModel { Id = Guid.NewGuid(), Topic = "Attention" };
+        h.Db.Topics.Add(topic);
+        h.Db.NoteTopics.Add(new NoteTopicModel { NoteId = topicTagged.Id, TopicId = topic.Id });
+        await h.Db.SaveChangesAsync();
+
+        var directHits = await h.Search.SearchAsync("attention", 50);
+        directHits.Select(hit => hit.Id).Should().BeEquivalentTo([textMatched.Id, topicTagged.Id]);
+        directHits.Select(hit => hit.Id).Should().NotContain(distractor.Id);
+
+        var questionHits = await h.Search.SearchAsync("What did I note about attention?", 50);
+        questionHits.Select(hit => hit.Id).Should().Contain([textMatched.Id, topicTagged.Id]);
+    }
 }

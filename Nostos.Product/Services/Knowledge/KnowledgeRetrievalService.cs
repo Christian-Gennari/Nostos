@@ -417,6 +417,10 @@ public sealed class KnowledgeRetrievalService(
         IReadOnlyList<Guid>? scopedBookIds,
         int limit)
     {
+        var topicMatches = variants.Any(variant =>
+            !string.IsNullOrWhiteSpace(topic.Topic)
+            && topic.Topic.Contains(variant, StringComparison.OrdinalIgnoreCase));
+
         return topic.NoteTopics
             .Select(link => link.Note)
             .Where(note => note is not null)
@@ -427,7 +431,7 @@ public sealed class KnowledgeRetrievalService(
                 Note = note,
                 MatchCount = variants.Count(variant => Matches(note, variant)),
             })
-            .Where(candidate => candidate.MatchCount > 0)
+            .Where(candidate => topicMatches || candidate.MatchCount > 0)
             .OrderByDescending(candidate => candidate.MatchCount)
             .ThenByDescending(candidate => candidate.Note.CreatedAt)
             .ThenBy(candidate => candidate.Note.Id)
