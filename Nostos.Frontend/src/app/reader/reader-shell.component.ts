@@ -375,10 +375,10 @@ export class ReaderShell implements OnInit, OnDestroy {
    * horizontally to the viewport.
    */
   selectionMenuPlacement = computed<MenuPlacement | null>(() =>
-    // 440px: Copy, Mark passage and Ask Nostos plus Cancel, Add note and
-    // Highlight need about 430px on one row; at 360px the icons were squeezed
-    // out of the menu's padding.
-    this.menuPlacement(this.selectionAnchor(), 440),
+    // 396px: utilities sit beside the quote in the top rail, leaving the
+    // commit row (Cancel left, Add note + Highlight right) plenty of room at
+    // 800px and 1280px without wrapping (#1722).
+    this.menuPlacement(this.selectionAnchor(), 396),
   );
 
   private menuPlacement(anchor: SelectionAnchor | null, maxWidth = 360): MenuPlacement | null {
@@ -1679,14 +1679,6 @@ export class ReaderShell implements OnInit, OnDestroy {
    * passage is copied in full, not the clamped preview; the menu then closes
    * without saving, like any other non-saving choice.
    */
-  askNostosAboutSelection(): void {
-    if (!this.pendingSelectionText() || this.highlightSaving()) return;
-    // Keep the pending selection/menu alive behind the assistant: it remains
-    // both visible context and a reversible choice if the reader closes Ask
-    // Nostos and decides to Highlight or Add note instead.
-    this.assistant.requestSurfaceOpen();
-  }
-
   copySelection(): void {
     const text = this.pendingSelectionText();
     if (!text || this.highlightSaving()) return;

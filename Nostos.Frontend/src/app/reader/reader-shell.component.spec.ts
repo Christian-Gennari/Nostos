@@ -2702,37 +2702,35 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     expect(stub().next).not.toHaveBeenCalled();
   });
 
-  it('Ask Nostos opens from the selection surface and keeps the passage as explicit context', async () => {
+  it('keeps a captured selection as explicit assistant context without an Ask Nostos shortcut on the selection surface', async () => {
     const component = await openBook();
     component.dockedLayout.set(false);
     await capture(component);
-    const assistant = TestBed.inject(AssistantService);
     const context = TestBed.inject(AssistantContextService);
 
     expect(context.context().selectedText).toBe('Sing, goddess, the anger of Achilles');
-    // The action says what it is for, not just a bare sparkle.
-    expect(el('selection-ask-nostos')!.textContent).toContain('Ask Nostos');
-    (el('selection-ask-nostos') as HTMLButtonElement).click();
-    render();
-
-    expect(assistant.requestSurfaceOpen).toHaveBeenCalledTimes(1);
-    expect(context.context().selectedText).toBe('Sing, goddess, the anger of Achilles');
+    expect(el('selection-ask-nostos')).toBeNull();
     expect(el('selection-menu')).not.toBeNull();
   });
 
-  it('does not advertise Ask Nostos when the assistant is unavailable', async () => {
+  it('does not show Ask Nostos on the docked selection bar regardless of assistant availability', async () => {
     const component = await openBook();
     const assistant = TestBed.inject(AssistantService);
     const available = assistant.surfaceAvailable as unknown as {
       mockReturnValue(value: boolean): void;
     };
-    available.mockReturnValue(false);
+    available.mockReturnValue(true);
 
     component.dockedLayout.set(true);
     await capture(component);
     render();
 
     expect(el('selection-copy')).not.toBeNull();
+    expect(el('selection-ask-nostos')).toBeNull();
+    expect(el('selection-highlight')).not.toBeNull();
+
+    available.mockReturnValue(false);
+    render();
     expect(el('selection-ask-nostos')).toBeNull();
     expect(el('selection-highlight')).not.toBeNull();
   });
@@ -2781,7 +2779,8 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     const bar = el('selection-bar')!;
     expect(bar).not.toBeNull();
     expect(el('selection-copy')).not.toBeNull();
-    expect(el('selection-ask-nostos')).not.toBeNull();
+    expect(el('selection-ask-nostos')).toBeNull();
+    expect(el('selection-pen-picker')).not.toBeNull();
     expect(el('selection-add-note')).not.toBeNull();
     expect(el('selection-highlight')).not.toBeNull();
 
@@ -2791,7 +2790,7 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     expect(el('selection-note-input')).not.toBeNull();
   });
 
-  it('phones: the docked bar reads quote and pens, labelled utilities, then decisions (#1255)', async () => {
+  it('phones: the docked bar reads quote + labelled utilities on row 1, pen picker + decisions on row 2 (#1722)', async () => {
     const component = await openBook();
     // The EPUB stub does not implement passages by default; this test is about
     // the action's placement, so give it one.
@@ -2803,16 +2802,16 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     const bar = el('selection-bar')!;
     const quoteRow = bar.querySelector('.selection-quote-row')!;
     expect(quoteRow.querySelector('.selected-text')?.textContent).toContain('Sing, goddess');
-    expect(quoteRow.querySelector('app-pen-swatches')).not.toBeNull();
 
-    const utilities = bar.querySelector('.selection-utilities')!;
+    const utilities = quoteRow.querySelector('.selection-utilities')!;
     expect(utilities.contains(el('selection-copy'))).toBe(true);
-    expect(utilities.contains(el('selection-ask-nostos'))).toBe(true);
     expect(utilities.contains(el('selection-more'))).toBe(true);
-    // Ask Nostos shares the row with Copy and More instead of sitting alone.
-    expect(utilities.querySelectorAll('button')).toHaveLength(3);
+    expect(utilities.querySelectorAll('button')).toHaveLength(2);
+    expect(el('selection-copy')!.textContent).toContain('Copy');
+    expect(el('selection-more')!.textContent).toContain('More');
 
     const decisions = bar.querySelector('.selection-decisions')!;
+    expect(decisions.contains(el('selection-pen-picker'))).toBe(true);
     for (const id of ['selection-cancel', 'selection-add-note', 'selection-highlight']) {
       expect(decisions.contains(el(id)), `${id} stays a decision`).toBe(true);
     }
@@ -2822,7 +2821,7 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     expect(css).not.toContain('grid-template-columns: 44px 44px minmax(0, 1fr) minmax(0, 1fr)');
   });
 
-  it('phones: Mark passage lives in the shared More menu, and a note hides the utilities (#1255)', async () => {
+  it('phones: Mark passage lives in the shared More menu, and a note hides utilities and pen picker (#1722)', async () => {
     const component = await openBook();
     (stub() as unknown as { passageMarkFromSelection?: () => null }).passageMarkFromSelection = () => null;
     component.dockedLayout.set(true);
@@ -2847,20 +2846,28 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     render();
     const bar = el('selection-bar')!;
     expect(bar.querySelector('.selection-utilities')).toBeNull();
+    expect(el('selection-pen-picker')).toBeNull();
     expect(el('selection-add-note')).toBeNull();
     expect(el('selection-save-note')).not.toBeNull();
   });
 
-  it('docked bar: a pen dot picks the colour without saving; Highlight saves in it', async () => {
+  it('docked bar: the pen picker selects the colour without saving; Highlight saves in it', async () => {
     const component = await openBook();
     component.dockedLayout.set(true);
     await capture(component);
 
-    (el('selection-pen-sage') as HTMLButtonElement).click();
+    const picker = el('selection-pen-picker') as HTMLButtonElement;
+    expect(picker.getAttribute('aria-label')).toBe('Highlight colour: Sage');
+    picker.click();
     render();
 
-    expect(component.highlightColour()).toBe('sage');
-    expect(el('selection-pen-sage')!.getAttribute('aria-pressed')).toBe('true');
+    const rose = document.querySelector<HTMLButtonElement>('[data-testid="selection-pen-rose"]')!;
+    expect(rose).not.toBeNull();
+    rose.click();
+    render();
+
+    expect(component.highlightColour()).toBe('rose');
+    expect(picker.getAttribute('aria-label')).toBe('Highlight colour: Rose');
     expect(stub().commitHighlight).not.toHaveBeenCalled();
     expect(component.pendingSelectionText()).not.toBeNull();
     expect(el('selection-bar')).not.toBeNull();
@@ -2868,12 +2875,12 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     (el('selection-highlight') as HTMLButtonElement).click();
     render();
     expect(stub().commitHighlight).toHaveBeenCalledTimes(1);
-    expect(stub().commitHighlight).toHaveBeenCalledWith('', 'sage');
+    expect(stub().commitHighlight).toHaveBeenCalledWith('', 'rose');
 
     component.highlightSaving.set(false);
     component.openNoteDraft();
     render();
-    expect(el('selection-pen-sage')).toBeNull();
+    expect(el('selection-pen-picker')).toBeNull();
   });
 
   it('docked bar: the header steps aside, and the pager stays, while a passage is offered with the chrome showing (#1344)', async () => {
@@ -2982,7 +2989,7 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     expect(component.noteDraft()).toBe('Half-written');
   });
 
-  it('PDF exposes Copy, Ask Nostos, Highlight and Add note through the same compact surface', async () => {
+  it('PDF exposes Copy, Highlight and Add note through the same compact surface', async () => {
     const component = await openBook('being-and-time.pdf');
     const pdf = attachPdfStub(component);
     component.dockedLayout.set(false);
@@ -2991,7 +2998,8 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
 
     expect(el('selection-menu')).toBeNull();
     expect(el('selection-copy')).not.toBeNull();
-    expect(el('selection-ask-nostos')).not.toBeNull();
+    expect(el('selection-ask-nostos')).toBeNull();
+    expect(el('selection-pen-picker')).not.toBeNull();
     expect(el('selection-add-note')).not.toBeNull();
     expect(el('selection-highlight')).not.toBeNull();
 
@@ -3038,7 +3046,7 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     expect(quote.textContent!.trim()).toBe(passage);
   });
 
-  it('desktop: compact controls — a Copy icon action, a ghost Cancel, no touch floor', async () => {
+  it('desktop: compact controls — a Copy icon action in the utility rail, a ghost Cancel, no touch floor', async () => {
     const component = await openBook();
     component.dockedLayout.set(false);
     await capture(component);
@@ -3046,6 +3054,7 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     const copy = el('selection-copy') as HTMLButtonElement;
     expect(copy).not.toBeNull();
     expect(copy.getAttribute('aria-label')).toBe('Copy text');
+    expect(el('selection-menu')!.querySelector('.selection-utility-rail')?.contains(copy)).toBe(true);
     expect(el('selection-cancel')!.classList.contains('nostos-button--ghost')).toBe(true);
 
     const css = readSource('./reader-selection-surface.component.css');
@@ -3053,14 +3062,15 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     expect(css).not.toMatch(/^\.reader-confirm-action \{/m);
   });
 
-  it('phones keep Copy while retaining the secondary Cancel in the docked bar', async () => {
+  it('phones share the ghost Cancel and keep labelled Copy and compact pen picker in the docked bar', async () => {
     const component = await openBook();
     component.dockedLayout.set(true);
     await capture(component);
 
     expect(el('selection-copy')).not.toBeNull();
     expect(el('selection-copy')?.getAttribute('aria-label')).toBe('Copy text');
-    expect(el('selection-cancel')!.classList.contains('nostos-button--secondary')).toBe(true);
+    expect(el('selection-pen-picker')).not.toBeNull();
+    expect(el('selection-cancel')!.classList.contains('nostos-button--ghost')).toBe(true);
   });
 
   it('Copy copies the full passage, confirms with a toast and closes without saving', async () => {

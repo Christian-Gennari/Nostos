@@ -121,7 +121,7 @@ describe('ReaderSelectionSurface (#1607)', () => {
 
   afterEach(() => TestBed.resetTestingModule());
 
-  it('docks the bar at the top with the quote and the pens, and reports the decisions', () => {
+  it('docks the bar at the top with the quote, labelled utilities, pen picker, and decisions', () => {
     fixture.componentRef.setInput('placement', null);
     fixture.componentRef.setInput('preview', 'Sing, goddess, the anger of Peleus son Achilles.');
     fixture.componentRef.setInput('canMarkPassage', true);
@@ -130,7 +130,9 @@ describe('ReaderSelectionSurface (#1607)', () => {
     const bar = fixture.nativeElement.querySelector('[data-testid="selection-bar"]') as HTMLElement;
     expect(bar).not.toBeNull();
     expect(bar.querySelector('.selected-text')?.textContent).toContain('Sing, goddess');
-    expect(bar.querySelector('app-pen-swatches')).not.toBeNull();
+    expect(bar.querySelector('[data-testid="selection-copy"]')).not.toBeNull();
+    expect(bar.querySelector('[data-testid="selection-more"]')).not.toBeNull();
+    expect(bar.querySelector('app-pen-picker')).not.toBeNull();
     expect(bar.querySelector('[data-testid="selection-highlight"]')).not.toBeNull();
     expect(bar.querySelector('[data-testid="selection-add-note"]')).not.toBeNull();
 
@@ -146,24 +148,30 @@ describe('ReaderSelectionSurface (#1607)', () => {
     expect(highlighted).toHaveBeenCalledTimes(1);
   });
 
-  it('anchors the menu at the text with a dismiss scrim', () => {
-    fixture.componentRef.setInput('placement', { left: 24, width: 320, top: 90, bottom: null });
+  it('anchors the menu at the text with a utility rail beside the quote and a dismiss scrim', () => {
+    fixture.componentRef.setInput('placement', { left: 24, width: 396, top: 90, bottom: null });
     fixture.componentRef.setInput('preview', 'A passage');
+    fixture.componentRef.setInput('canMarkPassage', true);
     fixture.detectChanges();
 
     expect(fixture.nativeElement.querySelector('[data-testid="selection-bar"]')).toBeNull();
     const menu = fixture.nativeElement.querySelector('[data-testid="selection-menu"]') as HTMLElement;
     expect(menu).not.toBeNull();
     expect(menu.style.left).toBe('24px');
+    expect(menu.querySelector('.selection-utility-rail [data-testid="selection-copy"]')).not.toBeNull();
+    expect(menu.querySelector('.selection-utility-rail [data-testid="selection-mark-passage"]')).not.toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="selection-scrim"]')).not.toBeNull();
   });
 
-  it('shows Save note only once the draft can be saved', () => {
+  it('shows Save note only once the draft can be saved and hides utilities while writing', () => {
+    fixture.componentRef.setInput('placement', { left: 24, width: 396, top: 90, bottom: null });
+    fixture.componentRef.setInput('canMarkPassage', true);
     fixture.componentRef.setInput('noteDraftOpen', true);
     fixture.componentRef.setInput('noteDraft', 'A thought');
     fixture.componentRef.setInput('noteDraftReady', false);
     fixture.detectChanges();
 
+    expect(fixture.nativeElement.querySelector('.selection-utility-rail')).toBeNull();
     const save = () =>
       fixture.nativeElement.querySelector('[data-testid="selection-save-note"]') as HTMLButtonElement;
     expect(save().disabled).toBe(true);

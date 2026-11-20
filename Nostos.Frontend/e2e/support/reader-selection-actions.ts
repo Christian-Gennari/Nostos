@@ -69,7 +69,7 @@ async function snap(page: Page, name: string) {
 
 /** Every docked action is the topmost element at its own centre: nothing is drawn over it. */
 async function expectBarUncovered(page: Page) {
-  for (const id of ['selection-pen-rose', 'selection-copy', 'selection-cancel', 'selection-add-note', 'selection-highlight']) {
+  for (const id of ['selection-pen-picker', 'selection-copy', 'selection-cancel', 'selection-add-note', 'selection-highlight']) {
     const onTop = await page.getByTestId(id).evaluate((el) => {
       const r = el.getBoundingClientRect();
       const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
@@ -378,11 +378,10 @@ export function mobileSelectionSpecs() {
     await waitForLayoutSettled(page, '[data-testid="selection-bar"]');
     for (const id of [
       'selection-copy',
+      'selection-pen-picker',
       'selection-cancel',
       'selection-add-note',
       'selection-highlight',
-      'selection-pen-sage',
-      'selection-pen-rose',
     ]) {
       const control = page.locator(`[data-testid="${id}"]`);
       await expect(control, `${id} is laid out`).toBeVisible();
@@ -390,9 +389,7 @@ export function mobileSelectionSpecs() {
       expect(b.x).toBeGreaterThanOrEqual(0);
       expect(b.x + b.width, `${id} inside the viewport`).toBeLessThanOrEqual(viewport.width);
       expect(b.y + b.height).toBeLessThanOrEqual(viewport.height);
-      if (!id.startsWith('selection-pen')) {
-        expect(b.height, `${id} thumb-sized`).toBeGreaterThanOrEqual(40);
-      }
+      expect(b.height, `${id} thumb-sized`).toBeGreaterThanOrEqual(40);
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await snap(page, 'mobile-bar');
@@ -439,7 +436,7 @@ export function mobileSelectionSpecs() {
     await expect(header).toBeVisible();
   });
 
-  test('phone: a pen dot picks the colour and Highlight saves in it; a tap on the page drops an offer without turning the page', async ({ page }) => {
+  test('phone: the pen picker selects the colour and Highlight saves in it; a tap on the page drops an offer without turning the page', async ({ page }) => {
     const { baseUrl } = loadFixture();
     const bookId = await seedEpub(baseUrl, `Selection P ${run}`);
     await openReader(page, baseUrl, bookId);
@@ -461,10 +458,14 @@ export function mobileSelectionSpecs() {
 
     const selected = await selectWords(page);
     await expect(bar).toBeVisible();
-    // A pen dot only picks the colour; nothing is saved until Highlight.
+    // Opening the pen picker chooses the colour without saving; Highlight saves in it.
     // The offer is painted in the default pen (sage) first.
     await expect.poll(() => epubMarkCount(page, 'pen-sage')).toBe(1);
+    const picker = page.locator('[data-testid="selection-pen-picker"]');
+    await expect(picker).toHaveAttribute('aria-label', 'Highlight colour: Sage');
+    await picker.tap();
     await page.locator('[data-testid="selection-pen-rose"]').tap();
+    await expect(picker).toHaveAttribute('aria-label', 'Highlight colour: Rose');
     // The offered passage is redrawn in the pen just picked, once.
     await expect.poll(() => epubMarkCount(page, 'pen-rose')).toBe(1);
     expect(await epubMarkCount(page, 'pen-sage')).toBe(0);
