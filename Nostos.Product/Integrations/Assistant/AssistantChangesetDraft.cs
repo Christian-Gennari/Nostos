@@ -132,14 +132,12 @@ public sealed class AssistantChangesetDraft(ILibraryChangesetService changesets,
         var previewState = rawPreview.PreviewState;
         if (previewState is null)
         {
-            var fallbackPlan = AssistantChangesetPlanBuilder.Build(
-                new LibraryChangesetPreviewState(
-                    new LibraryChangesetDiff.LibrarySnapshot("0", new Dictionary<Guid, CollectionState>(), new Dictionary<Guid, HashSet<Guid>>(), new Dictionary<Guid, BookFieldsState>()),
-                    new LibraryChangesetDiff.LibrarySnapshot("0", new Dictionary<Guid, CollectionState>(), new Dictionary<Guid, HashSet<Guid>>(), new Dictionary<Guid, BookFieldsState>()),
-                    new Dictionary<string, Guid>(),
-                    new Dictionary<Guid, string>()),
-                rawCandidate);
-            return await CommitAsync(rawCandidate, nextRefId, previewState: null, rawCandidate, fallbackPlan.DependsOn, fallbackPlan.DeletedDescendantCounts, rawPreview, ct);
+            // A service without preview state (a fake or a wrapper) gives no
+            // snapshots to plan from: keep the model's operations as they are,
+            // with one dependency list per operation.
+            return await CommitAsync(
+                rawCandidate, nextRefId, previewState: null, rawCandidate,
+                ComputeSimpleDependsOn(rawCandidate), new Dictionary<Guid, int>(), rawPreview, ct);
         }
 
         var plan = AssistantChangesetPlanBuilder.Build(previewState, rawCandidate);
