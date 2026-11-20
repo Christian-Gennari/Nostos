@@ -16,6 +16,7 @@
   class="assistant-panel"
   [class.is-expanded]="expanded()"
   [class.is-docked]="docked()"
+  [class.is-empty]="isEmpty()"
   role="dialog"
   aria-label="Nostos assistant"
   data-testid="assistant-panel"
@@ -33,6 +34,34 @@
     </div>
 
     <div class="assistant-header-actions">
+      <div class="assistant-info-wrap" #infoWrap>
+        <button
+          appIconButton
+          icon="info"
+          [glyphSize]="14"
+          type="button"
+          class="assistant-header-action assistant-info"
+          #infoTrigger
+          (click)="toggleInfo()"
+          aria-label="About Ask Nostos"
+          [attr.aria-expanded]="infoOpen()"
+          aria-controls="assistant-info-popover"
+          [attr.aria-describedby]="infoOpen() ? 'assistant-info-popover' : null"
+          title="About Ask Nostos"
+          data-testid="assistant-info"
+        ></button>
+        @if (infoOpen()) {
+        <div
+          id="assistant-info-popover"
+          class="assistant-info-popover"
+          role="status"
+          aria-live="polite"
+          data-testid="assistant-info-popover"
+        >
+          <p class="assistant-info-copy">It can't delete books or notes, or change settings.</p>
+        </div>
+        }
+      </div>
       <button
         appIconButton
         icon="plus"
@@ -69,83 +98,92 @@
     </div>
   </header>
 
-  <div
-    class="assistant-body"
-    #body
-    (scroll)="onBodyScroll()"
-    data-testid="assistant-body"
-  >
-    @if (assistant.entries().length === 0) {
-    <div class="assistant-empty" data-testid="assistant-empty">
-      <p class="assistant-empty-title">Ask, capture, or change your library.</p>
-      <div class="capability-doors" aria-label="What Ask Nostos can do">
-        @for (door of doors(); track door.id) {
-        <div class="capability-door" [attr.data-door]="door.id" [attr.data-testid]="'assistant-door-' + door.id">
-          <span class="capability-door-label">{{ door.label }}</span>
-          <div class="capability-door-examples">
-            @for (example of door.examples; track example.id) {
-            <button
-              appButton
-              variant="secondary"
-              size="sm"
-              type="button"
-              class="capability-example"
-              (click)="prefillFromDoor(example)"
-              [disabled]="assistant.sending()"
-              [attr.data-testid]="'assistant-example-' + example.id"
-            >{{ example.label }}</button>
-            }
-          </div>
+  <div class="assistant-stage">
+    <div
+      class="assistant-body"
+      #body
+      (scroll)="onBodyScroll()"
+      data-testid="assistant-body"
+    >
+      @if (isEmpty()) {
+      <div class="assistant-empty" data-testid="assistant-empty">
+        <p class="assistant-empty-title">What’s on your mind?</p>
+      </div>
+      }
+
+      @if (assistant.entries().length > 0) {
+      <div
+        class="assistant-transcript"
+        #transcript
+        appAssistantTranscript
+        tabindex="-1"
+        aria-label="Conversation"
+        data-testid="assistant-transcript"
+        (evidenceSelected)="openEvidence($event)"
+        (sourceSelected)="openSource($event)"
+        (failureActionSelected)="onFailureAction($event)"
+        (retried)="onEntryRetried()"
+        (changesetDetailsToggled)="onChangesetDetailsToggled($event.changesetId, $event.open)"
+      ></div>
+      }
+
+      @if (assistant.pendingAnchor(); as prompt) {
+      <div class="assistant-prompt" data-testid="assistant-anchor-prompt">
+        <div class="prompt-copy">
+          <span class="prompt-label">One detail</span>
+          <span class="prompt-question">{{ prompt.question }}</span>
         </div>
+        <!-- A book question has no skip: there is nothing to save without it, and
+             skipping would only ask again. -->
+        @if (prompt.kind !== 'book') {
+        <button
+          appButton
+          variant="ghost"
+          size="sm"
+          type="button"
+          class="prompt-skip"
+          (click)="assistant.skipAnchor()"
+          data-testid="assistant-anchor-skip"
+        >
+          Skip
+        </button>
         }
       </div>
-      <p class="assistant-empty-boundary">It can't delete books or notes, or change settings.</p>
+      }
     </div>
-    }
 
-    @if (assistant.entries().length > 0) {
-    <div
-      class="assistant-transcript"
-      #transcript
-      appAssistantTranscript
-      tabindex="-1"
-      aria-label="Conversation"
-      data-testid="assistant-transcript"
-      (evidenceSelected)="openEvidence($event)"
-      (sourceSelected)="openSource($event)"
-      (failureActionSelected)="onFailureAction($event)"
-      (retried)="onEntryRetried()"
-      (changesetDetailsToggled)="onChangesetDetailsToggled($event.changesetId, $event.open)"
-    ></div>
-    }
+    <app-assistant-composer
+      [hero]="isEmpty()"
+      (submitted)="onComposerSubmitted()"
+    ></app-assistant-composer>
 
-    @if (assistant.pendingAnchor(); as prompt) {
-    <div class="assistant-prompt" data-testid="assistant-anchor-prompt">
-      <div class="prompt-copy">
-        <span class="prompt-label">One detail</span>
-        <span class="prompt-question">{{ prompt.question }}</span>
-      </div>
-      <!-- A book question has no skip: there is nothing to save without it, and
-           skipping would only ask again. -->
-      @if (prompt.kind !== 'book') {
-      <button
-        appButton
-        variant="ghost"
-        size="sm"
-        type="button"
-        class="prompt-skip"
-        (click)="assistant.skipAnchor()"
-        data-testid="assistant-anchor-skip"
+    @if (isEmpty()) {
+    <div class="capability-doors" aria-label="What Ask Nostos can do">
+      @for (door of doors(); track door.id) {
+      <div
+        class="capability-door"
+        [attr.data-door]="door.id"
+        [attr.data-testid]="'assistant-door-' + door.id"
       >
-        Skip
-      </button>
+        @for (example of door.examples; track example.id) {
+        <button
+          appButton
+          variant="link"
+          type="button"
+          class="capability-example"
+          (click)="prefillFromDoor(example)"
+          [disabled]="assistant.sending()"
+          [attr.data-testid]="'assistant-example-' + example.id"
+        >
+          <span class="capability-example-label">{{ example.label }}</span>
+          <nostos-icon name="arrow-right" [size]="13" class="capability-example-arrow"></nostos-icon>
+        </button>
+        }
+      </div>
       }
     </div>
     }
-
   </div>
-
-  <app-assistant-composer (submitted)="onComposerSubmitted()"></app-assistant-composer>
 </section>
 }
 

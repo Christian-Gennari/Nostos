@@ -57,90 +57,76 @@ export interface CapabilityDoor {
 }
 
 /**
- * Capability doors for the page the reader is on. They are grouped by job, and
- * every example is worded for the surface: about this book in the reader,
- * about connections in the Brain, about a draft in the Studio. Organising the
- * library, the To read list and Studio drafts appear everywhere, because the
- * app otherwise never mentions them.
+ * One quiet example per job — Ask, Capture, Organise — worded for the room the
+ * reader is on and truthful for any library (never naming a book, author, or
+ * draft the reader does not own). Clicking any row prefills the composer and
+ * never sends (#1559, #1589).
  */
 export function capabilityDoors(context: AssistantContext): CapabilityDoor[] {
   const book = context.bookTitle?.trim();
 
-  let ask: CapabilityExample[];
+  let ask: CapabilityExample;
   switch (context.surface) {
     case 'reader':
-      ask = [
-        ...(context.selectedText?.trim()
-          ? [{ id: 'explain-selection', label: 'Explain the passage I selected' }]
-          : []),
-        {
-          id: 'reader-summary',
-          label: book
-            ? `Summarise what I have read of ${book} so far`
-            : 'Summarise what I have read so far',
-        },
-        {
-          id: 'reader-notes',
-          label: book ? `What have I noted from ${book}?` : 'What have I noted from this book?',
-        },
-      ];
+      ask = context.selectedText?.trim()
+        ? { id: 'explain-selection', label: 'Explain the passage I selected' }
+        : {
+            id: 'reader-summary',
+            label: book
+              ? `Summarise what I have read of ${book} so far`
+              : 'Summarise what I have read so far',
+          };
       break;
     case 'book-detail':
-      ask = [
-        { id: 'book-about', label: book ? `What is ${book} about?` : 'What is this book about?' },
-        {
-          id: 'book-notes',
-          label: book ? `What have I noted from ${book}?` : 'What have I noted from this book?',
-        },
-        { id: 'book-related', label: 'Which of my other books connect to this one?' },
-      ];
+      ask = {
+        id: 'book-about',
+        label: book ? `What is ${book} about?` : 'What is this book about?',
+      };
       break;
     case 'brain':
-      ask = [
-        { id: 'brain-connections', label: 'What connects my topics?' },
-        { id: 'brain-recent', label: 'Summarise my most recent notes' },
-        { id: 'brain-gaps', label: 'Which topics have only one or two notes?' },
-      ];
+      ask = { id: 'brain-connections', label: 'What connects my topics?' };
       break;
     case 'studio':
-      ask = [
-        { id: 'studio-sources', label: 'Which of my notes could support what I am writing?' },
-        { id: 'studio-drafts', label: 'Which Studio drafts am I working on?' },
-      ];
+      ask = {
+        id: 'studio-sources',
+        label: 'Which of my notes could support what I am writing?',
+      };
       break;
     default:
-      ask = [
-        { id: 'library-next', label: 'What should I read next from my library?' },
-        { id: 'library-recent', label: 'What have I been reading lately?' },
-        { id: 'library-topics', label: 'Which topics come up most in my notes?' },
-      ];
+      ask = { id: 'library-next', label: 'What should I read next from my library?' };
   }
 
-  // A Brain review already has the note; proposing topics is the job there.
-  // Everywhere else, point at the Studio documents users never hear about.
-  const organiseExample: CapabilityExample = context.brainReviewNoteId
-    ? { id: 'organise-topics', label: 'Suggest topics for this note' }
-    : { id: 'organise-studio', label: 'Open my Studio draft about memory' };
+  let organise: CapabilityExample;
+  if (context.brainReviewNoteId) {
+    organise = { id: 'organise-topics', label: 'Suggest topics for this note' };
+  } else if (context.surface === 'studio') {
+    organise = { id: 'organise-studio', label: 'List the Studio drafts I am working on' };
+  } else if (context.surface === 'reader' || context.surface === 'book-detail') {
+    organise = {
+      id: 'organise-collection',
+      label: book ? `Add ${book} to a collection` : 'Add this book to a collection',
+    };
+  } else {
+    organise = {
+      id: 'organise-collection',
+      label: 'Group my unread books into a collection',
+    };
+  }
 
   return [
-    { id: 'ask', label: 'Ask', examples: ask },
+    { id: 'ask', label: 'Ask', examples: [ask] },
     {
       id: 'capture',
       label: 'Capture',
       examples: [
-        { id: 'capture-thought', label: 'Save this thought:', fill: 'Save this thought: ' },
-        { id: 'capture-quote', label: 'Save this quote:', fill: 'Save this quote: ' },
+        {
+          id: 'capture-thought',
+          label: 'Save a thought or quote to my notes',
+          fill: 'Save this thought: ',
+        },
       ],
     },
-    {
-      id: 'organise',
-      label: 'Organise',
-      examples: [
-        { id: 'organise-collection', label: 'Move my Le Guin books into a collection' },
-        { id: 'organise-to-read', label: 'Add Piranesi to To read' },
-        organiseExample,
-      ],
-    },
+    { id: 'organise', label: 'Organise', examples: [organise] },
   ];
 }
 
@@ -211,6 +197,9 @@ export class AssistantComponent {
   private readonly body = viewChild<ElementRef<HTMLElement>>('body');
   /** The content whose post-layout growth can move the compact pane's end. */
   private readonly transcript = viewChild<AssistantTranscriptComponent>('transcript');
+  /** Container for the header info button and its boundary popover. */
+  private readonly infoWrap = viewChild<ElementRef<HTMLElement>>('infoWrap');
+  private readonly infoTrigger = viewChild('infoTrigger', { read: ElementRef<HTMLButtonElement> });
   private readonly destroyRef = inject(DestroyRef);
   private readonly injector = inject(Injector);
 
@@ -318,6 +307,10 @@ export class AssistantComponent {
   readonly viewportTopCss = signal('0px');
 
   readonly isOpen = computed(() => this.assistant.isOpen());
+  /** True when the conversation has no turns or pending follow-up prompts yet. */
+  readonly isEmpty = computed(
+    () => this.assistant.entries().length === 0 && !this.assistant.pendingAnchor(),
+  );
   readonly isReader = computed(() => this.assistant.context().surface === 'reader');
   /**
    * Selection actions already include Ask Nostos, so the launcher steps aside
@@ -337,6 +330,9 @@ export class AssistantComponent {
    * state, so compact <-> expanded never creates a second chat session.
    */
   readonly expanded = signal(false);
+
+  /** Header popover holding the assistant's safety boundary off the welcome surface. */
+  readonly infoOpen = signal(false);
 
   constructor() {
     // Availability is a server fact; ask once for the life of the session.
@@ -601,6 +597,11 @@ export class AssistantComponent {
     }
     if (event.key === 'Escape' && this.visible() && this.assistant.isOpen()) {
       event.preventDefault();
+      if (this.infoOpen()) {
+        this.infoOpen.set(false);
+        this.infoTrigger()?.nativeElement.focus();
+        return;
+      }
       this.close();
     }
   }
@@ -609,6 +610,9 @@ export class AssistantComponent {
   onPointerDown(event: PointerEvent): void {
     if (!this.assistant.isOpen()) return;
     const target = event.target as Node | null;
+    if (this.infoOpen() && target && !this.infoWrap()?.nativeElement.contains(target)) {
+      this.infoOpen.set(false);
+    }
     if (target && this.host.nativeElement.contains(target)) return;
     // Pressing a launcher is not an outside click: closing here would let the
     // launcher's own click reopen the panel straight away.
@@ -621,6 +625,10 @@ export class AssistantComponent {
     else this.open();
   }
 
+  toggleInfo(): void {
+    this.infoOpen.update((open) => !open);
+  }
+
   open(): void {
     if (!this.visible()) return;
     this.previouslyFocused =
@@ -629,6 +637,7 @@ export class AssistantComponent {
     // conversation, however the reader left the view last time.
     this.following.set(true);
     this.expanded.set(false);
+    this.infoOpen.set(false);
     this.assistant.open();
     this.startViewportTracking();
 
@@ -648,6 +657,7 @@ export class AssistantComponent {
     this.voice.cancel();
     this.assistant.close();
     this.expanded.set(false);
+    this.infoOpen.set(false);
     this.programmaticScrollTop = null;
     this.stopViewportTracking();
     const previous = this.previouslyFocused;

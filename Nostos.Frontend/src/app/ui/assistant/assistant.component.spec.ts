@@ -164,35 +164,51 @@ describe('capabilityDoors', () => {
   const ctx = (overrides: Partial<AssistantContext>): AssistantContext =>
     ({ surface: 'other', route: '/', bookId: null, bookTitle: null, selectedText: null, ...overrides }) as AssistantContext;
 
-  it('groups every example under Ask, Capture and Organise, two or three each', () => {
+  it('returns one quiet example each for Ask, Capture and Organise across every surface', () => {
     for (const surface of ['reader', 'book-detail', 'brain', 'studio', 'library'] as const) {
       const doors = capabilityDoors(ctx({ surface, bookTitle: 'Dune' }));
       expect(doors.map((door) => door.label)).toEqual(['Ask', 'Capture', 'Organise']);
       for (const door of doors) {
-        expect(door.examples.length, `${surface}/${door.id}`).toBeGreaterThanOrEqual(2);
-        expect(door.examples.length, `${surface}/${door.id}`).toBeLessThanOrEqual(3);
-        expect(new Set(door.examples.map((example) => example.id)).size).toBe(door.examples.length);
+        expect(door.examples.length, `${surface}/${door.id}`).toBe(1);
+        for (const example of door.examples) {
+          expect(example.label.trim().endsWith(':'), `${surface}/${example.id}`).toBe(false);
+        }
       }
     }
   });
 
-  it('names quotes, collections, the To read list and Studio drafts, which the app omitted', () => {
-    const text = capabilityDoors(ctx({ surface: 'library' }))
-      .flatMap((door) => door.examples.map((example) => example.fill ?? example.label))
-      .join(' ');
+  it('never names books, authors or drafts the reader lacks', () => {
+    for (const surface of ['reader', 'book-detail', 'brain', 'studio', 'library', 'settings', 'home', 'other'] as const) {
+      const text = capabilityDoors(ctx({ surface }))
+        .flatMap((door) => door.examples.map((example) => `${example.label} ${example.fill ?? ''}`))
+        .join(' ');
+      expect(text).not.toContain('Le Guin');
+      expect(text).not.toContain('Piranesi');
+      expect(text).not.toContain('about memory');
+    }
+  });
 
-    expect(text).toContain('Save this thought:');
-    expect(text).toContain('Save this quote:');
-    expect(text).toContain('collection');
-    expect(text).toContain('To read');
-    expect(text).toContain('Studio draft');
+  it('shows Ask, Capture and Organise range on Library with a ready-to-finish capture stem', () => {
+    const doors = capabilityDoors(ctx({ surface: 'library' }));
+    expect(doors[0].examples[0]).toEqual({
+      id: 'library-next',
+      label: 'What should I read next from my library?',
+    });
+    expect(doors[1].examples[0]).toEqual({
+      id: 'capture-thought',
+      label: 'Save a thought or quote to my notes',
+      fill: 'Save this thought: ',
+    });
+    expect(doors[2].examples[0]).toEqual({
+      id: 'organise-collection',
+      label: 'Group my unread books into a collection',
+    });
   });
 
   it('asks about the open book in the reader, and about a selection when there is one', () => {
-    expect(capabilityDoors(ctx({ surface: 'reader', bookTitle: 'Dune' }))[0].examples.map((p) => p.label)).toEqual([
-      'Summarise what I have read of Dune so far',
-      'What have I noted from Dune?',
-    ]);
+    const readerDoors = capabilityDoors(ctx({ surface: 'reader', bookTitle: 'Dune' }));
+    expect(readerDoors[0].examples[0].label).toBe('Summarise what I have read of Dune so far');
+    expect(readerDoors[2].examples[0].label).toBe('Add Dune to a collection');
     expect(
       capabilityDoors(ctx({ surface: 'reader', bookTitle: 'Dune', selectedText: 'Fear is the mind-killer' }))[0]
         .examples[0].label,
@@ -200,18 +216,18 @@ describe('capabilityDoors', () => {
   });
 
   it('still reads naturally without a book title', () => {
-    expect(capabilityDoors(ctx({ surface: 'book-detail' }))[0].examples[0].label).toBe(
-      'What is this book about?',
-    );
+    const detailDoors = capabilityDoors(ctx({ surface: 'book-detail' }));
+    expect(detailDoors[0].examples[0].label).toBe('What is this book about?');
+    expect(detailDoors[2].examples[0].label).toBe('Add this book to a collection');
   });
 
-  it('suggests topics instead of a Studio draft when a Brain note is under review', () => {
-    const doors = capabilityDoors(ctx({ surface: 'brain', brainReviewNoteId: 'note-1' }));
+  it('adapts to Studio and Brain review notes without inventing a draft title', () => {
+    const studioDoors = capabilityDoors(ctx({ surface: 'studio' }));
+    expect(studioDoors[0].examples[0].label).toBe('Which of my notes could support what I am writing?');
+    expect(studioDoors[2].examples[0].label).toBe('List the Studio drafts I am working on');
 
-    expect(doors[2].examples.map((example) => example.label)).toContain('Suggest topics for this note');
-    expect(doors[2].examples.map((example) => example.label)).not.toContain(
-      'Open my Studio draft about memory',
-    );
+    const brainReviewDoors = capabilityDoors(ctx({ surface: 'brain', brainReviewNoteId: 'note-1' }));
+    expect(brainReviewDoors[2].examples[0].label).toBe('Suggest topics for this note');
   });
 
   it('falls back to library questions anywhere else', () => {
@@ -823,13 +839,14 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     expect(assistant.draft()).toBe('Keep this draft while the shell changes');
   });
 
-  it('keeps the header quiet and uses one action treatment for all three controls', () => {
+  it('keeps the header quiet and uses one action treatment for all controls', () => {
     fixture.componentInstance.open();
     fixture.detectChanges();
 
     expect(fixture.nativeElement.querySelector('.assistant-subtitle')).toBeNull();
 
     const actions = [
+      fixture.nativeElement.querySelector('[data-testid="assistant-info"]'),
       fixture.nativeElement.querySelector('[data-testid="assistant-new-conversation"]'),
       fixture.nativeElement.querySelector('[data-testid="assistant-expand"]'),
       fixture.nativeElement.querySelector('[data-testid="assistant-close"]'),
@@ -1312,20 +1329,28 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
   });
 
   describe('empty conversation', () => {
-    it('regroups the empty state into Ask, Capture and Organise doors for the page', () => {
+    it('leads with the composer and shows three quiet editorial doors for the page without category gutters or a welcome disclaimer', () => {
       fake.set({ surface: 'brain', route: '/brain' });
       assistant.open();
       fixture.detectChanges();
+
+      const panel = fixture.nativeElement.querySelector('[data-testid="assistant-panel"]') as HTMLElement;
+      expect(panel.classList.contains('is-empty')).toBe(true);
+      expect(fixture.nativeElement.querySelector('[data-testid="assistant-empty"]')?.textContent?.trim()).toBe(
+        'What’s on your mind?',
+      );
+      expect(fixture.nativeElement.querySelector('.capability-door-label')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="assistant-info-popover"]')).toBeNull();
 
       const doors = Array.from<HTMLElement>(
         fixture.nativeElement.querySelectorAll('[data-testid^="assistant-door-"]'),
       );
       expect(doors.map((door) => door.dataset['door'])).toEqual(['ask', 'capture', 'organise']);
       expect(doors[0].textContent).toContain('What connects my topics?');
-      expect(doors[1].textContent).toContain('Save this thought:');
-      expect(doors[2].textContent).toContain('Move my Le Guin books into a collection');
-      expect(fixture.nativeElement.querySelector('[data-testid="assistant-empty"]')?.textContent).toContain(
-        "It can't delete books or notes, or change settings.",
+      expect(doors[1].textContent).toContain('Save a thought or quote to my notes');
+      expect(doors[2].textContent).toContain('Group my unread books into a collection');
+      expect(fixture.nativeElement.querySelector('[data-testid="assistant-empty"]')?.textContent).not.toContain(
+        "It can't delete",
       );
     });
 
@@ -1335,15 +1360,15 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
       fixture.detectChanges();
 
       (fixture.nativeElement.querySelector(
-        '[data-testid="assistant-example-organise-to-read"]',
+        '[data-testid="assistant-example-organise-collection"]',
       ) as HTMLButtonElement).click();
       fixture.detectChanges();
 
       const composer = fixture.nativeElement.querySelector(
         '[data-testid="assistant-composer"]',
       ) as HTMLTextAreaElement;
-      expect(composer.value).toBe('Add Piranesi to To read');
-      expect(assistant.draft()).toBe('Add Piranesi to To read');
+      expect(composer.value).toBe('Group my unread books into a collection');
+      expect(assistant.draft()).toBe('Group my unread books into a collection');
       expect(assistant.entries()).toEqual([]);
       expect(fixture.nativeElement.querySelector('[data-testid="assistant-empty"]')).not.toBeNull();
       http.expectNone('/api/assistant/turn/stream');
@@ -1354,9 +1379,11 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
       assistant.open();
       fixture.detectChanges();
 
-      (fixture.nativeElement.querySelector(
+      const captureButton = fixture.nativeElement.querySelector(
         '[data-testid="assistant-example-capture-thought"]',
-      ) as HTMLButtonElement).click();
+      ) as HTMLButtonElement;
+      expect(captureButton.textContent?.trim()).toBe('Save a thought or quote to my notes');
+      captureButton.click();
       fixture.detectChanges();
 
       const composer = fixture.nativeElement.querySelector(
@@ -1365,6 +1392,55 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
       expect(composer.value).toBe('Save this thought: ');
       expect(assistant.entries()).toEqual([]);
       http.expectNone('/api/assistant/turn/stream');
+    });
+
+    it('moves the boundary note into a keyboard and screen-reader accessible header info popover', () => {
+      assistant.open();
+      fixture.detectChanges();
+
+      const infoButton = fixture.nativeElement.querySelector(
+        '[data-testid="assistant-info"]',
+      ) as HTMLButtonElement;
+      expect(infoButton).toBeTruthy();
+      expect(infoButton.getAttribute('aria-label')).toBe('About Ask Nostos');
+      expect(infoButton.getAttribute('aria-expanded')).toBe('false');
+      expect(infoButton.getAttribute('aria-controls')).toBe('assistant-info-popover');
+      expect(infoButton.getAttribute('aria-describedby')).toBeNull();
+
+      infoButton.click();
+      fixture.detectChanges();
+
+      const popover = fixture.nativeElement.querySelector(
+        '[data-testid="assistant-info-popover"]',
+      ) as HTMLElement;
+      expect(popover).toBeTruthy();
+      expect(popover.id).toBe('assistant-info-popover');
+      expect(popover.getAttribute('role')).toBe('status');
+      expect(popover.getAttribute('aria-live')).toBe('polite');
+      expect(popover.textContent).toContain("It can't delete books or notes, or change settings.");
+      expect(infoButton.getAttribute('aria-expanded')).toBe('true');
+      expect(infoButton.getAttribute('aria-describedby')).toBe('assistant-info-popover');
+
+      // First Escape closes the info popover without closing Ask Nostos and restores focus to the trigger.
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('[data-testid="assistant-info-popover"]')).toBeNull();
+      expect(infoButton.getAttribute('aria-expanded')).toBe('false');
+      expect(assistant.isOpen()).toBe(true);
+      expect(document.activeElement).toBe(infoButton);
+
+      // Re-open and dismiss with an inside-panel pointerdown outside the info wrap.
+      infoButton.click();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('[data-testid="assistant-info-popover"]')).toBeTruthy();
+
+      const body = fixture.nativeElement.querySelector('[data-testid="assistant-body"]') as HTMLElement;
+      body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('[data-testid="assistant-info-popover"]')).toBeNull();
+      expect(assistant.isOpen()).toBe(true);
     });
   });
 

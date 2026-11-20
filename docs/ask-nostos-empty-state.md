@@ -1,7 +1,7 @@
 # Ask Nostos Empty State — Design Brief
 
 **Issue:** [#1589](https://github.com/Christian-Gennari/Nostos/issues/1589) (follows #1579, #1559; part of #1464)  
-**Status:** Stage 1 — brief and three directions ready for review; no implementation yet.
+**Status:** Decided — implementing **Direction A (Composer-led)**.
 
 ---
 
@@ -51,25 +51,25 @@ Measured against production and the #1579 visual evidence (`390×844` phone and 
 
 ## Three directions explored (Stage 1)
 
-Static HTML mockups using Nostos's real CSS tokens, self-hosted *Newsreader* and *Hanken Grotesk* typefaces, and Phosphor icons live in [`docs/design/ask-nostos-empty-state/`](./design/ask-nostos-empty-state/). Each direction was captured at `390×844` (phone), `1440×900` compact desktop, and `1440×900` expanded desktop in both light and dark themes via `npm run preview -- shots`.
+Three static HTML directions — captured at `390×844` (phone), `1440×900` compact desktop, and `1440×900` expanded desktop in both light and dark themes — were posted for review in [issue #1589 comment #7046641924](https://github.com/Christian-Gennari/Nostos/issues/1589#issuecomment-7046641924).
 
 | Direction | Focal point | Suggestions on first screen | Boundary note | Contextual doors (`capabilityDoors()`) |
 | --- | --- | --- | --- | --- |
-| **A — Composer-led** *(recommended)* | Hero composer near vertical centre, one quiet Newsreader invitation above | 3 borderless hairline-separated editorial links directly beneath the composer (Ask, Capture, Organise by example — no gutters, no pills) | Header `info` icon popover (off first screen) | Same 3 slots swap copy cleanly per surface using `AssistantContext` (e.g. current book title in Reader/Book Detail; generic truths on Library) |
+| **A — Composer-led** *(picked)* | Hero composer near vertical centre, one quiet Newsreader invitation above | 3 borderless hairline-separated editorial links directly beneath the composer (Ask, Capture, Organise by example — no gutters, no pills) | Header `info` icon popover (off first screen) | Same 3 slots swap copy cleanly per surface using `AssistantContext` (e.g. current book title in Reader/Book Detail; generic truths on Library) |
 | **B — Context-led** | Quiet shelf-grounded list anchored directly above the composer (no dead gap) | 3 real-shelf items drawn from the user's actual library (*Reading*, *Last note*, *To read* — subtle inline tag, hairline rows, zero generic filler) | Header `info` icon popover (off first screen) | On Reader/Brain/Studio, slots reflect the active book/note/draft first, then recent shelf items; falls back to safe generics on an empty library |
-| **C — Minimal (Studio-style)** | Serif invitation + centred hero composer only | None visible at rest; quiet `Type / for ideas` / `/` trigger inside the composer footer opens a lightweight on-demand prompt popover | Footer of the `/` ideas popover + header `info` | The `/` popover renders the 3–4 contextual prompts for the active surface |
-
-### Recommendation: Direction A — Composer-led
-
-**Direction A** best satisfies every constraint in #1589 simultaneously:
-
-- **Unmistakable single focal point.** Putting the composer itself in the vertical centre (with the quiet serif line directly above and three feather-light text links directly beneath) turns Ask Nostos from a menu into a writing/thinking surface. In **B**, placing three titled shelf rows above the composer pulls first-glance attention back toward a list.
-- **Shows range without clutter or hidden doors.** Three borderless editorial rows — one question, one complete-sentence capture prompt (*"Save a thought or quote to my notes"*), one honest generic organisation prompt (*"Group my unread books into a collection"*) — communicate Ask, Capture, and Organise in under 130 px of height with zero category labels and zero pill borders. **C** is the quietest surface, but hiding every prompt behind `/` under-delivers on *"show range without listing features"* for readers who only know Ask Nostos as Q&A.
-- **Truthful at every library size, low implementation risk.** Unlike **B**, Direction A needs no extra library-summary fetch on panel open and never degrades awkwardly on a brand-new or single-book library. When `AssistantContext` already knows the open book, selection, Brain note, or Studio surface, `capabilityDoors()` personalises those exact three slots automatically — and real-book enrichment on Library can still slot into the same three rows later if desired.
-- **One adaptive layout.** The exact same centred stack works at `390×844` phone (eliminating the dead void completely), `408 px` compact desktop flyout, and `1000 px` expanded workspace without switching geometry or inventing breakpoints.
+| **C — Minimal (Studio-style)** | Serif invitation + centred hero composer only | None visible at rest; quiet `/` trigger inside the composer footer opens a lightweight on-demand prompt popover | Footer of the `/` ideas popover + header `info` | The `/` popover renders the 3–4 contextual prompts for the active surface |
 
 ---
 
 ## Decision
 
-*Pending pick on [#1589](https://github.com/Christian-Gennari/Nostos/issues/1589). To be recorded here with rationale once chosen, before implementation begins.*
+**Picked: Direction A — Composer-led** (following review on [issue #1589](https://github.com/Christian-Gennari/Nostos/issues/1589#issuecomment-7046641924)).
+
+**Rationale:**
+
+- **One clear focal point (the composer)** across phone (`390×844`), compact desktop flyout (`408 px`), and expanded desktop card (`1000 px`), eliminating the dead void on phone and turning the empty state from a menu into a writing/thinking surface.
+- **Range shown in three quiet rows without a pill wall.** Three borderless hairline-separated links directly below the composer show Ask, Capture (complete phrasing with no trailing colon, still prefilling a ready-to-continue stem), and Organise without uppercase taxonomy gutters or repeating button outlines.
+- **Truthful at every library size with no extra fetch.** Suggestions never name books, authors, or drafts the reader lacks, and `capabilityDoors()` swaps those exact three slots to match Reader, Book Detail, Brain, Studio, or Library from `AssistantContext`.
+- **Why not B or C:** Direction B pulls the eye above the composer toward a list and requires extra library-summary hydration (plus empty-library fallbacks); Direction C hides Capture and Organise behind `/`.
+- **Boundary placement:** *"It can't delete books or notes, or change settings."* moves off the first-screen hierarchy into the header `info` popover, reachable by pointer, keyboard, and screen reader.
+
