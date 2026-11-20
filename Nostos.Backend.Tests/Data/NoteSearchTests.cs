@@ -106,6 +106,23 @@ public sealed class NoteSearchTests
     }
 
     [Fact]
+    public async Task Finds_a_note_by_its_linked_topic_name_when_text_omits_the_word()
+    {
+        var (harness, _, linkedId, _) = await SeedAsync();
+        using var _h = harness;
+
+        await using var db = await harness.ContextFactory.CreateDbContextAsync();
+        var repo = new NoteRepository(db);
+
+        var hits = await repo.SearchByTextAsync("virtue", 50);
+        hits.Should().ContainSingle().Which.Id.Should().Be(linkedId);
+
+        var (browseItems, total) = await repo.BrowseAsync(new Nostos.Backend.Data.Interfaces.NoteBrowseQuery("virtue"), 50, 0);
+        total.Should().Be(1);
+        browseItems.Should().ContainSingle().Which.Id.Should().Be(linkedId);
+    }
+
+    [Fact]
     public async Task Treats_wildcards_as_text_instead_of_matching_everything()
     {
         var (harness, _, _, _) = await SeedAsync();

@@ -151,12 +151,12 @@ public static partial class AssistantCapabilities
             "notes_search",
             AssistantTrustClass.Suggest,
             AssistantCapabilityCategory.KnowledgeRetrieval,
-            "Searches only note text and book titles. For questions that may span notes, topics, or imported-book text, prefer knowledge_search.",
+            "Searches notes by note text, book titles/authors, and linked topic names. For questions that may span notes, topics, or imported-book text, prefer knowledge_search.",
             """
             {
               "type": "object",
               "properties": {
-                "query": { "type": "string", "description": "The search words to match against note text and book titles. This is a search phrase, not a question for you to answer. Required." },
+                "query": { "type": "string", "description": "The search words to match against note text, book titles/authors, and linked topic names. This is a search phrase, not a question for you to answer. Required." },
                 "limit": { "type": "integer", "description": "The maximum number of matching notes to return. Defaults to 20." }
               },
               "required": ["query"],

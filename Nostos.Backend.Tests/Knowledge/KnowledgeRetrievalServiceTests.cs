@@ -88,6 +88,38 @@ public sealed class KnowledgeRetrievalServiceTests : IClassFixture<SqliteTestFix
     }
 
     [Fact]
+    public async Task Topic_name_match_includes_linked_notes_even_when_note_text_omits_query_term()
+    {
+        await using var h = await CreateHarnessAsync();
+        var book = await h.SeedBookAsync("The Salt Meridian");
+        var taggedOnly = await h.SeedNoteAsync(
+            book.Id,
+            "The keeper trims each wick at dusk and climbs to the gallery once at midnight. A steady lamp is kept, never chased.");
+        var textOnly = await h.SeedNoteAsync(
+            book.Id,
+            "Repair philosophy: attention first, tools second.");
+        var unrelatedUnderOtherTopic = await h.SeedNoteAsync(
+            book.Id,
+            "Mornings are for walking the shoreline.");
+
+        var attention = await h.SeedTopicAsync("Attention", taggedOnly.Id);
+        await h.SeedTopicAsync("Boat Repair", textOnly.Id, unrelatedUnderOtherTopic.Id);
+
+        var result = await h.Knowledge.SearchAsync(
+            new KnowledgeSearchRequest("What did I note about attention?", MaxPerSource: 6));
+
+        result.Notes.Select(note => note.NoteId).Should().Contain([taggedOnly.Id, textOnly.Id]);
+        result.Notes.Select(note => note.NoteId).Should().NotContain(unrelatedUnderOtherTopic.Id);
+
+        var attentionTopic = result.Topics.Should().ContainSingle(t => t.TopicId == attention.Id).Subject;
+        attentionTopic.SupportingNotes.Should().ContainSingle(n => n.NoteId == taggedOnly.Id);
+
+        var boatRepairTopic = result.Topics.FirstOrDefault(t => t.Name == "Boat Repair");
+        boatRepairTopic.Should().NotBeNull();
+        boatRepairTopic!.SupportingNotes.Should().ContainSingle(n => n.NoteId == textOnly.Id);
+    }
+
+    [Fact]
     public async Task Explicit_book_scope_applies_to_notes_and_topic_evidence()
     {
         await using var h = await CreateHarnessAsync();
