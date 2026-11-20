@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Direction B — Context-led · Ask Nostos Empty State (#1589)</title>
+  <link rel="stylesheet" href="./mockups.css" />
+  <script src="./mockups.js"></script>
+</head>
+<body class="dir-b">
+  <div id="library-backdrop-host"></div>
+
+  <div class="assistant-scrim" aria-hidden="true"></div>
+  <section class="assistant-panel" role="dialog" aria-label="Nostos assistant">
+    <header class="assistant-header">
+      <div class="assistant-heading">
+        <span class="assistant-mark" aria-hidden="true"><span data-icon="sparkle" data-size="14"></span></span>
+        <span class="assistant-title">Ask Nostos</span>
+      </div>
+      <div class="assistant-header-actions">
+        <button type="button" class="assistant-header-action assistant-info" aria-label="About Ask Nostos" aria-expanded="false" title="About Ask Nostos">
+          <span data-icon="info" data-size="14"></span>
+        </button>
+        <button type="button" class="assistant-header-action" aria-label="New conversation" title="New conversation">
+          <span data-icon="plus" data-size="14"></span>
+        </button>
+        <button type="button" class="assistant-header-action assistant-expand" aria-label="Expand Ask Nostos" title="Expand Ask Nostos">
+          <span data-icon="corners-out" data-size="14"></span>
+        </button>
+        <button type="button" class="assistant-header-action" aria-label="Close Ask Nostos" title="Close Ask Nostos">
+          <span data-icon="x" data-size="14"></span>
+        </button>
+      </div>
+      <div class="boundary-popover" hidden role="note">
+        <strong>How Ask Nostos works</strong>
+        Ask about your books and notes, capture thoughts, or propose library changes for your review. It never deletes books or notes, or changes settings.
+      </div>
+    </header>
+
+    <div class="assistant-body">
+      <div class="empty-stage">
+        <h2 class="empty-invitation">From your library</h2>
+
+        <div class="context-list" role="group" aria-label="Suggestions from your library">
+          <button
+            type="button"
+            class="context-row"
+            data-prefill="Summarise what I have read of The Magic Mountain so far"
+          >
+            <span class="context-glyph"><span data-icon="book-open" data-size="15"></span></span>
+            <span class="context-copy">
+              <span class="context-prompt">Catch me up on The Magic Mountain</span>
+              <span class="context-source">Currently reading · Thomas Mann</span>
+            </span>
+            <span class="context-cue"><span data-icon="arrow-elbow-down-left" data-size="13"></span></span>
+          </button>
+
+          <button
+            type="button"
+            class="context-row"
+            data-prefill="Which of my other notes connect to time and attention in The Magic Mountain?"
+          >
+            <span class="context-glyph"><span data-icon="note" data-size="15"></span></span>
+            <span class="context-copy">
+              <span class="context-prompt">Find notes connected to time and attention</span>
+              <span class="context-source">Your last note · The Magic Mountain</span>
+            </span>
+            <span class="context-cue"><span data-icon="arrow-elbow-down-left" data-size="13"></span></span>
+          </button>
+
+          <button
+            type="button"
+            class="context-row"
+            data-prefill="Move How to Do Nothing into a collection"
+          >
+            <span class="context-glyph"><span data-icon="bookmark-simple" data-size="15"></span></span>
+            <span class="context-copy">
+              <span class="context-prompt">File How to Do Nothing into a collection</span>
+              <span class="context-source">To read · Jenny Odell</span>
+            </span>
+            <span class="context-cue"><span data-icon="arrow-elbow-down-left" data-size="13"></span></span>
+          </button>
+        </div>
+
+        <div class="composer-shell">
+          <textarea
+            class="composer-field"
+            rows="2"
+            placeholder="Ask Nostos, or capture a thought…"
+            aria-label="Ask Nostos, or capture a thought"
+          ></textarea>
+          <div class="composer-footer">
+            <span class="composer-hint">Enter to send · Shift+Enter for a new line</span>
+            <div class="voice-row">
+              <button type="button" class="voice-control" aria-label="Record a voice note">
+                <span data-icon="microphone" data-size="14"></span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</body>
+</html>
