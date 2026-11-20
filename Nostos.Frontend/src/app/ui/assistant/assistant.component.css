@@ -193,68 +193,24 @@
   padding: 12px clamp(24px, 7vw, 88px) 18px;
 }
 
-.assistant-panel.is-expanded .assistant-empty {
-  /* The wide card is a place to work, not a stretched flyout: the empty state
-     owns the free height and sits in the middle of it. The measure stays
-     readable, and the three doors use the extra width as a grid. */
-  flex: 1 1 auto;
-  /* `safe` so a short viewport falls back to top-aligned scrolling instead of
-     clipping the first row (the audio reader's centred surface uses the same). */
-  justify-content: safe center;
-  width: 100%;
-  max-width: 760px;
-  box-sizing: border-box;
-  margin-inline: auto;
-  padding-block: 24px;
-  gap: 10px;
+.assistant-panel.is-expanded.is-empty .assistant-stage {
+  padding: 28px clamp(24px, 7vw, 88px) 52px;
 }
 
-.assistant-panel.is-expanded .assistant-empty-title {
-  max-width: 46ch;
-  font-size: 1.22rem;
+.assistant-panel.is-expanded.is-empty .assistant-body {
+  padding: 0 0 16px;
 }
 
-.assistant-panel.is-expanded .assistant-empty-boundary {
-  max-width: 60ch;
+.assistant-panel.is-expanded.is-empty .assistant-composer {
+  padding: 0;
 }
 
-/* Two columns, with Organise spanning the full width beneath Ask and Capture:
-   three equal columns made the longest prompt labels wrap into a ragged row. */
-.assistant-panel.is-expanded .capability-doors {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 20px 28px;
-  margin-top: 8px;
+.assistant-panel.is-expanded.is-empty .assistant-empty-title {
+  font-size: 1.5rem;
 }
 
-.assistant-panel.is-expanded .capability-door {
-  grid-template-columns: 1fr;
-  align-content: start;
-  gap: 8px;
-}
-
-.assistant-panel.is-expanded .capability-door:last-child {
-  grid-column: 1 / -1;
-}
-
-.assistant-panel.is-expanded .capability-door-examples {
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-}
-
-.assistant-panel.is-expanded .capability-door:last-child .capability-door-examples {
-  flex-direction: row;
-  flex-wrap: wrap;
-}
-
-.assistant-panel.is-expanded .capability-example {
-  width: 100%;
-  max-width: 100%;
-}
-
-.assistant-panel.is-expanded .capability-door:last-child .capability-example {
-  width: auto;
+.assistant-panel.is-expanded.is-empty .capability-doors {
+  margin-top: 18px;
 }
 
 @keyframes assistant-reveal {
@@ -272,6 +228,8 @@
    Header
 ------------------------------ */
 .assistant-header {
+  position: relative;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -305,10 +263,16 @@
 }
 
 .assistant-header-actions {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
+}
+
+.assistant-info-wrap {
+  display: flex;
+  align-items: center;
 }
 
 .assistant-header-action {
@@ -325,7 +289,8 @@
     opacity var(--motion-fast) var(--ease-plain);
 }
 
-.assistant-header-action:hover {
+.assistant-header-action:hover,
+.assistant-info[aria-expanded='true'] {
   color: var(--color-text-main);
   background: var(--bg-hover);
   border-color: var(--border-color);
@@ -336,9 +301,46 @@
   outline-offset: 2px;
 }
 
+.assistant-info-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 2;
+  width: min(264px, calc(100vw - 32px));
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-popover);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-md);
+}
+
+.assistant-info-copy {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
 /* ------------------------------
-   Scrollable conversation body
+   Stage & scrollable conversation body
 ------------------------------ */
+.assistant-stage {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.assistant-panel.is-empty .assistant-stage {
+  /* `safe` so a short viewport (for example a phone with the software keyboard
+     up) falls back to top-aligned scrolling instead of clipping the heading. */
+  justify-content: safe center;
+  padding: 20px 18px 22px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 .assistant-body {
   display: flex;
   flex: 1 1 auto;
@@ -351,11 +353,30 @@
   scrollbar-gutter: stable;
 }
 
+.assistant-panel.is-empty .assistant-body {
+  flex: 0 0 auto;
+  width: 100%;
+  max-width: 560px;
+  box-sizing: border-box;
+  margin-inline: auto;
+  padding: 0 0 12px;
+  overflow: visible;
+  scrollbar-gutter: auto;
+}
+
+.assistant-panel.is-empty .assistant-composer {
+  width: 100%;
+  max-width: 560px;
+  box-sizing: border-box;
+  margin-inline: auto;
+  padding: 0;
+  border-top: 0;
+  background: transparent;
+}
+
 .assistant-empty {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 6px 2px 4px;
 }
 
 .assistant-empty p {
@@ -365,72 +386,74 @@
 .assistant-empty-title {
   color: var(--color-text-main);
   font-family: 'Newsreader', serif;
-  font-size: 1.12rem;
-  font-weight: 500;
-  line-height: 1.3;
+  font-size: 1.24rem;
+  font-weight: 400;
+  letter-spacing: -0.012em;
+  line-height: 1.25;
 }
 
-/* Capability doors: three jobs, each with concrete examples. A door is a
-   label column and a wrapping row of prompts; a prompt only ever fills the
-   composer, so nothing can run before the person sends it. */
+/* Three borderless hairline-separated links directly below the hero composer:
+   no category gutters and no pill wall. Clicking a row only prefills the
+   composer, so nothing can run before the reader sends it (#1559, #1589). */
 .capability-doors {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-top: 4px;
+  width: 100%;
+  max-width: 560px;
+  box-sizing: border-box;
+  margin-inline: auto;
+  margin-top: 14px;
 }
 
-.capability-door {
-  display: grid;
-  grid-template-columns: 64px minmax(0, 1fr);
-  align-items: start;
-  gap: 8px;
+.capability-door + .capability-door {
+  border-top: 1px solid var(--border-light);
 }
 
-.capability-door-label {
-  padding-top: 5px;
-  color: var(--color-text-muted);
-  font-size: 0.68rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.capability-door-examples {
+.capability-door .capability-example {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 2px;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+  font-size: 0.84rem;
+  font-weight: 400;
+  line-height: 1.4;
+  text-align: left;
+  white-space: normal;
+  text-decoration: none;
+}
+
+.capability-door .capability-example:hover:not(:disabled) {
+  color: var(--color-text-main);
+  text-decoration: none;
+}
+
+.capability-example-label {
+  flex: 1 1 auto;
   min-width: 0;
 }
 
-.capability-door-examples .capability-example {
-  max-width: 100%;
-  height: auto;
-  min-height: var(--control-h-sm);
-  box-sizing: border-box;
-  padding: 5px 10px;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-pill);
-  background: var(--bg-surface);
-  box-shadow: none;
-  color: var(--color-text-main);
-  font-size: 0.78rem;
-  font-weight: 400;
-  line-height: 1.35;
-  text-align: left;
-  white-space: normal;
-  justify-content: flex-start;
+.capability-example-arrow {
+  flex: 0 0 auto;
+  opacity: 0.36;
+  transition:
+    opacity var(--motion-fast) var(--ease-plain),
+    transform var(--motion-fast) var(--ease-plain);
+}
+
+.capability-door .capability-example:hover:not(:disabled) .capability-example-arrow,
+.capability-door .capability-example:focus-visible .capability-example-arrow {
+  opacity: 0.85;
+  transform: translateX(2px);
 }
 
 .capability-example:disabled {
   color: var(--color-text-placeholder);
   cursor: default;
-}
-
-.assistant-empty-boundary {
-  color: var(--color-text-light);
-  font-size: 0.76rem;
-  line-height: 1.45;
 }
 
 .assistant-transcript {
@@ -569,51 +592,6 @@
     padding: 10px 12px calc(12px + env(safe-area-inset-bottom, 0px));
   }
 
-  /* An expanded panel that is resized to a phone keeps the compact empty
-     state: one column of labelled rows, pinned under the header. */
-  .assistant-panel.is-expanded .assistant-empty {
-    flex: none;
-    justify-content: flex-start;
-    max-width: none;
-    padding-block: 6px 4px;
-    gap: 4px;
-  }
-
-  .assistant-panel.is-expanded .assistant-empty-title {
-    max-width: none;
-    font-size: 1.12rem;
-  }
-
-  .assistant-panel.is-expanded .assistant-empty-boundary {
-    max-width: none;
-  }
-
-  .assistant-panel.is-expanded .capability-doors {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    margin-top: 4px;
-  }
-
-  .assistant-panel.is-expanded .capability-door,
-  .assistant-panel.is-expanded .capability-door:last-child {
-    grid-template-columns: 64px minmax(0, 1fr);
-    grid-column: auto;
-  }
-
-  .assistant-panel.is-expanded .capability-door-examples,
-  .assistant-panel.is-expanded .capability-door:last-child .capability-door-examples {
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: flex-start;
-    gap: 6px;
-  }
-
-  .assistant-panel.is-expanded .capability-example,
-  .assistant-panel.is-expanded .capability-door:last-child .capability-example {
-    width: auto;
-  }
-
   .assistant-expand {
     display: none;
   }
@@ -632,9 +610,37 @@
     padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
   }
 
-  /* Door examples are tapped on a phone: the touch rung, not the compact chip. */
-  .capability-door-examples .capability-example {
+  /* One adaptive empty-state layout on phones too: centred vertically in the
+     visual viewport so the composer sits comfortably without a dead void. */
+  .assistant-panel.is-empty .assistant-stage,
+  .assistant-panel.is-expanded.is-empty .assistant-stage {
+    padding: 20px 20px calc(36px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .assistant-panel.is-empty .assistant-body,
+  .assistant-panel.is-expanded.is-empty .assistant-body {
+    padding: 0 0 14px;
+  }
+
+  .assistant-panel.is-empty .assistant-composer,
+  .assistant-panel.is-expanded.is-empty .assistant-composer {
+    padding: 0;
+  }
+
+  .assistant-panel.is-empty .assistant-empty-title,
+  .assistant-panel.is-expanded.is-empty .assistant-empty-title {
+    font-size: 1.36rem;
+  }
+
+  .assistant-panel.is-empty .capability-doors,
+  .assistant-panel.is-expanded.is-empty .capability-doors {
+    margin-top: 16px;
+  }
+
+  /* Suggestion rows keep the 44px touch rung on phones. */
+  .capability-door .capability-example {
     min-height: var(--control-h-touch);
+    padding: 10px 2px;
   }
 }
 
@@ -642,14 +648,11 @@
   .assistant-title {
     font-size: var(--text-md);
   }
-
-  .assistant-empty p {
-    max-width: none;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .capability-example,
+  .capability-example-arrow,
   .trigger-capsule,
   .assistant-panel {
     transition: none;
@@ -659,8 +662,11 @@
     animation: none;
   }
 
-  .assistant-trigger:hover .trigger-capsule {
+  .assistant-trigger:hover .trigger-capsule,
+  .capability-door .capability-example:hover:not(:disabled) .capability-example-arrow,
+  .capability-door .capability-example:focus-visible .capability-example-arrow {
     transform: none;
   }
 }
+
 

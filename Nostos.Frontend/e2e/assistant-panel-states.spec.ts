@@ -324,7 +324,7 @@ async function walkPanelStates(page: Page): Promise<TurnBody[]> {
   for (const [door, fill] of [
     ['assistant-example-library-next', 'What should I read next from my library?'],
     ['assistant-example-capture-thought', 'Save this thought: '],
-    ['assistant-example-organise-collection', 'Move my Le Guin books into a collection'],
+    ['assistant-example-organise-collection', 'Group my unread books into a collection'],
   ] as const) {
     await page.getByTestId(door).click();
     await expect(composer).toHaveValue(fill);

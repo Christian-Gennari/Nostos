@@ -19,6 +19,20 @@
   box-shadow: 0 0 0 1px var(--color-accent-faint);
 }
 
+:host(.is-hero) .composer-shell {
+  box-shadow: var(--shadow-sm);
+}
+
+:host(.is-hero) .composer-shell:focus-within {
+  box-shadow: var(--shadow-sm), 0 0 0 1px var(--color-accent-faint);
+}
+
+:host(.is-hero) .composer-field {
+  min-height: 44px;
+  padding: 12px 13px 6px;
+  font-size: 1rem;
+}
+
 .composer-context-row {
   display: flex;
   padding: 8px 9px 0;

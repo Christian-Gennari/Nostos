@@ -17,6 +17,7 @@ import {
   afterNextRender,
   computed,
   inject,
+  input,
   output,
   viewChild,
 } from '@angular/core';
@@ -35,7 +36,10 @@ import { NostosIconComponent } from '../icon/nostos-icon.component';
   templateUrl: './assistant-composer.component.html',
   styleUrl: './assistant-composer.component.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: { class: 'assistant-composer' },
+  host: {
+    class: 'assistant-composer',
+    '[class.is-hero]': 'hero()',
+  },
 })
 export class AssistantComposerComponent {
   readonly assistant = inject(AssistantService);
@@ -44,6 +48,9 @@ export class AssistantComposerComponent {
   private readonly injector = inject(Injector);
   private readonly destroyRef = inject(DestroyRef);
   private readonly composer = viewChild<ElementRef<HTMLTextAreaElement>>('composer');
+
+  /** Empty-state focal treatment: subtle lift and slightly taller writing surface. */
+  readonly hero = input(false);
 
   /** A message was submitted; the shell returns the transcript to its end. */
   readonly submitted = output<void>();

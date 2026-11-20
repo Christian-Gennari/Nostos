@@ -1,0 +1,290 @@
+{
+  "compact-desktop-light": {
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "horizontalOverflow": false,
+    "panel": {
+      "top": 464,
+      "left": 516,
+      "width": 408,
+      "height": 352,
+      "bottom": 816
+    },
+    "bodyScrollHeight": 37,
+    "bodyClientHeight": 37,
+    "bodyVerticalScroll": false,
+    "composer": {
+      "top": 580,
+      "left": 536,
+      "width": 368,
+      "height": 44,
+      "bottom": 624
+    },
+    "exampleCount": 3,
+    "examplesAllVisible": true,
+    "exampleLabels": [
+      "What should I read next from my library?",
+      "Save a thought or quote to my notes",
+      "Group my unread books into a collection"
+    ],
+    "errors": []
+  },
+  "compact-desktop-dark": {
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "horizontalOverflow": false,
+    "panel": {
+      "top": 464,
+      "left": 516,
+      "width": 408,
+      "height": 352,
+      "bottom": 816
+    },
+    "bodyScrollHeight": 37,
+    "bodyClientHeight": 37,
+    "bodyVerticalScroll": false,
+    "composer": {
+      "top": 580,
+      "left": 536,
+      "width": 368,
+      "height": 44,
+      "bottom": 624
+    },
+    "exampleCount": 3,
+    "examplesAllVisible": true,
+    "exampleLabels": [
+      "What should I read next from my library?",
+      "Save a thought or quote to my notes",
+      "Group my unread books into a collection"
+    ],
+    "errors": []
+  },
+  "expanded-desktop-light": {
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "horizontalOverflow": false,
+    "panel": {
+      "top": 54,
+      "left": 220,
+      "width": 1000,
+      "height": 792,
+      "bottom": 846
+    },
+    "bodyScrollHeight": 46,
+    "bodyClientHeight": 46,
+    "bodyVerticalScroll": false,
+    "composer": {
+      "top": 382,
+      "left": 441,
+      "width": 558,
+      "height": 44,
+      "bottom": 426
+    },
+    "exampleCount": 3,
+    "examplesAllVisible": true,
+    "exampleLabels": [
+      "What should I read next from my library?",
+      "Save a thought or quote to my notes",
+      "Group my unread books into a collection"
+    ],
+    "errors": []
+  },
+  "expanded-desktop-dark": {
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "horizontalOverflow": false,
+    "panel": {
+      "top": 54,
+      "left": 220,
+      "width": 1000,
+      "height": 792,
+      "bottom": 846
+    },
+    "bodyScrollHeight": 46,
+    "bodyClientHeight": 46,
+    "bodyVerticalScroll": false,
+    "composer": {
+      "top": 382,
+      "left": 441,
+      "width": 558,
+      "height": 44,
+      "bottom": 426
+    },
+    "exampleCount": 3,
+    "examplesAllVisible": true,
+    "exampleLabels": [
+      "What should I read next from my library?",
+      "Save a thought or quote to my notes",
+      "Group my unread books into a collection"
+    ],
+    "errors": []
+  },
+  "phone-light": {
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "horizontalOverflow": false,
+    "panel": {
+      "top": 0,
+      "left": 0,
+      "width": 390,
+      "height": 844,
+      "bottom": 844
+    },
+    "bodyScrollHeight": 41,
+    "bodyClientHeight": 41,
+    "bodyVerticalScroll": false,
+    "composer": {
+      "top": 347,
+      "left": 21,
+      "width": 348,
+      "height": 44,
+      "bottom": 391
+    },
+    "exampleCount": 3,
+    "examplesAllVisible": true,
+    "exampleLabels": [
+      "What should I read next from my library?",
+      "Save a thought or quote to my notes",
+      "Group my unread books into a collection"
+    ],
+    "errors": []
+  },
+  "phone-dark": {
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "horizontalOverflow": false,
+    "panel": {
+      "top": 0,
+      "left": 0,
+      "width": 390,
+      "height": 844,
+      "bottom": 844
+    },
+    "bodyScrollHeight": 41,
+    "bodyClientHeight": 41,
+    "bodyVerticalScroll": false,
+    "composer": {
+      "top": 347,
+      "left": 21,
+      "width": 348,
+      "height": 44,
+      "bottom": 391
+    },
+    "exampleCount": 3,
+    "examplesAllVisible": true,
+    "exampleLabels": [
+      "What should I read next from my library?",
+      "Save a thought or quote to my notes",
+      "Group my unread books into a collection"
+    ],
+    "errors": []
+  },
+  "studio-compact-desktop-light": {
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "horizontalOverflow": false,
+    "panel": {
+      "top": 464,
+      "left": 516,
+      "width": 408,
+      "height": 352,
+      "bottom": 816
+    },
+    "bodyScrollHeight": 37,
+    "bodyClientHeight": 37,
+    "bodyVerticalScroll": false,
+    "composer": {
+      "top": 580,
+      "left": 536,
+      "width": 368,
+      "height": 44,
+      "bottom": 624
+    },
+    "exampleCount": 3,
+    "examplesAllVisible": true,
+    "exampleLabels": [
+      "Which of my notes could support what I am writing?",
+      "Save a thought or quote to my notes",
+      "List the Studio drafts I am working on"
+    ],
+    "errors": []
+  },
+  "studio-compact-desktop-dark": {
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "horizontalOverflow": false,
+    "panel": {
+      "top": 464,
+      "left": 516,
+      "width": 408,
+      "height": 352,
+      "bottom": 816
+    },
+    "bodyScrollHeight": 37,
+    "bodyClientHeight": 37,
+    "bodyVerticalScroll": false,
+    "composer": {
+      "top": 580,
+      "left": 536,
+      "width": 368,
+      "height": 44,
+      "bottom": 624
+    },
+    "exampleCount": 3,
+    "examplesAllVisible": true,
+    "exampleLabels": [
+      "Which of my notes could support what I am writing?",
+      "Save a thought or quote to my notes",
+      "List the Studio drafts I am working on"
+    ],
+    "errors": []
+  },
+  "info-popover-compact-light": {
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "horizontalOverflow": false,
+    "panel": {
+      "top": 464,
+      "left": 516,
+      "width": 408,
+      "height": 352,
+      "bottom": 816
+    },
+    "bodyScrollHeight": 37,
+    "bodyClientHeight": 37,
+    "bodyVerticalScroll": false,
+    "composer": {
+      "top": 580,
+      "left": 536,
+      "width": 368,
+      "height": 44,
+      "bottom": 624
+    },
+    "exampleCount": 3,
+    "examplesAllVisible": true,
+    "exampleLabels": [
+      "What should I read next from my library?",
+      "Save a thought or quote to my notes",
+      "Group my unread books into a collection"
+    ],
+    "errors": []
+  }
+}

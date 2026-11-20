@@ -1,0 +1,224 @@
+{
+  "compact-desktop-light": {
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "horizontalOverflow": false,
+    "panel": {
+      "top": 316,
+      "left": 516,
+      "width": 408,
+      "height": 500,
+      "bottom": 816
+    },
+    "bodyScrollHeight": 339,
+    "bodyClientHeight": 339,
+    "bodyVerticalScroll": false,
+    "composer": {
+      "top": 725,
+      "left": 530,
+      "width": 380,
+      "height": 39,
+      "bottom": 764
+    },
+    "exampleCount": 8,
+    "examplesAllVisible": true,
+    "exampleLabels": [
+      "What should I read next from my library?",
+      "What have I been reading lately?",
+      "Which topics come up most in my notes?",
+      "Save this thought:",
+      "Save this quote:",
+      "Move my Le Guin books into a collection",
+      "Add Piranesi to To read",
+      "Open my Studio draft about memory"
+    ],
+    "errors": []
+  },
+  "compact-desktop-dark": {
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "horizontalOverflow": false,
+    "panel": {
+      "top": 316,
+      "left": 516,
+      "width": 408,
+      "height": 500,
+      "bottom": 816
+    },
+    "bodyScrollHeight": 339,
+    "bodyClientHeight": 339,
+    "bodyVerticalScroll": false,
+    "composer": {
+      "top": 725,
+      "left": 530,
+      "width": 380,
+      "height": 39,
+      "bottom": 764
+    },
+    "exampleCount": 8,
+    "examplesAllVisible": true,
+    "exampleLabels": [
+      "What should I read next from my library?",
+      "What have I been reading lately?",
+      "Which topics come up most in my notes?",
+      "Save this thought:",
+      "Save this quote:",
+      "Move my Le Guin books into a collection",
+      "Add Piranesi to To read",
+      "Open my Studio draft about memory"
+    ],
+    "errors": []
+  },
+  "expanded-desktop-light": {
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "horizontalOverflow": false,
+    "panel": {
+      "top": 54,
+      "left": 220,
+      "width": 1000,
+      "height": 792,
+      "bottom": 846
+    },
+    "bodyScrollHeight": 623,
+    "bodyClientHeight": 623,
+    "bodyVerticalScroll": false,
+    "composer": {
+      "top": 749,
+      "left": 310,
+      "width": 820,
+      "height": 39,
+      "bottom": 788
+    },
+    "exampleCount": 8,
+    "examplesAllVisible": true,
+    "exampleLabels": [
+      "What should I read next from my library?",
+      "What have I been reading lately?",
+      "Which topics come up most in my notes?",
+      "Save this thought:",
+      "Save this quote:",
+      "Move my Le Guin books into a collection",
+      "Add Piranesi to To read",
+      "Open my Studio draft about memory"
+    ],
+    "errors": []
+  },
+  "expanded-desktop-dark": {
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "horizontalOverflow": false,
+    "panel": {
+      "top": 54,
+      "left": 220,
+      "width": 1000,
+      "height": 792,
+      "bottom": 846
+    },
+    "bodyScrollHeight": 623,
+    "bodyClientHeight": 623,
+    "bodyVerticalScroll": false,
+    "composer": {
+      "top": 749,
+      "left": 310,
+      "width": 820,
+      "height": 39,
+      "bottom": 788
+    },
+    "exampleCount": 8,
+    "examplesAllVisible": true,
+    "exampleLabels": [
+      "What should I read next from my library?",
+      "What have I been reading lately?",
+      "Which topics come up most in my notes?",
+      "Save this thought:",
+      "Save this quote:",
+      "Move my Le Guin books into a collection",
+      "Add Piranesi to To read",
+      "Open my Studio draft about memory"
+    ],
+    "errors": []
+  },
+  "phone-light": {
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "horizontalOverflow": false,
+    "panel": {
+      "top": 0,
+      "left": 0,
+      "width": 390,
+      "height": 844,
+      "bottom": 844
+    },
+    "bodyScrollHeight": 685,
+    "bodyClientHeight": 685,
+    "bodyVerticalScroll": false,
+    "composer": {
+      "top": 754,
+      "left": 13,
+      "width": 364,
+      "height": 39,
+      "bottom": 793
+    },
+    "exampleCount": 8,
+    "examplesAllVisible": true,
+    "exampleLabels": [
+      "What should I read next from my library?",
+      "What have I been reading lately?",
+      "Which topics come up most in my notes?",
+      "Save this thought:",
+      "Save this quote:",
+      "Move my Le Guin books into a collection",
+      "Add Piranesi to To read",
+      "Open my Studio draft about memory"
+    ],
+    "errors": []
+  },
+  "phone-dark": {
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "horizontalOverflow": false,
+    "panel": {
+      "top": 0,
+      "left": 0,
+      "width": 390,
+      "height": 844,
+      "bottom": 844
+    },
+    "bodyScrollHeight": 685,
+    "bodyClientHeight": 685,
+    "bodyVerticalScroll": false,
+    "composer": {
+      "top": 754,
+      "left": 13,
+      "width": 364,
+      "height": 39,
+      "bottom": 793
+    },
+    "exampleCount": 8,
+    "examplesAllVisible": true,
+    "exampleLabels": [
+      "What should I read next from my library?",
+      "What have I been reading lately?",
+      "Which topics come up most in my notes?",
+      "Save this thought:",
+      "Save this quote:",
+      "Move my Le Guin books into a collection",
+      "Add Piranesi to To read",
+      "Open my Studio draft about memory"
+    ],
+    "errors": []
+  }
+}
