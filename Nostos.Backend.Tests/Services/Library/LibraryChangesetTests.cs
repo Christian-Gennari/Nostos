@@ -256,6 +256,239 @@ public sealed class LibraryChangesetTests : IClassFixture<SqliteTestFixture>
         state.Collections.Should().Contain(c => c.Id == sf, "it still holds a book the user placed there");
     }
 
+    [Fact]
+    public async Task Undo_restores_collections_and_memberships_after_delete_and_recreate_with_same_names()
+    {
+        var h = await SeedAsync();
+        var original = await StateAsync(h);
+
+        // Regroup plan that deletes existing collections and recreates them with the same names (#1739).
+        var applied = await h.Service.ApplyAsync(
+        [
+            new DeleteCollectionOp(LibraryCollectionRef.Existing(h.Fiction)),
+            new DeleteCollectionOp(LibraryCollectionRef.Existing(h.Philosophy)),
+            new CreateCollectionOp("fiction", "Fiction"),
+            new CreateCollectionOp("philosophy", "Philosophy"),
+            new AddBooksToCollectionOp(LibraryCollectionRef.Created("fiction"), [h.AnnaKarenina, h.Dune]),
+            new AddBooksToCollectionOp(LibraryCollectionRef.Created("philosophy"), [h.Meditations, h.Letters]),
+        ], expectedDiffHash: null);
+
+        applied.Success.Should().BeTrue(applied.ErrorMessage);
+        var afterApply = await StateAsync(h);
+        afterApply.Collections.Select(c => c.Name).Should().BeEquivalentTo("Fiction", "Philosophy");
+        afterApply.Collections.Select(c => c.Id).Should().NotContain(h.Fiction);
+        afterApply.Collections.Select(c => c.Id).Should().NotContain(h.Philosophy);
+
+        var reverted = await h.Service.RevertAsync(applied.Undo!);
+
+        reverted.Success.Should().BeTrue();
+        reverted.Conflicts.Should().BeEmpty();
+        (await StateAsync(h)).Should().BeEquivalentTo(original,
+            "undo must remove the recreated collections first and bring back the original ids, hierarchy, and memberships");
+    }
+
+    [Fact]
+    public async Task Undo_restores_nested_collections_deleted_and_recreated_with_same_names()
+    {
+        var h = await SeedAsync();
+        var original = await StateAsync(h);
+
+        var applied = await h.Service.ApplyAsync(
+        [
+            new DeleteCollectionOp(LibraryCollectionRef.Existing(h.Fiction)),
+            new CreateCollectionOp("fiction", "Fiction"),
+            new CreateCollectionOp("russian", "Russian", LibraryCollectionRef.Created("fiction")),
+            new AddBooksToCollectionOp(LibraryCollectionRef.Created("fiction"), [h.Dune]),
+            new AddBooksToCollectionOp(LibraryCollectionRef.Created("russian"), [h.AnnaKarenina]),
+        ], expectedDiffHash: null);
+        applied.Success.Should().BeTrue(applied.ErrorMessage);
+
+        var reverted = await h.Service.RevertAsync(applied.Undo!);
+
+        reverted.Success.Should().BeTrue();
+        reverted.Conflicts.Should().BeEmpty();
+        (await StateAsync(h)).Should().BeEquivalentTo(original);
+    }
+
+    [Fact]
+    public async Task Undo_restores_existing_child_reparented_under_recreated_same_name_parent()
+    {
+        var h = await SeedAsync();
+        var original = await StateAsync(h);
+
+        var applied = await h.Service.ApplyAsync(
+        [
+            new MoveCollectionOp(LibraryCollectionRef.Existing(h.Russian), null),
+            new DeleteCollectionOp(LibraryCollectionRef.Existing(h.Fiction)),
+            new CreateCollectionOp("fiction", "Fiction"),
+            new MoveCollectionOp(LibraryCollectionRef.Existing(h.Russian), LibraryCollectionRef.Created("fiction")),
+            new AddBooksToCollectionOp(LibraryCollectionRef.Created("fiction"), [h.AnnaKarenina, h.Dune]),
+        ], expectedDiffHash: null);
+        applied.Success.Should().BeTrue(applied.ErrorMessage);
+
+        var reverted = await h.Service.RevertAsync(applied.Undo!);
+
+        reverted.Success.Should().BeTrue();
+        reverted.Conflicts.Should().BeEmpty();
+        (await StateAsync(h)).Should().BeEquivalentTo(original);
+    }
+
+    [Fact]
+    public async Task Undo_restores_collections_whose_names_were_swapped()
+    {
+        var h = await SeedAsync();
+        var original = await StateAsync(h);
+
+        var applied = await h.Service.ApplyAsync(
+        [
+            new RenameCollectionOp(LibraryCollectionRef.Existing(h.Fiction), "Temp"),
+            new RenameCollectionOp(LibraryCollectionRef.Existing(h.Philosophy), "Fiction"),
+            new RenameCollectionOp(LibraryCollectionRef.Existing(h.Fiction), "Philosophy"),
+        ], expectedDiffHash: null);
+        applied.Success.Should().BeTrue(applied.ErrorMessage);
+
+        var reverted = await h.Service.RevertAsync(applied.Undo!);
+
+        reverted.Success.Should().BeTrue();
+        reverted.Conflicts.Should().BeEmpty();
+        (await StateAsync(h)).Should().BeEquivalentTo(original);
+    }
+
+    [Fact]
+    public async Task Undo_keeps_recreated_collection_when_user_added_a_book_to_it_after_apply()
+    {
+        var h = await SeedAsync();
+
+        var applied = await h.Service.ApplyAsync(
+        [
+            new DeleteCollectionOp(LibraryCollectionRef.Existing(h.Fiction)),
+            new CreateCollectionOp("fiction", "Fiction"),
+            new AddBooksToCollectionOp(LibraryCollectionRef.Created("fiction"), [h.Dune]),
+        ], expectedDiffHash: null);
+        applied.Success.Should().BeTrue(applied.ErrorMessage);
+        var recreatedFiction = applied.Diff!.Collections.Single(c => c.Kind == "created").Id;
+
+        // After apply, the user places another book into the recreated collection.
+        await using (var db = await h.Factory.CreateDbContextAsync())
+        {
+            db.BookCollections.Add(new BookCollectionModel { BookId = h.Letters, CollectionId = recreatedFiction });
+            await db.SaveChangesAsync();
+        }
+
+        var reverted = await h.Service.RevertAsync(applied.Undo!);
+
+        reverted.Success.Should().BeTrue();
+        reverted.Conflicts.Should().Contain(c => c.Contains("Fiction") && c.Contains("books were added"));
+        reverted.Conflicts.Should().Contain(c => c.Contains("Did not restore \"Fiction\""));
+        reverted.Conflicts.Should().Contain(c => c.Contains("Dune"));
+        var state = await StateAsync(h);
+        state.Collections.Should().Contain(c => c.Id == recreatedFiction);
+        state.MembershipNames(h.Letters).Should().Equal("Fiction");
+        state.MembershipNames(h.Dune).Should().Equal("Fiction");
+        state.Memberships.Should().Contain((h.Dune, recreatedFiction),
+            "partial undo must keep Dune in its still-existing after collection rather than stranding it");
+    }
+
+    [Fact]
+    public async Task Undo_keeps_created_collection_when_user_renamed_it_after_apply()
+    {
+        var h = await SeedAsync();
+
+        var applied = await h.Service.ApplyAsync(
+        [
+            new CreateCollectionOp("sf", "Science fiction"),
+            new AddBooksToCollectionOp(LibraryCollectionRef.Created("sf"), [h.Dune]),
+        ], expectedDiffHash: null);
+        applied.Success.Should().BeTrue(applied.ErrorMessage);
+        var createdId = applied.Diff!.Collections.Single(c => c.Kind == "created").Id;
+
+        await using (var db = await h.Factory.CreateDbContextAsync())
+        {
+            var model = await db.Collections.SingleAsync(c => c.Id == createdId);
+            model.Name = "Speculative fiction";
+            await db.SaveChangesAsync();
+        }
+
+        var reverted = await h.Service.RevertAsync(applied.Undo!);
+
+        reverted.Success.Should().BeTrue();
+        reverted.Conflicts.Should().Contain(c => c.Contains("Speculative fiction") && c.Contains("changed after"));
+        var state = await StateAsync(h);
+        state.Collections.Should().Contain(c => c.Id == createdId && c.Name == "Speculative fiction");
+        state.MembershipNames(h.Dune).Should().Equal("Fiction");
+    }
+
+    [Fact]
+    public async Task Undo_keeps_created_collection_when_user_moved_it_after_apply()
+    {
+        var h = await SeedAsync();
+
+        var applied = await h.Service.ApplyAsync(
+        [
+            new CreateCollectionOp("sf", "Science fiction"),
+        ], expectedDiffHash: null);
+        applied.Success.Should().BeTrue(applied.ErrorMessage);
+        var createdId = applied.Diff!.Collections.Single(c => c.Kind == "created").Id;
+
+        await using (var db = await h.Factory.CreateDbContextAsync())
+        {
+            var model = await db.Collections.SingleAsync(c => c.Id == createdId);
+            model.ParentId = h.Fiction;
+            await db.SaveChangesAsync();
+        }
+
+        var reverted = await h.Service.RevertAsync(applied.Undo!);
+
+        reverted.Success.Should().BeTrue();
+        reverted.Conflicts.Should().Contain(c => c.Contains("Science fiction") && c.Contains("changed after"));
+        var state = await StateAsync(h);
+        state.Collections.Should().Contain(c => c.Id == createdId && c.ParentId == h.Fiction);
+    }
+
+    [Fact]
+    public async Task Undo_reports_conflict_if_step_2e_restored_collection_still_has_a_same_name_sibling()
+    {
+        var h = await SeedAsync();
+
+        // Set up a post-apply state where a recreated Fiction holds a reparented child "Russian"
+        // while a second moved collection also wants to return to old Fiction as "Russian",
+        // blocking the first child from vacating recreated Fiction after step 2e restores old Fiction.
+        var recreatedFictionId = Guid.NewGuid();
+        var secondRussianId = Guid.NewGuid();
+        await using (var db = await h.Factory.CreateDbContextAsync())
+        {
+            var russian = await db.Collections.SingleAsync(c => c.Id == h.Russian);
+            var oldFiction = await db.Collections.SingleAsync(c => c.Id == h.Fiction);
+            var recreatedFiction = new CollectionModel { Id = recreatedFictionId, Name = "Fiction", ParentId = null };
+            var secondRussian = new CollectionModel { Id = secondRussianId, Name = "Russian", ParentId = h.Philosophy };
+            db.Collections.AddRange(recreatedFiction, secondRussian);
+            await db.SaveChangesAsync();
+
+            russian.ParentId = recreatedFictionId;
+            await db.SaveChangesAsync();
+
+            db.BookCollections.RemoveRange(db.BookCollections.Where(bc => bc.CollectionId == h.Fiction));
+            db.Collections.Remove(oldFiction);
+            await db.SaveChangesAsync();
+        }
+
+        var undo = new LibraryUndoSnapshot(
+            Collections:
+            [
+                new CollectionSnapshot(h.Fiction, new CollectionState("Fiction", null), null),
+                new CollectionSnapshot(recreatedFictionId, null, new CollectionState("Fiction", null)),
+                new CollectionSnapshot(secondRussianId, new CollectionState("Russian", h.Fiction), new CollectionState("Russian", h.Philosophy)),
+                new CollectionSnapshot(h.Russian, new CollectionState("Russian", h.Fiction), new CollectionState("Russian", recreatedFictionId)),
+            ],
+            Memberships: [],
+            Books: []);
+
+        var reverted = await h.Service.RevertAsync(undo);
+
+        reverted.Success.Should().BeTrue();
+        reverted.Conflicts.Should().Contain(c => c.Contains("Fiction") && c.Contains("same name"));
+    }
+
     // ------------------------------------------------------------------
     // Fixture
     // ------------------------------------------------------------------
