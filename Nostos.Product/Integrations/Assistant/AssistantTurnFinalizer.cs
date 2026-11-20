@@ -205,20 +205,27 @@ internal sealed class AssistantTurnFinalizer(
             }
         }
 
-        // A model may narrate a write or empty search result without ever
-        // executing the capability. Only server-observed successful calls can
-        // support those completion claims; otherwise fail closed with an honest
-        // typed turn result instead of presenting invented state as fact.
-        if (AssistantCompletionClaimGuard.Evaluate(reply, input.SuccessfulCapabilities) is { } unverifiedClaim)
+        // A model may narrate a write, empty search result, or staged review
+        // that does not match what the current turn produced. Only server-
+        // observed state can support those claims; otherwise replace the reply
+        // with honest server-owned words.
+        if (AssistantCompletionClaimGuard.Evaluate(
+                reply,
+                input.SuccessfulCapabilities,
+                changeOutcome,
+                input.Draft.LastStageWasNoChange && input.Draft.Diff is null) is { } unverifiedClaim)
         {
             logger.LogWarning(
                 "Assistant completion-claim guard replaced an unverified {ClaimKind} claim; reply content is not logged.",
                 unverifiedClaim.Kind);
             reply = unverifiedClaim.ReplacementReply;
             replyCutShort = false;
-            terminalError ??= new AssistantTurnErrorDto(
-                AssistantErrorCodes.UnverifiedCompletionClaim,
-                unverifiedClaim.ReplacementReply);
+            if (unverifiedClaim.IsError)
+            {
+                terminalError ??= new AssistantTurnErrorDto(
+                    AssistantErrorCodes.UnverifiedCompletionClaim,
+                    unverifiedClaim.ReplacementReply);
+            }
         }
 
         // The conversational reply is the only text the guard may rewrite. Note

@@ -35,6 +35,12 @@ public sealed class AssistantChangesetDraft(ILibraryChangesetService changesets,
 
     public string? DiffHash { get; private set; }
 
+    /// <summary>
+    /// The last staging call found nothing to change: the library already
+    /// matches the request, so no review exists (issue #1746).
+    /// </summary>
+    public bool LastStageWasNoChange { get; private set; }
+
     public bool IsEmpty => _steps.Count == 0;
 
     /// <summary>
@@ -146,6 +152,7 @@ public sealed class AssistantChangesetDraft(ILibraryChangesetService changesets,
             CommitState(rawCandidate, nextRefId, previewState);
             _steps.Clear();
             Diff = null;
+            LastStageWasNoChange = true;
             DiffHash = null;
             return NoChangeResult(EmptyCounts);
         }
@@ -176,6 +183,7 @@ public sealed class AssistantChangesetDraft(ILibraryChangesetService changesets,
         {
             _steps.Clear();
             Diff = null;
+            LastStageWasNoChange = true;
             DiffHash = null;
             return NoChangeResult(finalPreview.Diff.Counts);
         }
@@ -183,6 +191,7 @@ public sealed class AssistantChangesetDraft(ILibraryChangesetService changesets,
         var rebuilt = await BuildStepsAsync(presentedOps, dependsOn, deletedDescendantCounts, previewState, ct);
         _steps.Clear();
         _steps.AddRange(rebuilt);
+        LastStageWasNoChange = false;
         Diff = finalPreview.Diff;
         DiffHash = finalPreview.DiffHash;
 
