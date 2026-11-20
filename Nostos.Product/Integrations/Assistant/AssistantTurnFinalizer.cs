@@ -96,8 +96,12 @@ internal sealed class AssistantTurnFinalizer(
             }
             else
             {
+                // A change the user spelled out in the same message is theirs, even
+                // when the turn also read notes to answer another part of it.
+                var derivedFromText = input.ReadUntrustedContent
+                    && !AssistantDictatedChange.Covers(input.Draft.Steps, input.UserMessage);
                 changeOutcome = await changesets.FinishTurnAsync(
-                    input.ConversationKey, input.TurnId, input.Draft, input.ReadUntrustedContent, incomplete, ct);
+                    input.ConversationKey, input.TurnId, input.Draft, derivedFromText, incomplete, ct);
                 if (changeOutcome.Applied)
                     mutationCompleted = true;
             }
@@ -164,7 +168,15 @@ internal sealed class AssistantTurnFinalizer(
         }
         else if (changeOutcome.AwaitingReview)
         {
-            reply = AssistantChangesetCoordinator.ReviewReply;
+            // A turn that answered a question from the user's material and also
+            // proposed a change keeps its answer above the review card (#1745).
+            // A turn that only organised keeps the fixed sentence alone.
+            var answer = input.LastAssistantContent?.Trim();
+            var answered = input.EvidenceCount > 0 && !string.IsNullOrWhiteSpace(answer);
+            reply = answered
+                ? $"{answer}\n\n{AssistantChangesetCoordinator.ReviewReply}"
+                : AssistantChangesetCoordinator.ReviewReply;
+            replyCutShort = answered && input.ReplyCutShort;
         }
         else if (changeOutcome.Error is { } changeError)
         {
