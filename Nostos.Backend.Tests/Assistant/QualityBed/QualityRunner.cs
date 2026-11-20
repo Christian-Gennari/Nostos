@@ -172,7 +172,7 @@ internal sealed class QualityBedHost : IDisposable
 
     public static QualityBedHost CreateLive(
         QualityMetricsSink sink, string baseUrl, string keyVariable, string model,
-        string? reasoningEffort = null, QualityBudget? budget = null)
+        string? reasoningEffort = null, QualityBudget? budget = null, int maxToolIterations = 6)
     {
         var factory = new LibraryEndpointFactory();
         var capture = new QualityProviderRequestCapture();
@@ -182,7 +182,7 @@ internal sealed class QualityBedHost : IDisposable
             builder.UseSetting("Assistant:BaseUrl", baseUrl);
             builder.UseSetting("Assistant:ApiKeyEnvironmentVariable", keyVariable);
             builder.UseSetting("Assistant:Model", model);
-            builder.UseSetting("Assistant:MaxToolIterations", "6");
+            builder.UseSetting("Assistant:MaxToolIterations", maxToolIterations.ToString(System.Globalization.CultureInfo.InvariantCulture));
             builder.ConfigureServices(services =>
             {
                 // The real product provider, constructed from the host's own
