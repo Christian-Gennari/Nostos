@@ -107,7 +107,7 @@ public static partial class AssistantCapabilities
 
         Stage(
             "library_delete_collection",
-            "Deletes a collection together with its subcollections. Books are never deleted; they only leave these collections.",
+            "Deletes a collection together with its subcollections. Books are never deleted; they only leave these collections. Do not delete an existing collection only to recreate one with the same name; reuse its existing id instead.",
             $$"""
             {
               "type": "object",
