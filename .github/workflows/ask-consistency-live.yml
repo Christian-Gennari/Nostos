@@ -1,0 +1,118 @@
+name: Ask Nostos live consistency run
+
+# The same-request consistency run for Ask Nostos (#1584): six requests, 5 reps
+# each and 10 for the changeset and review requests and the capability
+# disclosure, plus short same-conversation passes and repros of what the live
+# walk found. It calls a paid model, so it never runs on a pull request or a
+# push. Start it by hand from the Actions tab, or with
+#   gh workflow run ask-consistency-live.yml
+#
+# The spend cap is enforced by the harness (QualityBudget), as in
+# quality-bed-live.yml. Same secrets:
+#   NOSTOS_QG_BASE_URL  OpenAI-compatible base URL, including /v1
+#   NOSTOS_QG_KEY       the gateway key; read at call time, never written out
+# Output: consistency/raw.jsonl (one JSON record per turn) and summary.json.
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: Model id
+        required: true
+        default: openai/gpt-6-luna
+      reps_scale:
+        description: Multiplies every request's reps (1 = the issue's 5/10)
+        required: true
+        default: "1"
+      only:
+        description: Comma-separated request ids to run (empty runs all)
+        required: false
+        default: ""
+      max_usd:
+        description: Spend cap in USD for the whole run
+        required: true
+        default: "1"
+      price_input_per_mtok:
+        description: USD per million prompt tokens
+        required: true
+        default: "0.10"
+      price_output_per_mtok:
+        description: USD per million completion tokens
+        required: true
+        default: "0.50"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ask-consistency-live
+  cancel-in-progress: false
+
+jobs:
+  live:
+    name: Consistency run
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      NOSTOS_QG_CONSISTENCY: "1"
+      NOSTOS_QG_BASE_URL: ${{ secrets.NOSTOS_QG_BASE_URL }}
+      NOSTOS_QG_KEY: ${{ secrets.NOSTOS_QG_KEY }}
+      NOSTOS_QG_KEY_ENV: NOSTOS_QG_KEY
+      NOSTOS_QG_MODELS: ${{ inputs.model }}
+      NOSTOS_QG_CONSISTENCY_REPS: ${{ inputs.reps_scale }}
+      NOSTOS_QG_CONSISTENCY_ONLY: ${{ inputs.only }}
+      NOSTOS_QG_MAX_USD: ${{ inputs.max_usd }}
+      NOSTOS_QG_PRICE_INPUT_PER_MTOK: ${{ inputs.price_input_per_mtok }}
+      NOSTOS_QG_PRICE_OUTPUT_PER_MTOK: ${{ inputs.price_output_per_mtok }}
+      NOSTOS_QG_REASONING_EFFORT: none
+      NOSTOS_QG_OUT: ${{ github.workspace }}/consistency
+    steps:
+      - name: Check the secrets are set
+        run: |
+          if [ -z "$NOSTOS_QG_BASE_URL" ] || [ -z "$NOSTOS_QG_KEY" ]; then
+            echo "::error::Set the NOSTOS_QG_BASE_URL and NOSTOS_QG_KEY repository secrets first."
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Build
+        run: dotnet build Nostos.Backend.Tests/Nostos.Backend.Tests.csproj --configuration Debug
+
+      - name: Run the consistency campaign
+        run: |
+          dotnet test Nostos.Backend.Tests/Nostos.Backend.Tests.csproj \
+            --configuration Debug \
+            --no-build \
+            --filter "FullyQualifiedName~QualityConsistencyRunTests" \
+            --logger "console;verbosity=minimal"
+
+      - name: Summarise spend
+        if: always()
+        run: |
+          {
+            echo "## Ask Nostos consistency run"
+            echo
+            echo "Model: \`$NOSTOS_QG_MODELS\` · cap: \$$NOSTOS_QG_MAX_USD"
+            echo
+            if [ -f "$NOSTOS_QG_OUT/summary.json" ]; then
+              echo '```json'
+              cat "$NOSTOS_QG_OUT/summary.json"
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload raw records
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ask-consistency-live-${{ github.run_id }}
+          path: consistency
+          if-no-files-found: ignore
+          retention-days: 30

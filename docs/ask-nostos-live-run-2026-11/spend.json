@@ -1,0 +1,65 @@
+{
+  "consistency_run_b": {
+    "model": "openai/gpt-6-luna",
+    "records": 78,
+    "spentUsd": 0.2229223,
+    "calls": 240,
+    "estimatedCalls": 0,
+    "capUsd": 1.0,
+    "inputPerMTok": 0.1,
+    "outputPerMTok": 0.5,
+    "exhausted": false
+  },
+  "consistency_run_a": {
+    "model": "openai/gpt-6-luna",
+    "records": 63,
+    "spentUsd": 0.1667541,
+    "calls": 181,
+    "estimatedCalls": 0,
+    "capUsd": 1.0,
+    "inputPerMTok": 0.1,
+    "outputPerMTok": 0.5,
+    "exhausted": false
+  },
+  "extra_repros": {
+    "model": "openai/gpt-6-luna",
+    "records": 15,
+    "spentUsd": 0.0376712,
+    "calls": 38,
+    "estimatedCalls": 0,
+    "capUsd": 0.5,
+    "inputPerMTok": 0.1,
+    "outputPerMTok": 0.5,
+    "exhausted": false
+  },
+  "abandoned_run_cap6_1": {
+    "model": "openai/gpt-6-luna",
+    "records": 63,
+    "spentUsd": 0.1599053,
+    "calls": 174,
+    "estimatedCalls": 0,
+    "capUsd": 1.0,
+    "inputPerMTok": 0.1,
+    "outputPerMTok": 0.5,
+    "exhausted": false
+  },
+  "abandoned_run_cap6_2": {
+    "model": "openai/gpt-6-luna",
+    "records": 63,
+    "spentUsd": 0.1591551,
+    "calls": 173,
+    "estimatedCalls": 0,
+    "capUsd": 1.0,
+    "inputPerMTok": 0.1,
+    "outputPerMTok": 0.5,
+    "exhausted": false
+  },
+  "walk": {
+    "model_calls": 51,
+    "promptTokens": 512961,
+    "completionTokens": 3236,
+    "spentUsd": 0.052914,
+    "capUsd": 1.2
+  },
+  "totalUsd": 0.7993
+}
