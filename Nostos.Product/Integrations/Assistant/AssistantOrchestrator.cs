@@ -78,6 +78,22 @@ public sealed class AssistantOrchestrator(
     public const int MaxResponseTokens = 4096;
 
     /// <summary>
+    /// The smallest output limit worth a provider call when a host cost budget
+    /// (<see cref="AiUsageLease.LlmBudget"/>) lowers the limit. Below it the
+    /// call could not finish even a tool call, so the turn stops at its
+    /// execution limit instead of spending money on a reply that cannot arrive.
+    /// </summary>
+    public const int MinBudgetedResponseTokens = 256;
+
+    /// <summary>
+    /// Added after a reply the provider ended at its output limit
+    /// (<c>finish_reason</c> "length"), so a truncated answer never reads as a
+    /// complete one.
+    /// </summary>
+    public const string CutShortNotice =
+        "This answer was cut short because it reached the length limit for one reply. Send another message to continue.";
+
+    /// <summary>
     /// The review flow's "small set": at most three candidate topics are shown
     /// for one unlinked note. A longer list is a search result, not a suggestion
     /// (issue #261 §5).
@@ -271,6 +287,7 @@ public sealed class AssistantOrchestrator(
         AssistantAnchorPromptDto? anchorPrompt = null;
         string? acknowledgement = null;
         string? lastAssistantContent = null;
+        var replyCutShort = false;
         string? capturedNoteId = null;
         AssistantTurnErrorDto? terminalError = null;
         var retrieval = new AssistantRetrievalTurnState(turnContext);
@@ -332,14 +349,36 @@ public sealed class AssistantOrchestrator(
             // A host can reserve usage before the first provider call. SelfHosted
             // uses a no-op accounting service.
             usageLease ??= await _metering.BeginAsync(ct);
+
+            // A host whose reservation is a fixed amount bounds every call so the
+            // turn's worst-case cost stays inside it (Nostos-Cloud issue 654). The
+            // budget is asked before the call is counted or sent: a call it cannot
+            // pay for is never made, and the turn ends at its execution limit.
+            var completionRequest = new LlmCompletionRequest(messages, tools, MaxResponseTokens);
+            var budget = usageLease?.LlmBudget;
+            if (budget is not null)
+            {
+                var affordable = budget.MaxOutputTokens(completionRequest);
+                if (affordable < MinBudgetedResponseTokens)
+                {
+                    logger.LogInformation(
+                        "Assistant turn stopped before upstream call {Call}: the host cost budget allows {Affordable} output token(s).",
+                        iteration + 1,
+                        Math.Max(0, affordable));
+                    stopReason = AssistantTurnStopReason.SafetyCeiling;
+                    break;
+                }
+
+                if (affordable < completionRequest.MaxTokens)
+                    completionRequest = completionRequest with { MaxTokens = affordable };
+            }
+
             executionMeter.RecordUpstreamRequest();
 
             AssistantUpstreamResult upstream;
             using (var call = _clocks.Begin(window, ct))
             {
-                upstream = await call.CompleteAsync(
-                    llm,
-                    new LlmCompletionRequest(messages, tools, MaxResponseTokens));
+                upstream = await call.CompleteAsync(llm, completionRequest);
             }
 
             if (upstream.Outcome == AssistantUpstreamOutcome.Cancelled)
@@ -369,6 +408,7 @@ public sealed class AssistantOrchestrator(
 
             var completion = upstream.Completion!;
             executionMeter.RecordCompletion(completion);
+            budget?.Record(completion);
 
             if (ct.IsCancellationRequested)
             {
@@ -385,6 +425,10 @@ public sealed class AssistantOrchestrator(
             {
                 // A plain answer (including the pool's empty-content/"length"
                 // outcome, which is data: it is returned as-is, never a 500).
+                // Prose the provider ended at its output limit is marked as cut
+                // short instead of being shown as a complete answer.
+                replyCutShort = !string.IsNullOrWhiteSpace(completion.Content)
+                    && string.Equals(completion.FinishReason, "length", StringComparison.OrdinalIgnoreCase);
                 stopReason = AssistantTurnStopReason.Completed;
                 break;
             }
@@ -628,6 +672,7 @@ public sealed class AssistantOrchestrator(
                 acknowledgement,
                 capturedNoteId,
                 lastAssistantContent,
+                replyCutShort,
                 anchorPrompt,
                 terminalError,
                 successfulCapabilities,

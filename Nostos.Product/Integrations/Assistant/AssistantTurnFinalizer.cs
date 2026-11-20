@@ -19,6 +19,7 @@ internal sealed record AssistantTurnFinalInput(
     string? Acknowledgement,
     string? CapturedNoteId,
     string? LastAssistantContent,
+    bool ReplyCutShort,
     AssistantAnchorPromptDto? AnchorPrompt,
     AssistantTurnErrorDto? TerminalError,
     IReadOnlySet<string> SuccessfulCapabilities,
@@ -150,6 +151,9 @@ internal sealed class AssistantTurnFinalizer(
             AssistantTurnStopReason.RepeatedToolLoop;
 
         string reply;
+        // True only while the reply is the model's own prose that the provider
+        // ended at its output limit; any server-owned reply replaces it.
+        var replyCutShort = false;
         if (stopReason == AssistantTurnStopReason.Cancelled)
         {
             reply = string.Empty;
@@ -183,6 +187,10 @@ internal sealed class AssistantTurnFinalizer(
             {
                 reply = AssistantOrchestrator.IncompleteTurnReply;
             }
+            else
+            {
+                replyCutShort = input.ReplyCutShort && !string.IsNullOrWhiteSpace(reply);
+            }
         }
 
         // A model may narrate a write or empty search result without ever
@@ -195,6 +203,7 @@ internal sealed class AssistantTurnFinalizer(
                 "Assistant completion-claim guard replaced an unverified {ClaimKind} claim; reply content is not logged.",
                 unverifiedClaim.Kind);
             reply = unverifiedClaim.ReplacementReply;
+            replyCutShort = false;
             terminalError ??= new AssistantTurnErrorDto(
                 AssistantErrorCodes.UnverifiedCompletionClaim,
                 unverifiedClaim.ReplacementReply);
@@ -215,6 +224,11 @@ internal sealed class AssistantTurnFinalizer(
 
         // A citation marker only survives when it points at this turn's evidence.
         reply = AssistantCitations.Normalize(reply, input.EvidenceCount);
+
+        // Added after the guards, which judge only the model's words. The
+        // person sees that the answer stopped early, never a silent truncation.
+        if (replyCutShort)
+            reply = $"{reply}\n\n{AssistantOrchestrator.CutShortNotice}";
 
         return new AssistantTurnFinal(
             reply,
