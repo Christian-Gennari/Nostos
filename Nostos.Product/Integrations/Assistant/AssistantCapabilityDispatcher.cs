@@ -117,7 +117,8 @@ internal sealed class AssistantCapabilityDispatcher(
     string conversationKey,
     string turnId,
     Func<JsonElement, bool> proposalUsesReadEvidence,
-    Func<AssistantTurnActivityDto, ValueTask>? activity)
+    Func<AssistantTurnActivityDto, ValueTask>? activity,
+    string? captureRejectionMessage = null)
 {
     // A quote looked up by its first and last words that did not resolve to one
     // passage leaves nothing to save this turn: the dictated words are not the
@@ -140,13 +141,14 @@ internal sealed class AssistantCapabilityDispatcher(
             if (captureSuppressed)
             {
                 // Durable writes must not depend on the model correctly
-                // interpreting an explicit "do not save" instruction or
-                // a short source clarification. The tool is also omitted
-                // from the advertised catalogue for these turns; this is
-                // the server-side backstop if a provider still emits it.
+                // interpreting an explicit "do not save" instruction, a read-only
+                // reader selection, or a short source clarification. The tool
+                // is also omitted from the advertised catalogue for these turns;
+                // this is the server-side backstop if a provider still emits it.
                 return AssistantCapabilityCallOutcome.Rejected(
                     "capture_rejected",
-                    "This turn is conversational control, not a capture. Nothing was saved. Do not call notes_capture again for this turn.",
+                    captureRejectionMessage
+                        ?? "This turn is conversational control, not a capture. Nothing was saved. Do not call notes_capture again for this turn.",
                     clearsLastAssistantContent: true);
             }
 
@@ -187,6 +189,16 @@ internal sealed class AssistantCapabilityDispatcher(
             }
 
             args = capture.Arguments!.Value;
+
+            if (string.IsNullOrWhiteSpace(ReadString(args, "content"))
+                && string.IsNullOrWhiteSpace(ReadString(args, "quoteRef"))
+                && !AssistantCaptureIntentGuard.HasExplicitCaptureIntent(message))
+            {
+                return AssistantCapabilityCallOutcome.Rejected(
+                    "capture_rejected",
+                    "No note content was supplied and the user did not ask to save a quote or selection. Nothing was saved. Do not call notes_capture again for this turn.",
+                    clearsLastAssistantContent: true);
+            }
         }
         else
         {

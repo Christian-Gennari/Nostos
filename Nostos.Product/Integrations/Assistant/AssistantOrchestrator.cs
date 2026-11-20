@@ -252,6 +252,7 @@ public sealed class AssistantOrchestrator(
 
         var captureIntent = await _captureIntentGuard.EvaluateAsync(
             request.Message,
+            request.Context,
             ct);
         var captureSuppressed = captureIntent.SuppressCapture;
         var turnContext = captureIntent.ResolvedBook is { } clarifiedBook
@@ -324,7 +325,8 @@ public sealed class AssistantOrchestrator(
                 reviewedNoteIds,
                 inspectedTopicIds,
                 topicsInspected),
-            activity);
+            activity,
+            captureIntent.RejectionMessage);
 
         var iterations = Math.Max(1, options.MaxToolIterations);
         for (var iteration = 0; iteration < iterations; iteration++)

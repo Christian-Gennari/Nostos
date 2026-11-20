@@ -302,6 +302,133 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
             .Should().NotContain(m => m.Role == "system" && m.Content!.Contains("A passage is selected"));
     }
 
+    [Theory]
+    [InlineData("Repeat back the exact words I have selected right now.", "{}")]
+    [InlineData("Repeat back the exact words I have selected right now.", """{"selectedText":"Buda-Pesth seems a wonderful place"}""")]
+    [InlineData("What does this highlight mean?", """{"selectedText":"Buda-Pesth seems a wonderful place"}""")]
+    [InlineData("Quote back the exact highlighted phrase I have open. Do not save anything.", """{"selectedText":"Buda-Pesth seems a wonderful place"}""")]
+    [InlineData("What did I note about this?", """{"selectedText":"Buda-Pesth seems a wonderful place"}""")]
+    [InlineData("Did I save a note about this?", """{"selectedText":"Buda-Pesth seems a wonderful place"}""")]
+    [InlineData("Explain this selection.", """{"content":"Explain this selection.","selectedText":"Buda-Pesth seems a wonderful place"}""")]
+    public async Task Read_only_request_with_selected_text_cannot_capture_a_note(
+        string message,
+        string toolArgsJson)
+    {
+        var h = CreateHarness();
+        var book = await SeedBookAsync(h, "Dracula");
+        const string selection = "Buda-Pesth seems a wonderful place";
+
+        h.Llm
+            .CallsTool("notes_capture", toolArgsJson)
+            .Returns(selection);
+
+        var response = await h.Orchestrator.HandleTurnAsync(Turn(
+            message,
+            Context(
+                surface: "reader",
+                route: $"/read/{book.Id}",
+                bookId: book.Id.ToString(),
+                bookTitle: book.Title,
+                bookFormat: "ebook",
+                readerType: "epub",
+                epubCfi: "epubcfi(/6/4[chap01]!/4/2/2)",
+                selectedText: selection)));
+
+        response.CapturedNoteId.Should().BeNull();
+        response.Acknowledgement.Should().BeNull();
+        response.Error.Should().BeNull();
+        response.Reply.Should().Be(selection);
+        h.Llm.Requests[0].Tools.Should().NotContain(tool => tool.Name == "notes_capture");
+        (await NoteCountAsync(h)).Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData("Save this quote.")]
+    [InlineData("Note this down.")]
+    [InlineData("Capture this highlight.")]
+    [InlineData("Remember this passage.")]
+    [InlineData("Keep this quote.")]
+    [InlineData("Spara citatet.")]
+    public async Task Explicit_capture_request_with_selected_text_remains_capturable(string message)
+    {
+        var h = CreateHarness();
+        var book = await SeedBookAsync(h, "Dracula");
+        const string selection = "Buda-Pesth seems a wonderful place";
+
+        h.Llm
+            .CallsTool("notes_capture", """{"selectedText":"Buda-Pesth seems a wonderful place"}""")
+            .Returns("Saved.");
+
+        var response = await h.Orchestrator.HandleTurnAsync(Turn(
+            message,
+            Context(
+                surface: "reader",
+                route: $"/read/{book.Id}",
+                bookId: book.Id.ToString(),
+                bookTitle: book.Title,
+                bookFormat: "ebook",
+                readerType: "epub",
+                epubCfi: "epubcfi(/6/4[chap01]!/4/2/2)",
+                selectedText: selection)));
+
+        response.CapturedNoteId.Should().NotBeNullOrWhiteSpace();
+        response.Acknowledgement.Should().NotBeNullOrWhiteSpace();
+        h.Llm.Requests[0].Tools.Should().Contain(tool => tool.Name == "notes_capture");
+
+        await using var db = await h.Factory.CreateDbContextAsync();
+        var note = await db.Notes.AsNoTracking().SingleAsync();
+        note.SelectedText.Should().Be(selection);
+    }
+
+    [Fact]
+    public async Task Unrequested_empty_content_note_with_selected_text_only_is_rejected()
+    {
+        var h = CreateHarness();
+        var book = await SeedBookAsync(h, "Dracula");
+
+        h.Llm
+            .CallsTool("notes_capture", """{"selectedText":"Buda-Pesth seems a wonderful place"}""")
+            .Returns("Buda-Pesth seems a wonderful place");
+
+        var response = await h.Orchestrator.HandleTurnAsync(Turn(
+            "Repeat back the exact words from the chapter.",
+            Context(
+                surface: "reader",
+                route: $"/read/{book.Id}",
+                bookId: book.Id.ToString(),
+                bookTitle: book.Title,
+                bookFormat: "ebook",
+                readerType: "epub",
+                epubCfi: "epubcfi(/6/4[chap01]!/4/2/2)")));
+
+        response.CapturedNoteId.Should().BeNull();
+        response.Acknowledgement.Should().BeNull();
+        response.Error.Should().BeNull();
+        response.Reply.Should().Be("Buda-Pesth seems a wonderful place");
+        (await NoteCountAsync(h)).Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData("Save this quote.", true)]
+    [InlineData("Add a note about this.", true)]
+    [InlineData("Note: interesting tension.", true)]
+    [InlineData("Note this down.", true)]
+    [InlineData("Spara det här citatet.", true)]
+    [InlineData("Anteckna detta.", true)]
+    [InlineData("Repeat back the exact words I have selected right now.", false)]
+    [InlineData("What did I note about attention?", false)]
+    [InlineData("Did I save a note about this?", false)]
+    [InlineData("What does this highlight mean?", false)]
+    [InlineData("Quote back the exact highlighted phrase I have open. Do not save anything.", false)]
+    [InlineData("Save this quote. Actually, don't save anything.", false)]
+    public void Explicit_capture_intent_distinguishes_writes_from_read_only_requests(
+        string message,
+        bool expected)
+    {
+        AssistantCaptureIntentGuard.HasExplicitCaptureIntent(message).Should().Be(expected);
+    }
+
+
     [Fact]
     public async Task The_open_book_wins_over_a_book_the_model_chose()
     {
