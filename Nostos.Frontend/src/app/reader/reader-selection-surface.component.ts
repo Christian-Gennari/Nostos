@@ -5,7 +5,7 @@ import { ButtonComponent } from '../ui/button/button.component';
 import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
 import { NoteComposerComponent } from '../ui/note-composer/note-composer.component';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
-import { PenSwatchesComponent } from '../ui/pen-swatches/pen-swatches.component';
+import { PenPickerComponent } from '../ui/pen-swatches/pen-picker.component';
 import { QuoteBlockComponent } from '../ui/quote-block/quote-block.component';
 import { HighlightColour } from './highlight-colours';
 
@@ -13,10 +13,10 @@ import { HighlightColour } from './highlight-colours';
 export type MenuPlacement = { left: number; width: number; top: number | null; bottom: number | null };
 
 /**
- * One set of selection decisions (#650), placed two ways: anchored at the
- * marked text on a fine-pointer desktop, docked at the top edge on phones and
- * touch-first devices (#1344). The quote, the pens, the utilities, the note
- * field and the commit actions are the whole surface.
+ * One set of selection decisions (#650, consolidated #1722), placed two ways:
+ * anchored at the marked text on a fine-pointer desktop, docked at the top
+ * edge on phones and touch-first devices (#1344). Both share the same commit
+ * grammar (Cancel left, Add note + Highlight right, Highlight primary).
  *
  * This was the shell template's largest interactive block (issue #1607). The
  * decisions stay the shell's: it is the only owner of the pending capture and
@@ -34,7 +34,7 @@ export type MenuPlacement = { left: number; width: number; top: number | null; b
     MenuTriggerDirective,
     NoteComposerComponent,
     NostosIconComponent,
-    PenSwatchesComponent,
+    PenPickerComponent,
     QuoteBlockComponent,
     NgTemplateOutlet,
   ],
@@ -64,12 +64,10 @@ export class ReaderSelectionSurface {
   readonly canMarkPassage = input(false);
   /** A passage end is already waiting for this one. */
   readonly passageMarkActive = input(false);
-  readonly askNostosAvailable = input(false);
 
   readonly cancelled = output<void>();
   readonly copy = output<void>();
   readonly markPassage = output<void>();
-  readonly askNostos = output<void>();
   readonly highlight = output<void>();
   readonly addNote = output<void>();
   readonly saveNote = output<void>();

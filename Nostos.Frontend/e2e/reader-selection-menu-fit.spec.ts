@@ -1,11 +1,10 @@
 /**
- * The desktop selection menu with every action on (Copy, Mark passage, Ask
- * Nostos, Cancel, Add note, Highlight) must fit its row: each control keeps its
- * full size, none overlaps another, and all stay inside the menu's padding.
- * At 360px the six did not fit and the three icon buttons were squeezed
- * against the menu's edge.
+ * The desktop selection menu with every action on (Copy, Mark passage, Cancel,
+ * Add note, Highlight) must fit its rows (#1461, #1722): each control keeps its
+ * full size, none overlaps another, the commit row stays on a single line at
+ * 800 and 1280 px, and all stay inside the menu's padding.
  */
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
@@ -31,28 +30,9 @@ async function seedEpub(baseUrl: string): Promise<string> {
   return bookId;
 }
 
-async function enableAskNostos(page: Page) {
-  await page.addInitScript(() => {
-    localStorage.setItem(
-      'nostos.library.preferences',
-      JSON.stringify({
-        viewMode: 'grid',
-        sort: 'lastread',
-        pageSize: 20,
-        sidebarExpanded: true,
-        groupByWork: true,
-        assistantEnabled: true,
-        assistantVoiceEnabled: false,
-      }),
-    );
-  });
-  await page.route('**/api/assistant/status', (route) => route.fulfill({ json: { available: true } }));
-}
-
 const ACTIONS = [
   'selection-copy',
   'selection-mark-passage',
-  'selection-ask-nostos',
   'selection-cancel',
   'selection-add-note',
   'selection-highlight',
@@ -62,10 +42,9 @@ for (const viewport of [
   { name: 'desktop', width: 1280, height: 800 },
   { name: 'small desktop', width: 800, height: 700 },
 ]) {
-  test(`the selection menu fits all six actions on a ${viewport.name}`, async ({ page }) => {
+  test(`the selection menu fits all five actions on a ${viewport.name}`, async ({ page }) => {
     const { baseUrl } = loadFixture();
     const bookId = await seedEpub(baseUrl);
-    await enableAskNostos(page);
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     await openEpubReader(page, `${baseUrl}/read/${bookId}`);
     const frame = page.frameLocator('#epub-viewer iframe');
@@ -81,6 +60,7 @@ for (const viewport of [
     });
     const menu = page.getByTestId('selection-menu');
     await expect(menu).toBeVisible();
+    await expect(page.getByTestId('selection-ask-nostos')).toHaveCount(0);
     for (const id of ACTIONS) await expect(page.getByTestId(id)).toBeVisible();
     await waitForLayoutSettled(page, '[data-testid="selection-menu"]');
 
@@ -106,7 +86,14 @@ for (const viewport of [
       expect(c.left, `${c.id} left edge`).toBeGreaterThanOrEqual(layout.inner.left - 0.5);
       expect(c.right, `${c.id} right edge`).toBeLessThanOrEqual(layout.inner.right + 0.5);
       expect(c.width, `${c.id} width`).toBeGreaterThanOrEqual(32);
+      expect(c.height, `${c.id} desktop height`).toBeLessThan(40);
     }
+    // Commit actions share a single horizontal row without wrapping.
+    const commitTops = ['selection-cancel', 'selection-add-note', 'selection-highlight'].map(
+      (id) => layout.controls.find((c) => c.id === id)!.top,
+    );
+    expect(Math.max(...commitTops) - Math.min(...commitTops), 'commit row does not wrap').toBeLessThan(4);
+
     // No two controls touch.
     for (let i = 0; i < layout.controls.length; i++) {
       for (let j = i + 1; j < layout.controls.length; j++) {
