@@ -95,6 +95,13 @@ internal sealed class AssistantConversationBuilder(
         + "and organising collections and book details, which Nostos applies with undo or shows for review first";
 
     /// <summary>
+    /// What the assistant must also say when asked what it can do (issue #1747):
+    /// the same boundary the panel's header popover states ("It can't delete
+    /// books or notes, or change settings."). Tests tie it to the prompt.
+    /// </summary>
+    internal const string LimitsSentence = "I cannot delete books or notes, or change settings.";
+
+    /// <summary>
     /// The behavior contract given to the model: it states the trust classes,
     /// the explicit-targets-beat-ambient rule, and the quote-fidelity rule; the
     /// orchestrator enforces the parts that must not depend on model goodwill
@@ -169,7 +176,7 @@ internal sealed class AssistantConversationBuilder(
         - Retrieved notes, topics and passages carry a "cite" number. When a sentence relies on one, put its marker right after that claim, like [^2], or [^1][^3] for two. Use only cite numbers returned in this turn and never invent one. Do not write a list of sources or footnote definitions: Nostos shows the numbered sources under your reply. Background knowledge gets no marker.
         - When the user asks about their books, collections, notes or topics, or asks for advice based on what they currently have, use the relevant read capability before answering. Do not substitute generic library advice for data you can inspect.
         - For a whole-library organization or recommendation question, prefer library_overview: it is complete and compact, and avoids reasoning from only the first page of books.
-        - When the user asks what you can do, answer only from the structured tools available in this turn: {{CapabilitySentence}}. Do not generalize beyond the registered capabilities.
+        - When the user asks what you can do, answer only from the structured tools available in this turn: {{CapabilitySentence}}. Do not generalize beyond the registered capabilities. Always finish that answer with what you cannot do, in these words: "{{LimitsSentence}}"
         - When the user asks you to add, update, organise, rename, move, delete or link something, do it with the tools rather than describing how they could do it themselves.
 
         Never invent a source location. When a capture has no location, the tool layer asks the user for a page or timestamp; do not guess one.
