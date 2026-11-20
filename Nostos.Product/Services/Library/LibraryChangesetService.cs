@@ -366,10 +366,20 @@ public sealed class LibraryChangesetService(
             //    collection reclaim its name once the changeset's replacement is
             //    gone, and lets a collection moved under a newly created parent
             //    move back so that parent can be removed.
-            var created = undo.Collections
-                .Where(s => s.Before is null && s.After is not null && current.ContainsKey(s.Id))
-                .Select(s => s.Id)
-                .ToHashSet();
+            var created = new HashSet<Guid>();
+            foreach (var snapshot in undo.Collections.Where(s => s.Before is null && s.After is not null))
+            {
+                if (!current.TryGetValue(snapshot.Id, out var model))
+                    continue;
+
+                if (model.Name != snapshot.After!.Name || model.ParentId != snapshot.After.ParentId)
+                {
+                    conflicts.Add($"Kept \"{model.Name}\": it was changed after this was applied.");
+                    continue;
+                }
+
+                created.Add(snapshot.Id);
+            }
             var memberCounts = created.Count == 0
                 ? new Dictionary<Guid, int>()
                 : await db.BookCollections.AsNoTracking()
@@ -397,6 +407,8 @@ public sealed class LibraryChangesetService(
             }
 
             var updatedById = updatedPending.ToDictionary(s => s.Id);
+            var restoredDeleted = new List<CollectionSnapshot>();
+            var restoredUpdated = new List<CollectionSnapshot>();
 
             bool CanClearCreatedSubtreeForDeleted(Guid createdRootId, Guid restoringDeletedId)
             {
@@ -471,6 +483,7 @@ public sealed class LibraryChangesetService(
                     model.ParentId = state.ParentId;
                     updatedPending.Remove(snapshot);
                     updatedById.Remove(snapshot.Id);
+                    restoredUpdated.Add(snapshot);
                     restored++;
                     progressed = true;
                 }
@@ -487,6 +500,7 @@ public sealed class LibraryChangesetService(
                     db.Collections.Add(model);
                     current[model.Id] = model;
                     deletedPending.Remove(snapshot);
+                    restoredDeleted.Add(snapshot);
                     restored++;
                     progressed = true;
                 }
@@ -524,6 +538,7 @@ public sealed class LibraryChangesetService(
                         model.ParentId = snapshot.Before.ParentId;
                         updatedPending.Remove(snapshot);
                         updatedById.Remove(snapshot.Id);
+                        restoredUpdated.Add(snapshot);
                         restored++;
                     }
                     progressed = true;
@@ -552,6 +567,7 @@ public sealed class LibraryChangesetService(
                         db.Collections.Add(model);
                         current[model.Id] = model;
                         deletedPending.Remove(snapshot);
+                        restoredDeleted.Add(snapshot);
                         restored++;
                         progressed = true;
                         break;
@@ -559,6 +575,47 @@ public sealed class LibraryChangesetService(
                 }
             }
             while (progressed);
+
+            // Guard against any edge case (e.g. step 2e) that left a restored
+            // collection alongside a same-name sibling under the same parent.
+            bool removedClash;
+            do
+            {
+                removedClash = false;
+                foreach (var snapshot in restoredDeleted.ToList())
+                {
+                    if (!current.TryGetValue(snapshot.Id, out var model)
+                        || !SiblingNameTaken(snapshot.Id, model.ParentId, model.Name)
+                        || current.Values.Any(c => c.ParentId == snapshot.Id))
+                        continue;
+
+                    db.Collections.Remove(model);
+                    current.Remove(snapshot.Id);
+                    restoredDeleted.Remove(snapshot);
+                    restored--;
+                    conflicts.Add($"Did not restore \"{model.Name}\": another collection there now has that name.");
+                    removedClash = true;
+                }
+            }
+            while (removedClash);
+
+            foreach (var snapshot in restoredDeleted)
+            {
+                if (current.TryGetValue(snapshot.Id, out var model)
+                    && SiblingNameTaken(snapshot.Id, model.ParentId, model.Name))
+                {
+                    conflicts.Add($"Kept \"{model.Name}\" alongside another collection with the same name.");
+                }
+            }
+
+            foreach (var snapshot in restoredUpdated)
+            {
+                if (current.TryGetValue(snapshot.Id, out var model)
+                    && SiblingNameTaken(snapshot.Id, model.ParentId, model.Name))
+                {
+                    conflicts.Add($"Kept \"{model.Name}\" alongside another collection with the same name.");
+                }
+            }
 
             foreach (var snapshot in deletedPending)
             {
@@ -581,11 +638,23 @@ public sealed class LibraryChangesetService(
             await db.SaveChangesAsync(token);
 
             // 3. Re-attach the original memberships now that restored collections exist.
+            //    If any of a book's "before" collections is not present, keep/restore its
+            //    still-existing "after" memberships instead of stranding the book, and
+            //    report a conflict for that book.
             foreach (var snapshot in revertibleMemberships)
             {
-                foreach (var collectionId in snapshot.Before.Where(current.ContainsKey))
-                    db.BookCollections.Add(new BookCollectionModel { BookId = snapshot.BookId, CollectionId = collectionId });
-                restored++;
+                if (snapshot.Before.All(current.ContainsKey))
+                {
+                    foreach (var collectionId in snapshot.Before)
+                        db.BookCollections.Add(new BookCollectionModel { BookId = snapshot.BookId, CollectionId = collectionId });
+                    restored++;
+                }
+                else
+                {
+                    foreach (var collectionId in snapshot.After.Where(current.ContainsKey))
+                        db.BookCollections.Add(new BookCollectionModel { BookId = snapshot.BookId, CollectionId = collectionId });
+                    conflicts.Add($"Kept the collections of \"{existingBooks[snapshot.BookId]}\": one of its previous collections could not be restored.");
+                }
             }
 
             // 4. Book fields return to what they were, where nobody changed them since.
