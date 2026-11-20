@@ -618,6 +618,11 @@ public sealed class AssistantOrchestrator(
                         if (evidenceReferences.Count > evidenceBeforeCall)
                             retrieval.MarkExactEvidenceAvailable();
                     }
+                    else if (string.Equals(capability.Name, "topics_get", StringComparison.Ordinal)
+                        && evidenceReferences.Count > evidenceBeforeCall)
+                    {
+                        retrieval.MarkExactEvidenceAvailable();
+                    }
                 }
 
                 if (result.Success
