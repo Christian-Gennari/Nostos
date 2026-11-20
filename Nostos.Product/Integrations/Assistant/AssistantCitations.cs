@@ -72,6 +72,7 @@ internal static partial class AssistantCitations
             "book_text_search" => [.. Array(root, "passages")],
             "notes_list_for_book" or "notes_search" => root is JsonArray array ? [.. array] : null,
             "knowledge_read_evidence" => root is JsonObject ? [root] : null,
+            "topics_get" => [.. Array(root, "notes")],
             _ => null,
         };
     }

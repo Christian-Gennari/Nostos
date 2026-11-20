@@ -201,6 +201,48 @@ public sealed class AssistantDraftsTopicsReadingListTests : IClassFixture<Sqlite
     }
 
     [Fact]
+    public async Task Writings_create_strips_chat_footnote_markers_that_point_at_nothing()
+    {
+        using var h = CreateHarness();
+        var content = "Attention shapes what we see: \u201cwhat I look at\u201d. And a library is a record. [^1][^2][^3][^4]";
+
+        var result = await Invoke(h, "writings_create", new { name = "On attention", content });
+
+        result.Success.Should().BeTrue(result.ErrorMessage);
+        var id = result.Data!.Value.GetProperty("id").GetGuid();
+        await using var db = await h.Factory.CreateDbContextAsync();
+        var stored = await db.Writings.AsNoTracking().SingleAsync(w => w.Id == id);
+        stored.Content.Should().Be("Attention shapes what we see: \u201cwhat I look at\u201d. And a library is a record.");
+    }
+
+    [Theory]
+    [InlineData("Plain words, no markers.", "Plain words, no markers.")]
+    [InlineData("A claim [^1] and another [^2].", "A claim and another.")]
+    [InlineData("A claim.[^a]\n\n[^a]: Eliot, Middlemarch.", "A claim.[^a]\n\n[^a]: Eliot, Middlemarch.")]
+    [InlineData("One [^1] and two [^2].\n\n[^1]: Source.", "One [^1] and two.\n\n[^1]: Source.")]
+    [InlineData("Write `[^1]` as code.", "Write `[^1]` as code.")]
+    [InlineData("```\n[^1]\n```\nText [^1]", "```\n[^1]\n```\nText")]
+    public void Draft_markers_without_a_definition_are_removed_and_defined_ones_stay(string input, string expected) =>
+        AssistantDraftMarkers.StripUnmatched(input).Should().Be(expected);
+
+    [Fact]
+    public async Task Writings_create_keeps_live_citation_links_while_stripping_markers()
+    {
+        using var h = CreateHarness();
+        var book = await SeedBookAsync(h, "Middlemarch", "George Eliot");
+        var note = await SeedNoteAsync(h, book.Id, "The growing good of the world", DateTime.UtcNow);
+        var link = $"[the growing good](nostos:cite/{book.Id}?p=838&as=quote&src={note.Id})";
+
+        var result = await Invoke(h, "writings_create", new { name = "Small acts", content = $"Eliot ends on {link}. [^1]" });
+
+        result.Success.Should().BeTrue(result.ErrorMessage);
+        var id = result.Data!.Value.GetProperty("id").GetGuid();
+        result.Data!.Value.GetProperty("citations").GetInt32().Should().Be(1);
+        await using var db = await h.Factory.CreateDbContextAsync();
+        (await db.Writings.AsNoTracking().SingleAsync(w => w.Id == id)).Content.Should().Be($"Eliot ends on {link}.");
+    }
+
+    [Fact]
     public async Task Writings_create_never_overwrites_a_document_with_the_same_name()
     {
         using var h = CreateHarness();

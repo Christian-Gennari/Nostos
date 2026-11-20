@@ -302,6 +302,133 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
             .Should().NotContain(m => m.Role == "system" && m.Content!.Contains("A passage is selected"));
     }
 
+    [Theory]
+    [InlineData("Repeat back the exact words I have selected right now.", "{}")]
+    [InlineData("Repeat back the exact words I have selected right now.", """{"selectedText":"Buda-Pesth seems a wonderful place"}""")]
+    [InlineData("What does this highlight mean?", """{"selectedText":"Buda-Pesth seems a wonderful place"}""")]
+    [InlineData("Quote back the exact highlighted phrase I have open. Do not save anything.", """{"selectedText":"Buda-Pesth seems a wonderful place"}""")]
+    [InlineData("What did I note about this?", """{"selectedText":"Buda-Pesth seems a wonderful place"}""")]
+    [InlineData("Did I save a note about this?", """{"selectedText":"Buda-Pesth seems a wonderful place"}""")]
+    [InlineData("Explain this selection.", """{"content":"Explain this selection.","selectedText":"Buda-Pesth seems a wonderful place"}""")]
+    public async Task Read_only_request_with_selected_text_cannot_capture_a_note(
+        string message,
+        string toolArgsJson)
+    {
+        var h = CreateHarness();
+        var book = await SeedBookAsync(h, "Dracula");
+        const string selection = "Buda-Pesth seems a wonderful place";
+
+        h.Llm
+            .CallsTool("notes_capture", toolArgsJson)
+            .Returns(selection);
+
+        var response = await h.Orchestrator.HandleTurnAsync(Turn(
+            message,
+            Context(
+                surface: "reader",
+                route: $"/read/{book.Id}",
+                bookId: book.Id.ToString(),
+                bookTitle: book.Title,
+                bookFormat: "ebook",
+                readerType: "epub",
+                epubCfi: "epubcfi(/6/4[chap01]!/4/2/2)",
+                selectedText: selection)));
+
+        response.CapturedNoteId.Should().BeNull();
+        response.Acknowledgement.Should().BeNull();
+        response.Error.Should().BeNull();
+        response.Reply.Should().Be(selection);
+        h.Llm.Requests[0].Tools.Should().NotContain(tool => tool.Name == "notes_capture");
+        (await NoteCountAsync(h)).Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData("Save this quote.")]
+    [InlineData("Note this down.")]
+    [InlineData("Capture this highlight.")]
+    [InlineData("Remember this passage.")]
+    [InlineData("Keep this quote.")]
+    [InlineData("Spara citatet.")]
+    public async Task Explicit_capture_request_with_selected_text_remains_capturable(string message)
+    {
+        var h = CreateHarness();
+        var book = await SeedBookAsync(h, "Dracula");
+        const string selection = "Buda-Pesth seems a wonderful place";
+
+        h.Llm
+            .CallsTool("notes_capture", """{"selectedText":"Buda-Pesth seems a wonderful place"}""")
+            .Returns("Saved.");
+
+        var response = await h.Orchestrator.HandleTurnAsync(Turn(
+            message,
+            Context(
+                surface: "reader",
+                route: $"/read/{book.Id}",
+                bookId: book.Id.ToString(),
+                bookTitle: book.Title,
+                bookFormat: "ebook",
+                readerType: "epub",
+                epubCfi: "epubcfi(/6/4[chap01]!/4/2/2)",
+                selectedText: selection)));
+
+        response.CapturedNoteId.Should().NotBeNullOrWhiteSpace();
+        response.Acknowledgement.Should().NotBeNullOrWhiteSpace();
+        h.Llm.Requests[0].Tools.Should().Contain(tool => tool.Name == "notes_capture");
+
+        await using var db = await h.Factory.CreateDbContextAsync();
+        var note = await db.Notes.AsNoTracking().SingleAsync();
+        note.SelectedText.Should().Be(selection);
+    }
+
+    [Fact]
+    public async Task Unrequested_empty_content_note_with_selected_text_only_is_rejected()
+    {
+        var h = CreateHarness();
+        var book = await SeedBookAsync(h, "Dracula");
+
+        h.Llm
+            .CallsTool("notes_capture", """{"selectedText":"Buda-Pesth seems a wonderful place"}""")
+            .Returns("Buda-Pesth seems a wonderful place");
+
+        var response = await h.Orchestrator.HandleTurnAsync(Turn(
+            "Repeat back the exact words from the chapter.",
+            Context(
+                surface: "reader",
+                route: $"/read/{book.Id}",
+                bookId: book.Id.ToString(),
+                bookTitle: book.Title,
+                bookFormat: "ebook",
+                readerType: "epub",
+                epubCfi: "epubcfi(/6/4[chap01]!/4/2/2)")));
+
+        response.CapturedNoteId.Should().BeNull();
+        response.Acknowledgement.Should().BeNull();
+        response.Error.Should().BeNull();
+        response.Reply.Should().Be("Buda-Pesth seems a wonderful place");
+        (await NoteCountAsync(h)).Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData("Save this quote.", true)]
+    [InlineData("Add a note about this.", true)]
+    [InlineData("Note: interesting tension.", true)]
+    [InlineData("Note this down.", true)]
+    [InlineData("Spara det här citatet.", true)]
+    [InlineData("Anteckna detta.", true)]
+    [InlineData("Repeat back the exact words I have selected right now.", false)]
+    [InlineData("What did I note about attention?", false)]
+    [InlineData("Did I save a note about this?", false)]
+    [InlineData("What does this highlight mean?", false)]
+    [InlineData("Quote back the exact highlighted phrase I have open. Do not save anything.", false)]
+    [InlineData("Save this quote. Actually, don't save anything.", false)]
+    public void Explicit_capture_intent_distinguishes_writes_from_read_only_requests(
+        string message,
+        bool expected)
+    {
+        AssistantCaptureIntentGuard.HasExplicitCaptureIntent(message).Should().Be(expected);
+    }
+
+
     [Fact]
     public async Task The_open_book_wins_over_a_book_the_model_chose()
     {
@@ -2930,6 +3057,101 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
         artifact.Handle.NoteId.Should().Be(note.Id);
         artifact.BookTitle.Should().Be(book.Title);
         artifact.Excerpt.Should().Contain("homecoming");
+    }
+
+    [Fact]
+    public async Task Topics_get_results_carry_citable_note_and_highlight_evidence()
+    {
+        var h = CreateHarness();
+        var book = await SeedBookAsync(h, "Ways of Seeing", author: "John Berger");
+        var topic = await SeedTopicAsync(h, "Attention");
+
+        var note = await SeedNoteAsync(h, book.Id, "Looking precedes speech.");
+        var highlight = new NoteModel
+        {
+            Id = Guid.NewGuid(),
+            BookId = book.Id,
+            Content = "",
+            SelectedText = "We only see what we look at.",
+            CreatedAt = DateTime.UtcNow.AddMinutes(-1),
+        };
+        h.Db.Notes.Add(highlight);
+        h.Db.NoteTopics.AddRange(
+            new NoteTopicModel { NoteId = note.Id, TopicId = topic.Id },
+            new NoteTopicModel { NoteId = highlight.Id, TopicId = topic.Id });
+        await h.Db.SaveChangesAsync();
+
+        h.Llm
+            .CallsTool("topics_get", JsonSerializer.Serialize(new { topicId = topic.Id }))
+            .Returns("Your topic gathers both your thought [^1] and your highlight [^2]. Bogus [^9].");
+
+        var response = await h.Orchestrator.HandleTurnAsync(
+            Turn(
+                "What connects my topics?",
+                Context(surface: "second-brain", route: "/second-brain")));
+
+        response.Evidence.Should().HaveCount(2);
+        response.Evidence![0].Handle.Kind.Should().Be(KnowledgeEvidenceKinds.Note);
+        response.Evidence[0].Handle.NoteId.Should().Be(note.Id);
+        response.Evidence[0].BookTitle.Should().Be("Ways of Seeing");
+        response.Evidence[0].BookAuthor.Should().Be("John Berger");
+        response.Evidence[0].Excerpt.Should().Contain("Looking precedes speech");
+
+        response.Evidence[1].Handle.Kind.Should().Be(KnowledgeEvidenceKinds.Note);
+        response.Evidence[1].Handle.NoteId.Should().Be(highlight.Id);
+        response.Evidence[1].Excerpt.Should().Contain("We only see what we look at");
+
+        response.Reply.Should().Be("Your topic gathers both your thought [^1] and your highlight [^2]. Bogus.");
+
+        var toolMessage = h.Llm.Requests[1].Messages.Single(message => message.Role == "tool");
+        using var toolJson = JsonDocument.Parse(toolMessage.Content!);
+        var notes = toolJson.RootElement.GetProperty("data").GetProperty("notes");
+        notes[0].GetProperty("cite").GetInt32().Should().Be(1);
+        notes[1].GetProperty("cite").GetInt32().Should().Be(2);
+    }
+
+    [Fact]
+    public async Task Topics_get_deduplicates_shared_notes_across_multiple_topic_reads()
+    {
+        var h = CreateHarness();
+        var book = await SeedBookAsync(h, "Walden");
+        var t1 = await SeedTopicAsync(h, "Solitude");
+        var t2 = await SeedTopicAsync(h, "Attention");
+
+        var shared = await SeedNoteAsync(h, book.Id, "Shared observation.");
+        var second = new NoteModel
+        {
+            Id = Guid.NewGuid(),
+            BookId = book.Id,
+            Content = "Second topic observation.",
+            CreatedAt = DateTime.UtcNow.AddMinutes(-1),
+        };
+        h.Db.Notes.Add(second);
+        h.Db.NoteTopics.AddRange(
+            new NoteTopicModel { NoteId = shared.Id, TopicId = t1.Id },
+            new NoteTopicModel { NoteId = shared.Id, TopicId = t2.Id },
+            new NoteTopicModel { NoteId = second.Id, TopicId = t2.Id });
+        await h.Db.SaveChangesAsync();
+
+        h.Llm
+            .CallsTool("topics_get", JsonSerializer.Serialize(new { topicId = t1.Id }))
+            .CallsTool("topics_get", JsonSerializer.Serialize(new { topicId = t2.Id }))
+            .Returns("Both topics meet at [^1], with context in [^2].");
+
+        var response = await h.Orchestrator.HandleTurnAsync(
+            Turn("What connects my topics?", Context(surface: "second-brain", route: "/second-brain")));
+
+        response.Evidence.Should().HaveCount(2);
+        response.Evidence![0].Handle.NoteId.Should().Be(shared.Id);
+        response.Evidence[1].Handle.NoteId.Should().Be(second.Id);
+        response.Reply.Should().Be("Both topics meet at [^1], with context in [^2].");
+
+        var toolMessages = h.Llm.Requests[2].Messages.Where(message => message.Role == "tool").ToList();
+        using var firstJson = JsonDocument.Parse(toolMessages[0].Content!);
+        using var secondJson = JsonDocument.Parse(toolMessages[1].Content!);
+        firstJson.RootElement.GetProperty("data").GetProperty("notes")[0].GetProperty("cite").GetInt32().Should().Be(1);
+        secondJson.RootElement.GetProperty("data").GetProperty("notes")[0].GetProperty("cite").GetInt32().Should().Be(1);
+        secondJson.RootElement.GetProperty("data").GetProperty("notes")[1].GetProperty("cite").GetInt32().Should().Be(2);
     }
 
     [Fact]
