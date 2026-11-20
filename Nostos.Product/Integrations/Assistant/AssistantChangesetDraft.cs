@@ -1,7 +1,6 @@
 using System.Text.Json;
 using Nostos.Backend.Services.Library;
 using Nostos.Shared.Dtos;
-using Nostos.Shared.Enums;
 
 namespace Nostos.Backend.Integrations.Assistant;
 
@@ -10,22 +9,24 @@ public sealed record AssistantStagedStep(LibraryChangeOp Op, string Summary, IRe
 
 /// <summary>
 /// The library changes one turn is building. Stage capabilities add to it; it
-/// never writes. Every addition is normalised and previewed together with what
-/// is already staged, through the canonical library code, so the model learns at
-/// once that a collection does not exist or a step clashes, and can correct
-/// itself in the same turn. What it holds when the turn ends is what the change
-/// policy judges.
+/// never writes. Every addition is validated against the raw sequence through
+/// the canonical library code, then collapsed into a canonical plan derived
+/// directly from the net before/after diff so equivalent plans produce the same
+/// steps and diffHash (#1740). What it holds when the turn ends is what the
+/// change policy judges.
 /// </summary>
 public sealed class AssistantChangesetDraft(ILibraryChangesetService changesets, ILibraryService library)
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private static readonly LibraryChangesetCountsDto EmptyCounts = new(0, 0, 0, 0, 0, 0, 0, 0);
 
+    private readonly List<LibraryChangeOp> _rawOps = [];
     private readonly List<AssistantStagedStep> _steps = [];
-    private readonly Dictionary<string, (LibraryCollectionRef Ref, int? Step)> _namedCollections = new(StringComparer.OrdinalIgnoreCase);
-    private Dictionary<Guid, CollectionDto>? _collections;
+    private readonly Dictionary<string, LibraryCollectionRef> _liveNamedCollections = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<Guid, BookDto?> _books = [];
-    private readonly Dictionary<Guid, IReadOnlyList<Guid>> _directMembers = [];
+    private Dictionary<Guid, CollectionDto>? _collections;
+    private LibraryChangesetPreviewState? _lastPreviewState;
+    private int _refCounter;
 
     public IReadOnlyList<AssistantStagedStep> Steps => _steps;
 
@@ -38,7 +39,8 @@ public sealed class AssistantChangesetDraft(ILibraryChangesetService changesets,
 
     /// <summary>
     /// Reads a collection argument: an existing collection's id, or the name
-    /// (or <c>ref</c>) given to a collection created or reused earlier in this turn.
+    /// (or <c>ref</c>) of a collection created or reused earlier in this turn
+    /// that is still live in the staged library state.
     /// </summary>
     public bool TryResolveCollection(string? value, out LibraryCollectionRef reference, out int? createdBy)
     {
@@ -54,10 +56,9 @@ public sealed class AssistantChangesetDraft(ILibraryChangesetService changesets,
             return true;
         }
 
-        if (_namedCollections.TryGetValue(trimmed, out var entry))
+        if (_liveNamedCollections.TryGetValue(trimmed, out var live))
         {
-            reference = entry.Ref;
-            createdBy = entry.Step;
+            reference = live;
             return true;
         }
 
@@ -76,166 +77,281 @@ public sealed class AssistantChangesetDraft(ILibraryChangesetService changesets,
         StageAsync([(op, dependsOn)], ct);
 
     /// <summary>
-    /// Stages several operations as consecutive steps, normalised and previewed
-    /// once. Either all of them are staged or none is.
+    /// Stages several operations as consecutive steps, validated and rebuilt
+    /// from the net diff once. Either all of them are staged or none is.
     /// </summary>
     public async Task<AssistantToolResult> StageAsync(
         IReadOnlyList<(LibraryChangeOp Op, IReadOnlyList<int> DependsOn)> additions,
         CancellationToken ct)
     {
-        var rawCandidate = _steps.Select(s => s.Op).Concat(additions.Select(a => a.Op)).ToList();
-        var initialCollections = await CollectionsAsync(ct);
-        var normalized = await AssistantChangesetNormalizer.NormalizeAsync(
-            rawCandidate,
-            initialCollections,
-            TryGetBookAsync,
-            DirectMembersAsync,
-            ct);
-
-        if (normalized.Ops.Count == 0)
+        // Deleting an existing collection that was already deleted earlier in
+        // this turn (directly or by cascade) is an idempotent no-op.
+        if (additions.Count == 1
+            && additions[0].Op is DeleteCollectionOp { Collection.Id: { } deletedId }
+            && _lastPreviewState is { } prior
+            && prior.Before.Collections.ContainsKey(deletedId)
+            && !prior.After.Collections.ContainsKey(deletedId))
         {
-            _steps.Clear();
-            RebuildNamedCollections(normalized.RefAliases);
-            Diff = null;
-            DiffHash = null;
-
-            return AssistantToolResult.Ok(JsonSerializer.SerializeToElement(new
-            {
-                status = "no_change",
-                steps = Array.Empty<string>(),
-                note = "No library change was needed: the library already matches what you asked for.",
-                changesetSoFar = EmptyCounts,
-            }, Json));
+            return CurrentResult();
         }
 
-        var preview = await changesets.PreviewAsync(normalized.Ops, ct);
-        if (!preview.Success)
+        var baseCount = _rawOps.Count;
+        var nextRefId = _refCounter;
+        var batchRefs = new Dictionary<string, string>(StringComparer.Ordinal);
+        var rawCandidate = new List<LibraryChangeOp>(_rawOps.Count + additions.Count);
+        rawCandidate.AddRange(_rawOps);
+
+        foreach (var (op, _) in additions)
         {
-            var failedStep = preview.FailedOperation is { } index && index >= _steps.Count
-                ? $" (in the change you just asked for, part {index - _steps.Count + 1})"
+            if (op is CreateCollectionOp create)
+            {
+                var uniqueRef = $"{create.Ref}#{++nextRefId}";
+                var remappedParent = create.Parent is { } parent ? RemapBatchRef(parent, batchRefs) : (LibraryCollectionRef?)null;
+                batchRefs[create.Ref] = uniqueRef;
+                rawCandidate.Add(create with { Ref = uniqueRef, Parent = remappedParent });
+            }
+            else
+            {
+                rawCandidate.Add(RemapBatchRefs(op, batchRefs));
+            }
+        }
+
+        var rawPreview = await changesets.PreviewAsync(rawCandidate, ct);
+        if (!rawPreview.Success)
+        {
+            var failedStep = rawPreview.FailedOperation is { } index && index >= baseCount
+                ? $" (in the change you just asked for, part {index - baseCount + 1})"
                 : string.Empty;
-            var message = (preview.ErrorMessage ?? "That change could not be made.") + failedStep;
+            var message = (rawPreview.ErrorMessage ?? "That change could not be made.") + failedStep;
             return AssistantToolResult.Fail(
-                preview.ErrorCode ?? "changeset_invalid",
+                rawPreview.ErrorCode ?? "changeset_invalid",
                 message,
                 JsonSerializer.SerializeToElement(new { status = "not_staged", reason = message }, Json));
         }
 
-        var createStepByRef = new Dictionary<string, int>(StringComparer.Ordinal);
-        for (var i = 0; i < normalized.Ops.Count; i++)
+        var previewState = rawPreview.PreviewState;
+        if (previewState is null)
         {
-            if (normalized.Ops[i] is CreateCollectionOp create)
-                createStepByRef[create.Ref] = i;
+            var fallbackPlan = AssistantChangesetPlanBuilder.Build(
+                new LibraryChangesetPreviewState(
+                    new LibraryChangesetDiff.LibrarySnapshot("0", new Dictionary<Guid, CollectionState>(), new Dictionary<Guid, HashSet<Guid>>(), new Dictionary<Guid, BookFieldsState>()),
+                    new LibraryChangesetDiff.LibrarySnapshot("0", new Dictionary<Guid, CollectionState>(), new Dictionary<Guid, HashSet<Guid>>(), new Dictionary<Guid, BookFieldsState>()),
+                    new Dictionary<string, Guid>(),
+                    new Dictionary<Guid, string>()),
+                rawCandidate);
+            return await CommitAsync(rawCandidate, nextRefId, previewState: null, rawCandidate, fallbackPlan.DependsOn, fallbackPlan.DeletedDescendantCounts, rawPreview, ct);
         }
 
-        var rebuilt = new List<AssistantStagedStep>(normalized.Ops.Count);
-        foreach (var op in normalized.Ops)
+        var plan = AssistantChangesetPlanBuilder.Build(previewState, rawCandidate);
+        if (plan.Ops.Count == 0)
         {
-            var dependsOn = ReferencesUsedBy(op)
-                .Where(r => r.Ref is not null)
-                .Select(r => createStepByRef.TryGetValue(r.Ref!, out var stepIndex) ? stepIndex : -1)
-                .Where(stepIndex => stepIndex >= 0)
-                .Distinct()
-                .Order()
-                .ToList();
-            var summary = await SummarizeAsync(op, normalized.Ops, ct);
-            rebuilt.Add(new AssistantStagedStep(op, summary, dependsOn));
+            CommitState(rawCandidate, nextRefId, previewState);
+            _steps.Clear();
+            Diff = null;
+            DiffHash = null;
+            return NoChangeResult(EmptyCounts);
         }
 
+        var canonicalPreview = await changesets.PreviewAsync(plan.Ops, ct);
+        if (!canonicalPreview.Success)
+        {
+            var fallbackDepends = ComputeSimpleDependsOn(rawCandidate);
+            return await CommitAsync(rawCandidate, nextRefId, previewState, rawCandidate, fallbackDepends, new Dictionary<Guid, int>(), rawPreview, ct);
+        }
+
+        return await CommitAsync(rawCandidate, nextRefId, previewState, plan.Ops, plan.DependsOn, plan.DeletedDescendantCounts, canonicalPreview, ct);
+    }
+
+    private async Task<AssistantToolResult> CommitAsync(
+        List<LibraryChangeOp> rawCandidate,
+        int nextRefId,
+        LibraryChangesetPreviewState? previewState,
+        IReadOnlyList<LibraryChangeOp> presentedOps,
+        IReadOnlyList<IReadOnlyList<int>> dependsOn,
+        IReadOnlyDictionary<Guid, int> deletedDescendantCounts,
+        LibraryChangesetResult finalPreview,
+        CancellationToken ct)
+    {
+        CommitState(rawCandidate, nextRefId, previewState);
+
+        if (finalPreview.Diff!.IsEmpty)
+        {
+            _steps.Clear();
+            Diff = null;
+            DiffHash = null;
+            return NoChangeResult(finalPreview.Diff.Counts);
+        }
+
+        var rebuilt = await BuildStepsAsync(presentedOps, dependsOn, deletedDescendantCounts, previewState, ct);
         _steps.Clear();
         _steps.AddRange(rebuilt);
-        RebuildNamedCollections(normalized.RefAliases);
+        Diff = finalPreview.Diff;
+        DiffHash = finalPreview.DiffHash;
 
-        Diff = preview.Diff;
-        DiffHash = preview.DiffHash;
+        return StagedResult(_steps, finalPreview.Diff.Counts);
+    }
 
-        if (preview.Diff!.IsEmpty)
+    private void CommitState(
+        List<LibraryChangeOp> rawCandidate,
+        int nextRefId,
+        LibraryChangesetPreviewState? previewState)
+    {
+        _rawOps.Clear();
+        _rawOps.AddRange(rawCandidate);
+        _refCounter = nextRefId;
+        _lastPreviewState = previewState;
+
+        _liveNamedCollections.Clear();
+        if (previewState is null)
+            return;
+
+        foreach (var op in _rawOps)
         {
-            return AssistantToolResult.Ok(JsonSerializer.SerializeToElement(new
-            {
-                status = "no_change",
-                steps = Array.Empty<string>(),
-                note = "No library change was needed: the library already matches what you asked for.",
-                changesetSoFar = preview.Diff.Counts,
-            }, Json));
-        }
+            if (op is not CreateCollectionOp create)
+                continue;
+            if (!previewState.CreatedRefs.TryGetValue(create.Ref, out var id))
+                continue;
+            if (!previewState.After.Collections.TryGetValue(id, out var live))
+                continue;
 
-        return AssistantToolResult.Ok(JsonSerializer.SerializeToElement(new
+            var reference = LibraryCollectionRef.Created(create.Ref);
+            _liveNamedCollections[live.Name] = reference;
+            _liveNamedCollections[create.Ref] = reference;
+        }
+    }
+
+    private AssistantToolResult CurrentResult() =>
+        _steps.Count == 0 || Diff is null || Diff.IsEmpty
+            ? NoChangeResult(Diff?.Counts ?? EmptyCounts)
+            : StagedResult(_steps, Diff.Counts);
+
+    private static AssistantToolResult NoChangeResult(LibraryChangesetCountsDto counts) =>
+        AssistantToolResult.Ok(JsonSerializer.SerializeToElement(new
+        {
+            status = "no_change",
+            steps = Array.Empty<string>(),
+            note = "No library change was needed: the library already matches what you asked for.",
+            changesetSoFar = counts,
+        }, Json));
+
+    private static AssistantToolResult StagedResult(
+        IReadOnlyList<AssistantStagedStep> steps,
+        LibraryChangesetCountsDto counts) =>
+        AssistantToolResult.Ok(JsonSerializer.SerializeToElement(new
         {
             status = "staged",
-            steps = _steps.Select(s => s.Summary).ToList(),
+            steps = steps.Select(s => s.Summary).ToList(),
             note = "Staged, not applied. Stage every change the request needs; Nostos applies or presents them together when you finish.",
-            changesetSoFar = preview.Diff.Counts,
+            changesetSoFar = counts,
         }, Json));
-    }
 
-    private void RebuildNamedCollections(IReadOnlyDictionary<string, LibraryCollectionRef> refAliases)
+    private static LibraryCollectionRef RemapBatchRef(
+        LibraryCollectionRef reference,
+        Dictionary<string, string> batchRefs) =>
+        reference.Ref is { } name && batchRefs.TryGetValue(name, out var mapped)
+            ? LibraryCollectionRef.Created(mapped)
+            : reference;
+
+    private static LibraryChangeOp RemapBatchRefs(LibraryChangeOp op, Dictionary<string, string> batchRefs)
     {
-        var preservedExisting = _namedCollections
-            .Where(kv => kv.Value.Ref.Id is not null)
-            .ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
+        if (batchRefs.Count == 0)
+            return op;
 
-        _namedCollections.Clear();
-        foreach (var (name, entry) in preservedExisting)
-            _namedCollections[name] = entry;
-
-        var createStepByRef = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        for (var i = 0; i < _steps.Count; i++)
+        return op switch
         {
-            if (_steps[i].Op is CreateCollectionOp create)
+            RenameCollectionOp rename => rename with { Collection = RemapBatchRef(rename.Collection, batchRefs) },
+            MoveCollectionOp move => move with
             {
-                createStepByRef[create.Ref] = i;
-                _namedCollections[create.Ref] = (LibraryCollectionRef.Created(create.Ref), i);
-            }
-        }
-
-        foreach (var (alias, mapped) in refAliases)
-        {
-            if (mapped.Id is not null)
-                _namedCollections[alias] = (mapped, null);
-            else if (mapped.Ref is { } targetRef && createStepByRef.TryGetValue(targetRef, out var stepIndex))
-                _namedCollections[alias] = (mapped, stepIndex);
-        }
+                Collection = RemapBatchRef(move.Collection, batchRefs),
+                NewParent = move.NewParent is { } p ? RemapBatchRef(p, batchRefs) : null,
+            },
+            DeleteCollectionOp delete => delete with { Collection = RemapBatchRef(delete.Collection, batchRefs) },
+            SetBookCollectionsOp set => set with { Collections = set.Collections.Select(c => RemapBatchRef(c, batchRefs)).ToList() },
+            AddBooksToCollectionOp add => add with { Collection = RemapBatchRef(add.Collection, batchRefs) },
+            RemoveBooksFromCollectionOp remove => remove with { Collection = RemapBatchRef(remove.Collection, batchRefs) },
+            _ => op,
+        };
     }
 
-    private static IEnumerable<LibraryCollectionRef> ReferencesUsedBy(LibraryChangeOp op) => op switch
+    private static List<IReadOnlyList<int>> ComputeSimpleDependsOn(IReadOnlyList<LibraryChangeOp> ops)
     {
-        CreateCollectionOp { Parent: { } parent } => [parent],
-        RenameCollectionOp rename => [rename.Collection],
-        MoveCollectionOp { NewParent: { } parent } move => [move.Collection, parent],
-        MoveCollectionOp move => [move.Collection],
-        DeleteCollectionOp delete => [delete.Collection],
-        SetBookCollectionsOp set => set.Collections,
-        AddBooksToCollectionOp add => [add.Collection],
-        RemoveBooksFromCollectionOp remove => [remove.Collection],
-        _ => [],
-    };
+        var createStepByRef = new Dictionary<string, int>(StringComparer.Ordinal);
+        for (var i = 0; i < ops.Count; i++)
+        {
+            if (ops[i] is CreateCollectionOp create)
+                createStepByRef[create.Ref] = i;
+        }
+
+        return ops.Select((op, index) => (IReadOnlyList<int>)AssistantChangesetPlanBuilder.ReferencesUsedBy(op)
+            .Where(r => r.Ref is not null)
+            .Select(r => createStepByRef.TryGetValue(r.Ref!, out var stepIndex) && stepIndex < index ? stepIndex : -1)
+            .Where(stepIndex => stepIndex >= 0)
+            .Distinct()
+            .Order()
+            .ToList()).ToList();
+    }
 
     // ------------------------------------------------------------------
     // Step sentences
     // ------------------------------------------------------------------
 
+    private async Task<List<AssistantStagedStep>> BuildStepsAsync(
+        IReadOnlyList<LibraryChangeOp> ops,
+        IReadOnlyList<IReadOnlyList<int>> dependsOn,
+        IReadOnlyDictionary<Guid, int> deletedDescendantCounts,
+        LibraryChangesetPreviewState? previewState,
+        CancellationToken ct)
+    {
+        var displayNames = new Dictionary<LibraryCollectionRef, string>();
+        if (previewState is not null)
+        {
+            foreach (var (id, state) in previewState.Before.Collections)
+                displayNames[LibraryCollectionRef.Existing(id)] = state.Name;
+        }
+
+        var steps = new List<AssistantStagedStep>(ops.Count);
+        for (var i = 0; i < ops.Count; i++)
+        {
+            var op = ops[i];
+            var summary = await SummarizeAsync(op, displayNames, deletedDescendantCounts, previewState, ct);
+            steps.Add(new AssistantStagedStep(op, summary, dependsOn[i]));
+        }
+
+        return steps;
+    }
+
     private async Task<string> SummarizeAsync(
         LibraryChangeOp op,
-        IReadOnlyList<LibraryChangeOp> ops,
+        Dictionary<LibraryCollectionRef, string> displayNames,
+        IReadOnlyDictionary<Guid, int> deletedDescendantCounts,
+        LibraryChangesetPreviewState? previewState,
         CancellationToken ct)
     {
         switch (op)
         {
             case CreateCollectionOp create:
+            {
+                displayNames[LibraryCollectionRef.Created(create.Ref)] = create.Name;
                 return create.Parent is { } parent
-                    ? $"Create collection “{create.Name}” inside “{await NameAsync(parent, ops, ct)}”"
+                    ? $"Create collection “{create.Name}” inside “{await NameAsync(parent, displayNames, ct)}”"
                     : $"Create collection “{create.Name}”";
+            }
             case RenameCollectionOp rename:
-                return $"Rename “{await NameAsync(rename.Collection, ops, ct)}” to “{rename.Name}”";
+            {
+                var beforeName = await NameAsync(rename.Collection, displayNames, ct);
+                displayNames[rename.Collection] = rename.Name;
+                return $"Rename “{beforeName}” to “{rename.Name}”";
+            }
             case MoveCollectionOp move:
                 return move.NewParent is { } newParent
-                    ? $"Move “{await NameAsync(move.Collection, ops, ct)}” into “{await NameAsync(newParent, ops, ct)}”"
-                    : $"Move “{await NameAsync(move.Collection, ops, ct)}” to the top level";
+                    ? $"Move “{await NameAsync(move.Collection, displayNames, ct)}” into “{await NameAsync(newParent, displayNames, ct)}”"
+                    : $"Move “{await NameAsync(move.Collection, displayNames, ct)}” to the top level";
             case DeleteCollectionOp delete:
             {
-                var name = await NameAsync(delete.Collection, ops, ct);
-                var descendants = delete.Collection.Id is { } id ? await CountDescendantsAsync(id, ct) : 0;
+                var name = await NameAsync(delete.Collection, displayNames, ct);
+                var descendants = delete.Collection.Id is { } id && deletedDescendantCounts.TryGetValue(id, out var count)
+                    ? count
+                    : 0;
                 return descendants switch
                 {
                     0 => $"Delete collection “{name}”",
@@ -244,17 +360,17 @@ public sealed class AssistantChangesetDraft(ILibraryChangesetService changesets,
                 };
             }
             case AddBooksToCollectionOp add:
-                return $"Add {await BooksPhraseAsync(add.BookIds, ct)} to “{await NameAsync(add.Collection, ops, ct)}”";
+                return $"Add {await BooksPhraseAsync(add.BookIds, previewState, ct)} to “{await NameAsync(add.Collection, displayNames, ct)}”";
             case RemoveBooksFromCollectionOp remove:
-                return $"Remove {await BooksPhraseAsync(remove.BookIds, ct)} from “{await NameAsync(remove.Collection, ops, ct)}”";
+                return $"Remove {await BooksPhraseAsync(remove.BookIds, previewState, ct)} from “{await NameAsync(remove.Collection, displayNames, ct)}”";
             case SetBookCollectionsOp set:
             {
-                var title = await BookTitleAsync(set.BookId, ct);
+                var title = await BookTitleAsync(set.BookId, previewState, ct);
                 if (set.Collections.Count == 0)
                     return $"Take “{title}” out of every collection";
                 var names = new List<string>();
                 foreach (var collection in set.Collections)
-                    names.Add($"“{await NameAsync(collection, ops, ct)}”");
+                    names.Add($"“{await NameAsync(collection, displayNames, ct)}”");
                 return $"Put “{title}” in {string.Join(", ", names)} only";
             }
             case UpdateBookOp update:
@@ -268,7 +384,7 @@ public sealed class AssistantChangesetDraft(ILibraryChangesetService changesets,
                 if (update.IsFavorite is not null) fields.Add(update.IsFavorite.Value ? "mark favourite" : "unmark favourite");
                 if (update.PersonalReview is not null) fields.Add("review");
                 if (update.IsFinished is not null) fields.Add(update.IsFinished.Value ? "mark finished" : "mark not finished");
-                return $"Edit “{await BookTitleAsync(update.BookId, ct)}”: {string.Join(", ", fields)}";
+                return $"Edit “{await BookTitleAsync(update.BookId, previewState, ct)}”: {string.Join(", ", fields)}";
             }
             default:
                 return "Change the library";
@@ -277,42 +393,38 @@ public sealed class AssistantChangesetDraft(ILibraryChangesetService changesets,
 
     private async Task<string> NameAsync(
         LibraryCollectionRef reference,
-        IReadOnlyList<LibraryChangeOp> ops,
+        Dictionary<LibraryCollectionRef, string> displayNames,
         CancellationToken ct)
     {
+        if (displayNames.TryGetValue(reference, out var name))
+            return name;
+
         if (reference.Ref is { } created)
-        {
-            return ops.OfType<CreateCollectionOp>()
-                .FirstOrDefault(c => c.Ref == created)?.Name ?? created;
-        }
+            return created;
 
         var collections = await CollectionsAsync(ct);
         return collections.TryGetValue(reference.Id!.Value, out var dto) ? dto.Name : "a collection";
     }
 
-    private async Task<int> CountDescendantsAsync(Guid id, CancellationToken ct)
-    {
-        var collections = await CollectionsAsync(ct);
-        var count = 0;
-        var frontier = new List<Guid> { id };
-        while (frontier.Count > 0)
-        {
-            frontier = collections.Values.Where(c => c.ParentId is { } p && frontier.Contains(p)).Select(c => c.Id).ToList();
-            count += frontier.Count;
-        }
-        return count;
-    }
-
-    private async Task<string> BooksPhraseAsync(IReadOnlyList<Guid> bookIds, CancellationToken ct)
+    private async Task<string> BooksPhraseAsync(
+        IReadOnlyList<Guid> bookIds,
+        LibraryChangesetPreviewState? previewState,
+        CancellationToken ct)
     {
         var distinct = bookIds.Distinct().ToList();
         return distinct.Count == 1
-            ? $"“{await BookTitleAsync(distinct[0], ct)}”"
+            ? $"“{await BookTitleAsync(distinct[0], previewState, ct)}”"
             : $"{distinct.Count} books";
     }
 
-    private async Task<string> BookTitleAsync(Guid bookId, CancellationToken ct)
+    private async Task<string> BookTitleAsync(
+        Guid bookId,
+        LibraryChangesetPreviewState? previewState,
+        CancellationToken ct)
     {
+        if (previewState is not null && previewState.BookTitles.TryGetValue(bookId, out var title))
+            return title;
+
         var book = await TryGetBookAsync(bookId, ct);
         return book?.Title ?? "a book";
     }
@@ -326,41 +438,6 @@ public sealed class AssistantChangesetDraft(ILibraryChangesetService changesets,
         var book = result.Data as BookDto;
         _books[bookId] = book;
         return book;
-    }
-
-    private async Task<IReadOnlyList<Guid>> DirectMembersAsync(Guid collectionId, CancellationToken ct)
-    {
-        if (_directMembers.TryGetValue(collectionId, out var cached))
-            return cached;
-
-        var members = new List<Guid>();
-        const int pageSize = 100;
-        var page = 1;
-        while (true)
-        {
-            var result = await library.ListBooksAsync(
-                BookFilter.All, BookSort.Title, search: null, page, pageSize,
-                collectionId, groupByWork: false, format: null, ct);
-            if (result.Data is not PaginatedResponse<BookDto> batch)
-                break;
-
-            var pageCount = 0;
-            foreach (var book in batch.Items)
-            {
-                pageCount++;
-                _books.TryAdd(book.Id, book);
-                if (book.CollectionIds is not null && book.CollectionIds.Contains(collectionId))
-                    members.Add(book.Id);
-            }
-
-            if (pageCount == 0 || page * pageSize >= batch.TotalCount)
-                break;
-            page++;
-        }
-
-        IReadOnlyList<Guid> distinct = members.Distinct().ToList();
-        _directMembers[collectionId] = distinct;
-        return distinct;
     }
 
     private async Task<Dictionary<Guid, CollectionDto>> CollectionsAsync(CancellationToken ct)

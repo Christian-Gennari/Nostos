@@ -14,22 +14,24 @@ using Xunit;
 namespace Nostos.Backend.Tests.Assistant;
 
 /// <summary>
-/// Deterministic server-side plan normalisation for Ask Nostos changesets (#1740):
+/// Diff-based canonical plan derivation for Ask Nostos changesets (#1740):
 /// equivalent regroup plans — whether the model deletes-and-recreates existing
-/// collections, redundantly creates ones that exist, repeats steps, or includes
-/// no-op memberships — collapse to the same minimal steps and diffHash.
+/// collections, redundantly creates ones that exist, uses set_book_collections
+/// vs add/remove, splits adds, or calls tools in a different order — collapse
+/// to the same minimal steps, step order, and diffHash.
 /// </summary>
 public sealed class AssistantChangesetNormalizationTests(SqliteTestFixture fixture)
     : IClassFixture<SqliteTestFixture>
 {
     [Fact]
-    public async Task Delete_and_recreate_regroup_collapses_to_same_plan_and_hash_as_direct_reuse()
+    public async Task Equivalent_regroup_plans_collapse_to_identical_steps_order_and_diffHash()
     {
         var h1 = await SeedAsync();
         var h2 = await SeedAsync();
         var h3 = await SeedAsync();
+        var h4 = await SeedAsync();
 
-        // Plan A: model deletes all three collections, recreates Fiction and Essays, and re-adds every book.
+        // Plan A: delete all three collections, recreate Fiction and Essays, and re-add every book.
         var draftA = new AssistantChangesetDraft(h1.Library, h1.Library);
         await InvokeAsync(h1, draftA, "library_delete_collection", new { collection = h1.Craft });
         await InvokeAsync(h1, draftA, "library_delete_collection", new { collection = h1.Essays });
@@ -47,7 +49,8 @@ public sealed class AssistantChangesetNormalizationTests(SqliteTestFixture fixtu
             bookIds = new[] { h1.QuietMornings, h1.WoodenBoats, h1.Granary },
         });
 
-        // Plan B: model deletes Craft and Essays, calls create for both Fiction (still alive) and Essays (deleted).
+        // Plan B: delete Craft and Essays, redundantly create Fiction (still alive) and Essays,
+        // and split/reverse the book additions.
         var draftB = new AssistantChangesetDraft(h2.Library, h2.Library);
         await InvokeAsync(h2, draftB, "library_delete_collection", new { collection = h2.Craft });
         await InvokeAsync(h2, draftB, "library_delete_collection", new { collection = h2.Essays });
@@ -55,16 +58,21 @@ public sealed class AssistantChangesetNormalizationTests(SqliteTestFixture fixtu
         await InvokeAsync(h2, draftB, "library_create_collection", new { name = "Essays" });
         await InvokeAsync(h2, draftB, "library_add_books_to_collection", new
         {
-            collection = "Fiction",
-            bookIds = new[] { h2.Dune, h2.Anna, h2.ValleyPaper },
+            collection = "Essays",
+            bookIds = new[] { h2.Granary },
         });
         await InvokeAsync(h2, draftB, "library_add_books_to_collection", new
         {
             collection = "Essays",
-            bookIds = new[] { h2.QuietMornings, h2.WoodenBoats, h2.Granary },
+            bookIds = new[] { h2.WoodenBoats, h2.QuietMornings },
+        });
+        await InvokeAsync(h2, draftB, "library_add_books_to_collection", new
+        {
+            collection = "Fiction",
+            bookIds = new[] { h2.ValleyPaper, h2.Anna, h2.Dune },
         });
 
-        // Plan C: model directly deletes only Craft and adds only the books not already in Fiction/Essays.
+        // Plan C: direct delete of Craft and minimal adds.
         var draftC = new AssistantChangesetDraft(h3.Library, h3.Library);
         await InvokeAsync(h3, draftC, "library_delete_collection", new { collection = h3.Craft });
         await InvokeAsync(h3, draftC, "library_add_books_to_collection", new
@@ -78,18 +86,36 @@ public sealed class AssistantChangesetNormalizationTests(SqliteTestFixture fixtu
             bookIds = new[] { h3.WoodenBoats, h3.Granary },
         });
 
-        foreach (var draft in new[] { draftA, draftB, draftC })
+        // Plan D: delete Craft and replace memberships via library_set_book_collections.
+        var draftD = new AssistantChangesetDraft(h4.Library, h4.Library);
+        await InvokeAsync(h4, draftD, "library_delete_collection", new { collection = h4.Craft });
+        await InvokeAsync(h4, draftD, "library_set_book_collections", new
+        {
+            updates = new object[]
+            {
+                new { bookId = h4.ValleyPaper, collections = new[] { h4.Fiction } },
+                new { bookId = h4.Granary, collections = new[] { h4.Essays } },
+                new { bookId = h4.WoodenBoats, collections = new[] { h4.Essays } },
+                new { bookId = h4.Dune, collections = new[] { h4.Fiction } },
+            },
+        });
+
+        foreach (var draft in new[] { draftA, draftB, draftC, draftD })
         {
             draft.Diff!.Counts.CollectionsDeleted.Should().Be(1, "only Craft is deleted; Fiction and Essays are reused");
             draft.Diff.Counts.CollectionsCreated.Should().Be(0);
             draft.Steps.Select(s => s.Summary).Should().Equal(
                 "Delete collection “Craft”",
-                "Add “The Valley Road” to “Fiction”",
-                "Add 2 books to “Essays”");
+                "Add 2 books to “Essays”",
+                "Add “The Valley Road” to “Fiction”");
+            draft.DiffHash.Should().Be(draftC.DiffHash);
         }
 
-        draftA.DiffHash.Should().Be(draftC.DiffHash);
-        draftB.DiffHash.Should().Be(draftC.DiffHash);
+        // Book ids inside each AddBooksToCollectionOp are also in a fixed title order.
+        var essaysAddA = draftA.Steps[1].Op.Should().BeOfType<AddBooksToCollectionOp>().Subject;
+        var essaysAddB = draftB.Steps[1].Op.Should().BeOfType<AddBooksToCollectionOp>().Subject;
+        essaysAddA.BookIds.Should().Equal(h1.WoodenBoats, h1.Granary);
+        essaysAddB.BookIds.Should().Equal(h2.WoodenBoats, h2.Granary);
 
         // Applying Plan A keeps the original Fiction and Essays ids intact.
         var applied = await h1.Library.ApplyAsync(draftA.Steps.Select(s => s.Op).ToList(), draftA.DiffHash);
@@ -105,7 +131,6 @@ public sealed class AssistantChangesetNormalizationTests(SqliteTestFixture fixtu
         var h = await SeedAsync();
         var draft = new AssistantChangesetDraft(h.Library, h.Library);
 
-        // Delete and recreate Fiction, keeping only Dune in Fiction and moving Anna to Essays.
         await InvokeAsync(h, draft, "library_delete_collection", new { collection = h.Fiction });
         await InvokeAsync(h, draft, "library_create_collection", new { name = "Fiction" });
         await InvokeAsync(h, draft, "library_add_books_to_collection", new { collection = "Fiction", bookIds = new[] { h.Dune } });
@@ -154,7 +179,214 @@ public sealed class AssistantChangesetNormalizationTests(SqliteTestFixture fixtu
     }
 
     [Fact]
-    public async Task Duplicate_creates_deletes_adds_and_set_book_collections_are_deduplicated()
+    public async Task Move_child_out_before_delete_and_recreate_parent_keeps_and_moves_child()
+    {
+        // Review defect 1: moving "Sea Stories" out of Fiction into Keep before deleting and
+        // recreating Fiction must move "Sea Stories" into Keep, NOT delete it.
+        var h = await SeedAsync(withSubcollection: true);
+        var seaStoriesId = h.Russian!.Value;
+        await using (var db = await h.Factory.CreateDbContextAsync())
+        {
+            var sub = await db.Collections.SingleAsync(c => c.Id == seaStoriesId);
+            sub.Name = "Sea Stories";
+            await db.SaveChangesAsync();
+        }
+
+        var draft = new AssistantChangesetDraft(h.Library, h.Library);
+        await InvokeAsync(h, draft, "library_move_collection", new { collection = seaStoriesId, newParent = h.Essays });
+        await InvokeAsync(h, draft, "library_delete_collection", new { collection = h.Fiction });
+        await InvokeAsync(h, draft, "library_create_collection", new { name = "Fiction" });
+        await InvokeAsync(h, draft, "library_add_books_to_collection", new { collection = "Fiction", bookIds = new[] { h.Dune, h.Anna } });
+
+        draft.Diff!.Counts.CollectionsDeleted.Should().Be(0);
+        draft.Diff.Counts.CollectionsCreated.Should().Be(0);
+        draft.Steps.Select(s => s.Summary).Should().Equal("Move “Sea Stories” into “Essays”");
+
+        var applied = await h.Library.ApplyAsync(draft.Steps.Select(s => s.Op).ToList(), draft.DiffHash);
+        applied.Success.Should().BeTrue(applied.ErrorMessage);
+        await using (var db = await h.Factory.CreateDbContextAsync())
+        {
+            var sea = await db.Collections.AsNoTracking().SingleOrDefaultAsync(c => c.Id == seaStoriesId);
+            sea.Should().NotBeNull("Sea Stories was moved out before Fiction was deleted");
+            sea!.ParentId.Should().Be(h.Essays);
+        }
+    }
+
+    [Fact]
+    public async Task Move_child_out_before_delete_parent_sets_dependency_and_accurate_summary()
+    {
+        var h = await SeedAsync(withSubcollection: true);
+        var draft = new AssistantChangesetDraft(h.Library, h.Library);
+
+        await InvokeAsync(h, draft, "library_move_collection", new { collection = h.Russian!.Value, newParent = h.Essays });
+        await InvokeAsync(h, draft, "library_delete_collection", new { collection = h.Fiction });
+
+        draft.Steps.Select(s => s.Summary).Should().Equal(
+            "Move “Russian” into “Essays”",
+            "Delete collection “Fiction”");
+        draft.Steps[1].DependsOn.Should().Contain(0,
+            "excluding the move out of Fiction must also exclude deleting Fiction");
+    }
+
+    [Fact]
+    public async Task Move_child_into_parent_before_delete_and_recreate_parent_deletes_moved_child()
+    {
+        // Review defect 1 (opposite): moving a child from Essays into Fiction before deleting
+        // and recreating Fiction must delete that child while reusing Fiction.
+        var h = await SeedAsync();
+        var seaStories = new CollectionModel
+        {
+            Id = Guid.Parse("c5555555-5555-4555-8555-555555555555"),
+            Name = "Sea Stories",
+            ParentId = h.Essays,
+        };
+        await using (var db = await h.Factory.CreateDbContextAsync())
+        {
+            db.Collections.Add(seaStories);
+            await db.SaveChangesAsync();
+        }
+
+        var draft = new AssistantChangesetDraft(h.Library, h.Library);
+        await InvokeAsync(h, draft, "library_move_collection", new { collection = seaStories.Id, newParent = h.Fiction });
+        await InvokeAsync(h, draft, "library_delete_collection", new { collection = h.Fiction });
+        await InvokeAsync(h, draft, "library_create_collection", new { name = "Fiction" });
+        await InvokeAsync(h, draft, "library_add_books_to_collection", new { collection = "Fiction", bookIds = new[] { h.Dune, h.Anna } });
+
+        draft.Diff!.Counts.CollectionsDeleted.Should().Be(1);
+        draft.Diff.Counts.CollectionsCreated.Should().Be(0);
+        draft.Steps.Select(s => s.Summary).Should().Equal("Delete collection “Sea Stories”");
+
+        var applied = await h.Library.ApplyAsync(draft.Steps.Select(s => s.Op).ToList(), draft.DiffHash);
+        applied.Success.Should().BeTrue(applied.ErrorMessage);
+        await using (var db = await h.Factory.CreateDbContextAsync())
+        {
+            (await db.Collections.AsNoTracking().AnyAsync(c => c.Id == seaStories.Id)).Should().BeFalse();
+            (await db.Collections.AsNoTracking().AnyAsync(c => c.Id == h.Fiction)).Should().BeTrue();
+        }
+    }
+
+    [Fact]
+    public async Task Child_created_under_parent_before_delete_and_recreate_does_not_survive()
+    {
+        // Review defect 2: a child created under Fiction this turn and cascade-deleted with
+        // Fiction must NOT survive when Fiction is recreated.
+        var h = await SeedAsync();
+        var draft = new AssistantChangesetDraft(h.Library, h.Library);
+
+        await InvokeAsync(h, draft, "library_create_collection", new { name = "Old", parent = h.Fiction });
+        await InvokeAsync(h, draft, "library_delete_collection", new { collection = h.Fiction });
+        await InvokeAsync(h, draft, "library_create_collection", new { name = "Fiction" });
+        await InvokeAsync(h, draft, "library_add_books_to_collection", new { collection = "Fiction", bookIds = new[] { h.Dune, h.Anna } });
+
+        draft.IsEmpty.Should().BeTrue("Old was cascade-deleted and Fiction ended with its original books");
+        draft.Diff.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Books_added_before_delete_and_recreate_do_not_stay_in_recreated_collection()
+    {
+        // Review defect 3: books added to Fiction BEFORE Fiction is deleted and recreated
+        // were wiped by the delete and must NOT remain in Fiction unless re-added afterwards.
+        var h = await SeedAsync();
+        var draft = new AssistantChangesetDraft(h.Library, h.Library);
+
+        await InvokeAsync(h, draft, "library_add_books_to_collection", new { collection = h.Fiction, bookIds = new[] { h.ValleyPaper } });
+        await InvokeAsync(h, draft, "library_delete_collection", new { collection = h.Fiction });
+        await InvokeAsync(h, draft, "library_create_collection", new { name = "Fiction" });
+        await InvokeAsync(h, draft, "library_add_books_to_collection", new { collection = "Fiction", bookIds = new[] { h.Dune } });
+
+        draft.Diff!.Counts.CollectionsDeleted.Should().Be(0);
+        draft.Diff.Counts.CollectionsCreated.Should().Be(0);
+        draft.Steps.Select(s => s.Summary).Should().Equal("Remove “Anna Karenina” from “Fiction”");
+
+        var applied = await h.Library.ApplyAsync(draft.Steps.Select(s => s.Op).ToList(), draft.DiffHash);
+        applied.Success.Should().BeTrue(applied.ErrorMessage);
+        await using var db = await h.Factory.CreateDbContextAsync();
+        var fictionBooks = await db.BookCollections.AsNoTracking()
+            .Where(bc => bc.CollectionId == h.Fiction)
+            .Select(bc => bc.BookId)
+            .ToListAsync();
+        fictionBooks.Should().Equal(h.Dune);
+    }
+
+    [Fact]
+    public async Task Failed_operation_in_multi_item_addition_after_collapsed_steps_reports_exact_part_number()
+    {
+        // Review defect 4: even after earlier raw operations collapse to 0 canonical steps,
+        // a failure inside a new multi-item batch must report the exact 1-based part of the batch.
+        var h = await SeedAsync();
+        var draft = new AssistantChangesetDraft(h.Library, h.Library);
+
+        // Raw ops = 3, canonical steps = 0 (net no-op).
+        await InvokeAsync(h, draft, "library_delete_collection", new { collection = h.Fiction });
+        await InvokeAsync(h, draft, "library_create_collection", new { name = "Fiction" });
+        await InvokeAsync(h, draft, "library_add_books_to_collection", new { collection = "Fiction", bookIds = new[] { h.Dune, h.Anna } });
+        draft.IsEmpty.Should().BeTrue();
+
+        var bad = await InvokeAsync(h, draft, "library_set_book_collections", new
+        {
+            updates = new object[]
+            {
+                new { bookId = h.Dune, collections = new[] { "Fiction" } },
+                new { bookId = Guid.NewGuid(), collections = new[] { "Fiction" } },
+                new { bookId = h.Anna, collections = new[] { "Fiction" } },
+            },
+        });
+
+        bad.Success.Should().BeFalse();
+        bad.ErrorCode.Should().Be(LibraryChangesetErrorCodes.BookNotFound);
+        bad.ErrorMessage.Should().Contain("(in the change you just asked for, part 2)");
+    }
+
+    [Fact]
+    public async Task Deleted_named_collection_alias_is_cleared_and_cannot_be_referenced_later()
+    {
+        // Review defect 5: a name alias must not keep pointing to a collection after it is deleted.
+        var h = await SeedAsync();
+        var draft = new AssistantChangesetDraft(h.Library, h.Library);
+
+        var created = await InvokeAsync(h, draft, "library_create_collection", new { name = "Temp" });
+        created.Success.Should().BeTrue();
+        var deleted = await InvokeAsync(h, draft, "library_delete_collection", new { collection = "Temp" });
+        deleted.Success.Should().BeTrue();
+        draft.IsEmpty.Should().BeTrue();
+
+        var staleUse = await InvokeAsync(h, draft, "library_add_books_to_collection", new
+        {
+            collection = "Temp",
+            bookIds = new[] { h.Dune },
+        });
+        staleUse.Success.Should().BeFalse();
+        staleUse.ErrorCode.Should().Be(LibraryChangesetErrorCodes.CollectionNotFound);
+
+        // Recreating "Temp" after deleting it binds the alias to the new live collection.
+        var recreated = await InvokeAsync(h, draft, "library_create_collection", new { name = "Temp" });
+        recreated.Success.Should().BeTrue();
+        var freshUse = await InvokeAsync(h, draft, "library_add_books_to_collection", new
+        {
+            collection = "Temp",
+            bookIds = new[] { h.Dune },
+        });
+        freshUse.Success.Should().BeTrue();
+        draft.Steps.Select(s => s.Summary).Should().Equal(
+            "Create collection “Temp”",
+            "Add “Dune” to “Temp”");
+
+        // Also covers an alias created by reusing an existing collection that is later deleted by id.
+        var draft2 = new AssistantChangesetDraft(h.Library, h.Library);
+        await InvokeAsync(h, draft2, "library_create_collection", new { name = "Fiction" });
+        await InvokeAsync(h, draft2, "library_delete_collection", new { collection = h.Fiction });
+        var staleExisting = await InvokeAsync(h, draft2, "library_add_books_to_collection", new
+        {
+            collection = "Fiction",
+            bookIds = new[] { h.Dune },
+        });
+        staleExisting.Success.Should().BeFalse();
+        staleExisting.ErrorCode.Should().Be(LibraryChangesetErrorCodes.CollectionNotFound);
+    }
+
+    [Fact]
+    public async Task Duplicate_creates_deletes_adds_and_set_book_collections_are_canonicalized()
     {
         var h = await SeedAsync();
         var draft = new AssistantChangesetDraft(h.Library, h.Library);
@@ -174,14 +406,14 @@ public sealed class AssistantChangesetNormalizationTests(SqliteTestFixture fixtu
         await InvokeAsync(h, draft, "library_add_books_to_collection", new { collection = "Sea Stories", bookIds = new[] { h.Dune, h.Anna } });
 
         draft.Steps.Select(s => s.Summary).Should().Equal(
-            "Create collection “Sea Stories”",
             "Delete collection “Craft”",
+            "Create collection “Sea Stories”",
             "Add 2 books to “Sea Stories”");
-        draft.Steps[2].DependsOn.Should().Equal(0);
+        draft.Steps[2].DependsOn.Should().Equal(1);
     }
 
     [Fact]
-    public async Task Set_book_collections_drops_noops_and_deduplicates_repeated_updates_for_same_book()
+    public async Task Set_book_collections_drops_noops_and_emits_canonical_per_collection_ops()
     {
         var h = await SeedAsync();
         var draft = new AssistantChangesetDraft(h.Library, h.Library);
@@ -199,7 +431,27 @@ public sealed class AssistantChangesetNormalizationTests(SqliteTestFixture fixtu
         });
 
         draft.Steps.Select(s => s.Summary).Should().Equal(
-            "Put “The Valley Road” in “Fiction” only");
+            "Add “The Valley Road” to “Fiction”");
+    }
+
+    [Fact]
+    public async Task Book_edits_are_coalesced_and_preserved_alongside_collection_changes()
+    {
+        var h = await SeedAsync();
+        var draft = new AssistantChangesetDraft(h.Library, h.Library);
+
+        await InvokeAsync(h, draft, "library_update_book", new { bookId = h.Dune, rating = 4, isFavorite = true });
+        await InvokeAsync(h, draft, "library_update_book", new { bookId = h.Dune, rating = 5 });
+        await InvokeAsync(h, draft, "library_add_books_to_collection", new { collection = h.Essays, bookIds = new[] { h.ValleyPaper } });
+
+        draft.Steps.Select(s => s.Summary).Should().Equal(
+            "Add “The Valley Road” to “Essays”",
+            "Edit “Dune”: rating, mark favourite");
+
+        var editOp = draft.Steps[1].Op.Should().BeOfType<UpdateBookOp>().Subject;
+        editOp.Rating.Should().Be(5);
+        editOp.IsFavorite.Should().BeTrue();
+        editOp.Title.Should().BeNull();
     }
 
     [Fact]

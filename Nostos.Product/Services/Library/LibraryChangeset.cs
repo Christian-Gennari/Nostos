@@ -79,9 +79,17 @@ public sealed record LibraryChangesetResult(
     bool Committed,
     LibraryUndoSnapshot? Undo)
 {
+    internal LibraryChangesetPreviewState? PreviewState { get; init; }
+
     public static LibraryChangesetResult Fail(string code, string message, string version, int? operation = null) =>
         new(false, code, message, operation, null, null, version, false, null);
 }
+
+internal sealed record LibraryChangesetPreviewState(
+    LibraryChangesetDiff.LibrarySnapshot Before,
+    LibraryChangesetDiff.LibrarySnapshot After,
+    IReadOnlyDictionary<string, Guid> CreatedRefs,
+    IReadOnlyDictionary<Guid, string> BookTitles);
 
 /// <summary>
 /// Everything needed to take a committed changeset back: each touched row as it
