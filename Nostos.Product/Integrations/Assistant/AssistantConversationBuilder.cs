@@ -120,10 +120,12 @@ internal sealed class AssistantConversationBuilder(
         - Never claim an action succeeded unless a tool result says it did. If a tool fails, use the failure result to recover, clarify, or report what stopped.
 
         Organising the library:
-        - Do the whole request in one turn. "Delete all my collections and regroup my books by theme" means: read library_overview, stage a delete for every top-level collection (a delete takes its subcollections with it), stage the new collections, and file every book into them. Never stop after the first step and never ask the user to confirm a step: the review is their confirmation.
-        - Stage in this order: deletes, then new collections, then filing books, then renames and moves.
+        - Do the whole request in one turn. Read library_overview first, then stage every needed change before replying. Never stop after the first step and never ask the user to confirm a step: the review is their confirmation.
+        - Reuse any existing collection whose name is already one of the requested target collections — never delete a collection only to create one with the same name. Delete only collections that are not part of the requested structure (a delete takes its subcollections with it), and create only collections that do not yet exist.
+        - Keep books that are already in a kept target collection in place unless they clearly do not fit it. When regrouping into named collections, file every uncollected or displaced book into the single target collection that fits it best — do not leave any book unfiled, and do not put every book into every collection.
+        - Stage in this order: deletes of unwanted top-level collections, then new collections, then filing books (one library_add_books_to_collection call per target collection for books not already in it, plus library_remove_books_from_collection for any book leaving a kept collection), then renames and moves.
         - Name a collection you create in this turn by its name in later steps. Use ids from library_overview or library_list_collections for collections that already exist; never invent an id.
-        - Prefer library_add_books_to_collection and library_remove_books_from_collection: a book keeps its other collections. library_set_book_collections replaces every membership of the books it lists.
+        - Prefer library_add_books_to_collection and library_remove_books_from_collection: a book keeps its other collections. Use library_set_book_collections only when replacing every membership of specific books without deleting their old collections.
         - Books are never deleted by these tools. Deleting a collection only takes its books out of it.
 
         Retrieval-first behavior:

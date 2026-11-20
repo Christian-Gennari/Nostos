@@ -66,7 +66,23 @@ public sealed class LibraryChangesetService(
             var stateVersion = await LibraryChangesetDiff.CurrentVersionAsync(db, token);
 
             if (!commit)
-                return (false, new LibraryChangesetResult(true, null, null, null, diff, hash, before.Version, false, null));
+            {
+                var touchedBookIds = before.Memberships.Keys
+                    .Union(after.Memberships.Keys)
+                    .Union(after.Books.Keys)
+                    .ToList();
+                var bookTitles = touchedBookIds.Count == 0
+                    ? new Dictionary<Guid, string>()
+                    : await db.Books.AsNoTracking()
+                        .Where(b => touchedBookIds.Contains(b.Id))
+                        .Select(b => new { b.Id, b.Title })
+                        .ToDictionaryAsync(b => b.Id, b => b.Title, token);
+                var previewState = new LibraryChangesetPreviewState(before, after, refs, bookTitles);
+                return (false, new LibraryChangesetResult(true, null, null, null, diff, hash, before.Version, false, null)
+                {
+                    PreviewState = previewState,
+                });
+            }
 
             if (expectedDiffHash is not null && !string.Equals(expectedDiffHash, hash, StringComparison.Ordinal))
             {
