@@ -252,6 +252,7 @@
         (topicRemoved)="noteActions.removeTopic(note, $event)"
         (pickerOpened)="suggestions.request(note)"
         (pickerClosed)="suggestions.closeFor(note.id)"
+        (suggestionRetry)="suggestions.request(note)"
         (edited)="noteActions.edit($event)"
         (keepWithWriting)="noteActions.keepWithWriting([note.id])"
         (moreFromBook)="moreFromBook(note)"

@@ -72,6 +72,7 @@ const PICKER_POSITIONS: ConnectedPosition[] = [
         [label]="label()"
         (chosen)="choose($event)"
         (closed)="closePicker()"
+        (suggestionRetry)="suggestionRetry.emit()"
       />
     </ng-template>
     }
@@ -166,6 +167,8 @@ export class TopicRowComponent {
   readonly pickerOpened = output<void>();
   /** The picker closed (a choice, Escape, a click elsewhere). */
   readonly pickerClosed = output<void>();
+  /** Try again in the picker's failure state: ask the same note again. */
+  readonly suggestionRetry = output<void>();
 
   protected readonly positions = PICKER_POSITIONS;
   readonly pickerOpen = signal(false);

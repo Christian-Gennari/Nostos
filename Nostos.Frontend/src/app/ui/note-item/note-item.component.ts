@@ -184,6 +184,8 @@ export class NoteItemComponent {
   readonly pickerOpened = output<void>();
   /** The picker closed (a choice, Escape, a click elsewhere): stop any suggestions. */
   readonly pickerClosed = output<void>();
+  /** Try again in the picker's failure state: ask the same note again. */
+  readonly suggestionRetry = output<void>();
   readonly edited = output<NoteItemEdit>();
   readonly keepWithWriting = output<void>();
   readonly moreFromBook = output<void>();

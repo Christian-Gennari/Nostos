@@ -8,11 +8,17 @@ import type { TopicSuggestionState } from '../ui/topic-picker-popover/topic-pick
 
 const NONE: readonly string[] = [];
 
+/** The retrieval found no evidence: on a proposal turn, "nothing fits" (#840). */
+const NO_EVIDENCE_CODE = 'assistant_no_evidence';
+
 /**
  * Optional AI suggestions for one note's topic picker. Asks Ask Nostos for up
  * to three existing topics that fit the note, only when the assistant is
  * available, and only while that note's picker is open. The suggestions are
  * names in the picker; choosing one links it like any other choice.
+ *
+ * A turn that finds nothing is a result, not an outage: `empty` says so, and
+ * only a real terminal failure (a provider error, a timeout, a stop) is `error`.
  *
  * Provided per page: one note at a time asks.
  */
@@ -32,18 +38,21 @@ export class BrainTopicSuggestionsService {
   constructor() {
     this.assistant.turnFinished.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((event) => {
       if (!this.turnId || event.turnId !== this.turnId) return;
+      // Only a turn this service started matches, and it only starts proposal
+      // turns (requestTopicProposals), so the error code is a proposal outcome.
       this.turnId = null;
       const noteId = this.noteId();
-      if (event.error) {
-        this.state.set('error');
-        return;
-      }
       const names = (event.response?.suggestions ?? [])
         .filter((item) => item.kind === 'topic' && item.noteId === noteId && !!item.label?.trim())
         .map((item) => item.label.trim())
         .slice(0, 3);
       this.names.set(names);
-      this.state.set('ready');
+      // Names win: a turn that proposed something usable is a result, whatever
+      // ended it. Zero names with no error, or with no evidence, is "nothing
+      // fits" (#840); anything else is a failure the user can retry.
+      if (names.length) this.state.set('ready');
+      else if (!event.error || event.code === NO_EVIDENCE_CODE) this.state.set('empty');
+      else this.state.set('error');
     });
     this.destroyRef.onDestroy(() => this.clear());
   }

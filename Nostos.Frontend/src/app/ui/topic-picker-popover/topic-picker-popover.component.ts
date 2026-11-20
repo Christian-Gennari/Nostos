@@ -17,16 +17,23 @@ import {
 } from '@angular/core';
 import { DOCUMENT, NgTemplateOutlet } from '@angular/common';
 import { isPhoneViewport } from '../breakpoints';
+import { ButtonComponent } from '../button/button.component';
 import { IconButtonComponent } from '../icon-button/icon-button.component';
 import { ModalShell } from '../modal-shell/modal-shell.component';
 import type { TopicDto } from '../../core/services/topics.service';
 import { NostosIconComponent } from '../icon/nostos-icon.component';
 import { InputDirective } from '../form-control/form-control.directive';
+import { TRY_AGAIN } from '../empty-state/empty-state.component';
 import { NO_TOPICS_MATCH, NO_TOPICS_YET, TopicOptionComponent } from '../topic-option/topic-option.component';
 import { hasTopic, newTopicName, rankTopicChoices, topicChoices } from '../note-item/note-item.helpers';
+import { NO_TOPIC_SUGGESTIONS, TOPIC_SUGGESTIONS_FAILED } from './topic-suggestion-copy';
 
-/** Where AI topic suggestions are; `off` hides the group entirely. */
-export type TopicSuggestionState = 'off' | 'loading' | 'ready' | 'error';
+/**
+ * Where AI topic suggestions are; `off` hides the group entirely. `empty` is a
+ * finished turn that found nothing (a result, not an outage), `error` a turn
+ * that failed and can be asked again.
+ */
+export type TopicSuggestionState = 'off' | 'loading' | 'ready' | 'empty' | 'error';
 
 interface PickerOption {
   kind: 'topic' | 'create' | 'suggestion';
@@ -51,7 +58,7 @@ let nextPickerId = 0;
 @Component({
   selector: 'app-topic-picker-popover',
   standalone: true,
-  imports: [NgTemplateOutlet, NostosIconComponent, InputDirective, TopicOptionComponent, ModalShell, IconButtonComponent],
+  imports: [NgTemplateOutlet, NostosIconComponent, InputDirective, TopicOptionComponent, ModalShell, IconButtonComponent, ButtonComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <ng-template #fieldTpl>
@@ -98,17 +105,31 @@ let nextPickerId = 0;
             (click)="choose(option)"
           ></li>
         }
-        @if (suggestionState() === 'loading') {
-          <li class="picker-group picker-status" role="presentation">
-            <nostos-icon concept="aiSuggestion" [size]="12" />Finding suggestions…
-          </li>
-        } @else if (suggestionState() === 'error') {
-          <li class="picker-group picker-status" role="presentation">Suggestions are unavailable right now.</li>
-        }
         @if (options().length === 0 && suggestionState() !== 'loading') {
           <li class="picker-empty" role="presentation">{{ query().trim() ? noMatch : noTopics }}</li>
         }
       </ul>
+      <!-- The suggestion state is a status, not an option: a listbox may hold
+           only options, and a failure offers a button. -->
+      @if (suggestionState() === 'loading') {
+        <div class="picker-group picker-status" role="status">
+          <nostos-icon concept="aiSuggestion" [size]="12" />Finding suggestions…
+        </div>
+      } @else if (suggestionState() === 'empty') {
+        <div class="picker-group picker-status" role="status">{{ noSuggestions }}</div>
+      } @else if (suggestionState() === 'error') {
+        <div class="picker-group picker-status" role="status">
+          {{ suggestionsFailed }}
+          <button
+            appButton
+            variant="link"
+            size="sm"
+            type="button"
+            (mousedown)="$event.preventDefault()"
+            (click)="retrySuggestions()"
+          >{{ tryAgain }}</button>
+        </div>
+      }
     </ng-template>
 
     <!-- The sheet is attached to its own overlay (see openSheet), not rendered
@@ -255,15 +276,21 @@ export class TopicPickerPopoverComponent implements AfterViewInit, OnDestroy {
   readonly exclude = input<readonly string[]>([]);
   /** AI suggestions for this note, already free of names it has. */
   readonly suggestions = input<readonly string[]>([]);
+  /** The AI suggestion turn: `ready`, `empty` (nothing found) or a failure. */
   readonly suggestionState = input<TopicSuggestionState>('off');
   readonly label = input('Add a topic');
   readonly placeholder = input('Find or create a topic…');
 
   readonly chosen = output<string>();
   readonly closed = output<void>();
+  /** Try again in the failure state: ask the same note's request once more. */
+  readonly suggestionRetry = output<void>();
 
   readonly noTopics = NO_TOPICS_YET;
   readonly noMatch = NO_TOPICS_MATCH;
+  readonly noSuggestions = NO_TOPIC_SUGGESTIONS;
+  readonly suggestionsFailed = TOPIC_SUGGESTIONS_FAILED;
+  readonly tryAgain = TRY_AGAIN;
 
   readonly inputId = `topic-picker-${nextPickerId++}`;
   readonly listId = `${this.inputId}-list`;
@@ -387,5 +414,14 @@ export class TopicPickerPopoverComponent implements AfterViewInit, OnDestroy {
 
   choose(option: PickerOption): void {
     this.chosen.emit(option.name);
+  }
+
+  /**
+   * Ask again. The field keeps focus: the button is replaced by the loading
+   * row, and a keyboard user must stay in the picker they are typing into.
+   */
+  retrySuggestions(): void {
+    this.suggestionRetry.emit();
+    this.document.getElementById(this.inputId)?.focus();
   }
 }

@@ -115,17 +115,21 @@
       </div>
       }
 
-      @if (aiAvailable()) {
+      @if (aiAvailable() && (suggestionState() !== 'ready' || suggested().length)) {
       <div class="sort-row">
         <span class="sort-row-label"><nostos-icon concept="aiSuggestion" [size]="12" />Suggested</span>
         @switch (suggestionState()) {
           @case ('ready') {
             @for (name of suggested(); track name) {
             <button appChip type="button" (click)="addChip(name)">{{ name }}</button>
-            } @empty { <span class="sort-quiet">No suggestions for this note.</span> }
+            }
           }
+          @case ('empty') { <span class="sort-quiet">{{ noSuggestions }}</span> }
           @case ('loading') { <span class="sort-quiet">Asking…</span> }
-          @case ('error') { <span class="sort-quiet">Suggestions are unavailable right now.</span> }
+          @case ('error') {
+            <span class="sort-quiet">{{ suggestionsFailed }}</span>
+            <button appButton variant="link" size="sm" type="button" (click)="suggestions.request(current)">{{ tryAgain }}</button>
+          }
           @default {
             <button appButton variant="link" size="sm" type="button" (click)="suggestions.request(current)">Suggest topics</button>
           }

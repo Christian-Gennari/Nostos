@@ -69,6 +69,7 @@
       (topicRemoved)="noteActions.removeTopic(row.item, $event)"
       (pickerOpened)="suggestions.request(row.item)"
       (pickerClosed)="suggestions.closeFor(row.note.id)"
+      (suggestionRetry)="suggestions.request(row.item)"
       (edited)="edit.emit($event)"
       (keepWithWriting)="noteActions.keepWithWriting([row.note.id])"
       (deleteRequested)="delete.emit(row.note.id)"
