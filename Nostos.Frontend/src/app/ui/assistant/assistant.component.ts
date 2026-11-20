@@ -312,14 +312,6 @@ export class AssistantComponent {
     () => this.assistant.entries().length === 0 && !this.assistant.pendingAnchor(),
   );
   readonly isReader = computed(() => this.assistant.context().surface === 'reader');
-  /**
-   * Selection actions already include Ask Nostos, so the launcher steps aside
-   * rather than offer it twice. (The bar is docked at the top now, #1344, so
-   * this is no longer about sharing the bottom edge.)
-   */
-  readonly readerSelectionActive = computed(
-    () => this.isReader() && !!this.assistant.context().selectedText?.trim(),
-  );
 
   /** A quiet, platform-appropriate hint shown in the collapsed desktop pill. */
   readonly shortcutLabel = this.launcher.shortcutLabel;

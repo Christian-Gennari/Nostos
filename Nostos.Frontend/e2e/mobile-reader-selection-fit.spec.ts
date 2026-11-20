@@ -119,3 +119,67 @@ for (const width of [390, 360]) {
     }
   });
 }
+
+test('phone 390px: Ask Nostos launcher stays visible below the docked selection bar without overlapping', async ({ page }) => {
+  const { baseUrl } = loadFixture();
+  const bookId = await seedEpub(baseUrl);
+  await page.addInitScript(() => {
+    localStorage.setItem('nostos.theme', 'light');
+    localStorage.setItem(
+      'nostos.library.preferences',
+      JSON.stringify({
+        viewMode: 'grid',
+        sort: 'lastread',
+        pageSize: 20,
+        sidebarExpanded: true,
+        groupByWork: true,
+        assistantEnabled: true,
+        assistantVoiceEnabled: false,
+      }),
+    );
+  });
+  await page.route('**/api/assistant/status', (route) => route.fulfill({ json: { available: true } }));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openEpubReader(page, `${baseUrl}/read/${bookId}`);
+
+  await page.getByTestId('reader-chrome-reveal').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('reader-layout')).toHaveClass(/chrome-visible/);
+
+  const trigger = page.getByTestId('assistant-trigger');
+  await expect(trigger).toBeVisible();
+
+  await page.frameLocator('#epub-viewer iframe').locator('p').first().evaluate((el) => {
+    const doc = el.ownerDocument;
+    const range = doc.createRange();
+    range.setStart(el.firstChild!, 0);
+    range.setEnd(el.firstChild!, Math.min(30, el.firstChild!.textContent!.length));
+    doc.getSelection()!.removeAllRanges();
+    doc.getSelection()!.addRange(range);
+  });
+
+  const bar = page.getByTestId('selection-bar');
+  await expect(bar).toBeVisible();
+  await expect(trigger).toBeVisible();
+  await waitForLayoutSettled(page, '[data-testid="selection-bar"]');
+
+  const barBox = (await bar.boundingBox())!;
+  const triggerBox = (await trigger.boundingBox())!;
+  const overlaps =
+    barBox.x < triggerBox.x + triggerBox.width &&
+    triggerBox.x < barBox.x + barBox.width &&
+    barBox.y < triggerBox.y + triggerBox.height &&
+    triggerBox.y < barBox.y + barBox.height;
+  expect(overlaps, 'launcher must not overlap the docked selection bar').toBe(false);
+  expect(triggerBox.y, 'launcher stays below top-docked selection bar').toBeGreaterThanOrEqual(
+    barBox.y + barBox.height,
+  );
+
+  await page.screenshot({
+    path: path.join(__dirname, 'visual-evidence', '1722-selection-popup', 'after', 'after-390-launcher-light.png'),
+  });
+
+  await trigger.tap();
+  await expect(page.getByTestId('assistant-panel')).toBeVisible();
+});
+

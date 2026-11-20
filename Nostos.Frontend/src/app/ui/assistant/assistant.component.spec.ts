@@ -1007,16 +1007,31 @@ describe('AssistantComponent (Cmd/Ctrl+J)', () => {
     });
   });
 
-  it('leaves the reader selection surface as the only contextual assistant entry', () => {
-    fake.set({ surface: 'reader', route: '/read/b1', bookId: 'b1', selectedText: 'A selected passage' });
+  it('keeps the launcher visible during a reader selection and carries the passage as context', () => {
+    fake.set({
+      surface: 'reader',
+      route: '/read/b1',
+      bookId: 'b1',
+      bookTitle: 'The Magic Mountain',
+      selectedText: 'A selected passage',
+    });
     fixture.detectChanges();
-    expect(fixture.nativeElement.querySelector('[data-testid="assistant-trigger"]')).toBeNull();
-    assistant.requestSurfaceOpen();
+
+    const trigger = fixture.nativeElement.querySelector(
+      '[data-testid="assistant-trigger"]',
+    ) as HTMLButtonElement | null;
+    expect(trigger).toBeTruthy();
+
+    trigger!.click();
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('[data-testid="assistant-panel"]')).toBeTruthy();
-    fake.set({ surface: 'reader', route: '/read/b1', bookId: 'b1', selectedText: null });
-    fixture.detectChanges();
-    expect(fixture.nativeElement.querySelector('[data-testid="assistant-trigger"]')).toBeTruthy();
+
+    assistant.updateDraft('Explain this');
+    assistant.submit();
+
+    const request = http.expectOne('/api/assistant/turn/stream');
+    expect(request.request.body.context.selectedText).toBe('A selected passage');
+    request.flush(turn());
   });
 
   it('routes feature-surface open requests through the same focus lifecycle', () => {
