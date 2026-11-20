@@ -413,9 +413,26 @@ export class AssistantService {
    * Visible transcript projected from the same canonical event ledger that
    * supplies model history. UI event ids remain distinct from TurnIds.
    */
-  readonly entries = computed<AssistantEntry[]>(() =>
-    projectVisibleTranscript(this.eventLedger()),
-  );
+  readonly entries = computed<AssistantEntry[]>(() => {
+    const visible = projectVisibleTranscript(this.eventLedger());
+    // The panel's "One detail" block already asks the question that is pending;
+    // the same line in the transcript would show it twice (issue #1748). Once it
+    // is answered or skipped, the line stays as part of the conversation.
+    const pending = this.pendingAnchor()?.question.trim();
+    if (!pending) return visible;
+    for (let index = visible.length - 1; index >= 0; index--) {
+      const entry = visible[index];
+      if (
+        entry.kind === 'assistant'
+        && entry.text.trim() === pending
+        && !entry.meta
+        && !entry.artifacts?.length
+      ) {
+        return visible.filter((_, position) => position !== index);
+      }
+    }
+    return visible;
+  });
   readonly sending = signal(false);
   readonly lastError = signal<string | null>(null);
   /** Exact logical turn currently executing through the streamed transport. */

@@ -96,3 +96,17 @@ export function changesetActionFromError(
   }
   return null;
 }
+
+/**
+ * The sentence the server puts above a review card (`AssistantChangesetCoordinator.ReviewReply`).
+ * It is true only while the card is a review: once the changes are applied,
+ * undone or set aside, it would contradict the card (issue #1748).
+ */
+export const REVIEW_REPLY = "Here's what I'd change. Nothing changes until you apply it.";
+
+/** The reply without the review sentence, once its card is no longer a review. */
+export function replyForChangeset(text: string, changeset: AssistantChangesetDto | null): string {
+  if (!changeset || changeset.status === 'review') return text;
+  const trimmed = text.trimEnd();
+  return trimmed.endsWith(REVIEW_REPLY) ? trimmed.slice(0, -REVIEW_REPLY.length).trimEnd() : text;
+}

@@ -134,6 +134,19 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
     }
 
     [Fact]
+    public void The_prompt_keeps_the_word_staged_away_from_the_user()
+    {
+        var h = CreateHarness();
+        var builder = new AssistantConversationBuilder(
+            h.Registry, new AssistantContextPacker(new AssistantOptions()));
+        var conversation = builder.BuildConversation(new AssistantTurnRequest(
+            "client", "turn", "Move my Le Guin books into a new collection.", new AssistantContextDto("other", "/")));
+
+        // An applied change must not be narrated as "staged" (#1748).
+        conversation[0].Content.Should().Contain("never say staged or staging in your reply");
+    }
+
+    [Fact]
     public void The_prompt_tells_the_model_to_end_a_capability_answer_with_what_it_cannot_do()
     {
         var h = CreateHarness();

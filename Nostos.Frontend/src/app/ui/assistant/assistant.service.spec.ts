@@ -505,9 +505,10 @@ describe('AssistantService voice transcript alignment', () => {
 
     // The question is the conversation, not the panel: it is still waiting.
     expect(service.pendingAnchor()?.question).toBe('What page are you on?');
+    // The panel's "One detail" block asks it, so the transcript does not (#1748).
     expect(
       service.entries().filter((entry) => entry.text === 'What page are you on?'),
-    ).toHaveLength(1);
+    ).toHaveLength(0);
     expect(service.draft()).toBe('');
 
     service.updateDraft('247');
@@ -517,6 +518,11 @@ describe('AssistantService voice transcript alignment', () => {
     expect(request.request.body.message).toBe('247');
     expect(request.request.body.continuationId).toBe('cont-page');
     request.flush(turn());
+
+    // Answered: the question is part of the conversation again, once.
+    expect(
+      service.entries().filter((entry) => entry.text === 'What page are you on?'),
+    ).toHaveLength(1);
   });
 
   it('still saves with an unknown anchor when a follow-up is skipped', () => {

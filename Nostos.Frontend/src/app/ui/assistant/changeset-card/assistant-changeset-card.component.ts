@@ -68,6 +68,10 @@ export class AssistantChangesetCardComponent {
 
   readonly headline = computed(() => {
     const changeset = this.changeset();
+    // After an undo or a discard the counts would describe changes that no
+    // longer stand, so the card says what became of them instead.
+    if (this.status() === 'undone') return 'These changes were undone.';
+    if (this.status() === 'discarded') return 'These changes were not applied. Nothing changed.';
     if (changeset.diff.collections.length + changeset.diff.memberships.length + changeset.diff.bookEdits.length === 0) {
       return this.inReview() ? 'Every step is left out.' : 'Nothing changed.';
     }

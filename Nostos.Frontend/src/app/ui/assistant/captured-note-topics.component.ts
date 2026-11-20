@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, OnInit, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, OnInit, computed, inject, input, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 import { BrainStateService } from '../../brain/brain-state.service';
@@ -19,6 +19,9 @@ import { TopicRowComponent } from '../topic-row/topic-row.component';
   imports: [TopicRowComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
+    @if (quote(); as words) {
+      <blockquote class="captured-quote" data-testid="assistant-captured-quote">{{ words }}</blockquote>
+    }
     @if (names(); as topics) {
       <app-topic-row
         [names]="topics"
@@ -36,10 +39,23 @@ import { TopicRowComponent } from '../topic-row/topic-row.component';
       display: block;
       margin-top: 0.4rem;
     }
+    .captured-quote {
+      margin: 0 0 0.4rem;
+      padding-left: 0.7rem;
+      border-left: 2px solid var(--border-color);
+      color: var(--color-text-muted);
+      font-size: 0.9em;
+    }
   `,
 })
 export class CapturedNoteTopicsComponent implements OnInit {
   readonly noteId = input.required<string>();
+  /**
+   * The reply text beside this card. A saved quote's words are shown under the
+   * card unless that text already shows them (issue #1748); a thought the user
+   * typed is theirs and is already in the transcript.
+   */
+  readonly shownText = input('');
 
   protected readonly brain = inject(BrainStateService);
   private readonly notes = inject(NotesService);
@@ -50,6 +66,14 @@ export class CapturedNoteTopicsComponent implements OnInit {
   /** The note's topics; null until read (and when it could not be read). */
   protected readonly names = signal<readonly string[] | null>(null);
   protected readonly busy = signal(false);
+  /** The saved note's quoted words, when the reply does not already show them. */
+  private readonly savedQuote = signal<string | null>(null);
+  protected readonly quote = computed(() => {
+    const words = this.savedQuote();
+    if (!words) return null;
+    const shown = this.shownText().toLowerCase();
+    return shown.includes(words.slice(0, 80).toLowerCase()) ? null : words;
+  });
 
   ngOnInit(): void {
     this.brain.ensureTopicsLoaded();
@@ -78,6 +102,8 @@ export class CapturedNoteTopicsComponent implements OnInit {
   }
 
   private show(note: NoteSearchHit): void {
+    const words = (note.selectedText ?? '').trim();
+    this.savedQuote.set(words ? (words.length > 300 ? `${words.slice(0, 300).trimEnd()}…` : words) : null);
     this.names.set(note.topicNames ?? []);
   }
 }

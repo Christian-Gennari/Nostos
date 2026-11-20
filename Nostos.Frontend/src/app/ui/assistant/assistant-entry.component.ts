@@ -28,6 +28,7 @@ import {
   type AssistantFailureAction,
 } from './assistant-failure';
 import { AssistantMarkdownPipe } from './assistant-markdown.pipe';
+import { replyForChangeset } from './assistant-changesets';
 import { AssistantService } from './assistant.service';
 import type {
   AssistantEntry,
@@ -48,6 +49,19 @@ import {
   sourceLabel,
   type EntrySourceDisplay,
 } from './assistant-sources';
+
+/** What each action the assistant performs reads as on its result chip (issue #1748). */
+const ACTION_LABELS: Record<string, string> = {
+  notes_link_existing_topic: 'note linked to topic',
+  notes_rewrite_capture: 'note rewritten',
+  library_create_or_match_book: 'book added',
+  library_update_book: 'book updated',
+  library_move_book: 'book moved',
+  library_create_collection: 'collection created',
+  library_delete_collection: 'collection deleted',
+  writings_create: 'draft created',
+  reading_list_add: 'added to To read',
+};
 
 @Component({
   selector: '[appAssistantEntry]',
@@ -78,6 +92,19 @@ export class AssistantEntryComponent {
   /** This exact turn was replayed; the shell returns the view to its reply. */
   readonly retried = output<void>();
   readonly changesetDetailsToggled = output<{ changesetId: string; open: boolean }>();
+
+  /**
+   * The reply as it reads now. The server's review sentence stops being true
+   * once its card is applied, undone or set aside, so it is dropped then.
+   */
+  readonly replyText = computed(() => {
+    const entry = this.entry();
+    const changeset = (entry.artifacts ?? []).find(
+      (artifact): artifact is Extract<AssistantTurnArtifact, { kind: 'changeset' }> =>
+        artifact.kind === 'changeset',
+    );
+    return replyForChangeset(entry.text, changeset?.changeset ?? null);
+  });
 
   readonly sourceView = computed(() => buildEntrySourceView(this.entry()));
   readonly citesSources = computed(() => entryCitesSources(this.entry()));
@@ -236,14 +263,6 @@ export class AssistantEntryComponent {
   }
 
   private humanizeCapability(capability: string): string {
-    const labels: Record<string, string> = {
-      notes_link_existing_topic: 'note linked to topic',
-      notes_rewrite_capture: 'note rewritten',
-      library_update_book: 'book updated',
-      library_move_book: 'book moved',
-      library_create_collection: 'collection created',
-      library_delete_collection: 'collection deleted',
-    };
-    return labels[capability] ?? capability.replaceAll('_', ' ');
+    return ACTION_LABELS[capability] ?? capability.replaceAll('_', ' ');
   }
 }
