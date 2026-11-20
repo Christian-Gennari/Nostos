@@ -454,8 +454,10 @@ and media SHA-256 — plus the HTTP job/recovery status, not by status alone.
 | Second host during the window | two processes on one data root | the second host reconciles the shared pre-commit journal to the original generation; the first is stopped; exactly one complete generation remains |
 | Clock jump across recovery expiry | expired copy + startup cleanup | the expired copy and its reservation are removed; the imported library is untouched |
 
-How to run (local or release verification only; the suite spawns real processes
-and is deliberately not part of the default fast backend run):
+The drills spawn real processes, so they are not part of the default fast backend
+run. CI runs them on every pull request that changes code, in their own step,
+"Real-host activation and restore drills", of the SelfHosted / SQLite job
+(`.github/workflows/selfhosted-integration.yml`). To run them locally:
 
 ```bash
 NOSTOS_RUN_ACTIVATION_DRILLS=1 dotnet test Nostos.Backend.Tests/Nostos.Backend.Tests.csproj \
