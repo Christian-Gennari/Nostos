@@ -63,6 +63,33 @@ public sealed class AssistantCitationsTests
         annotated.Value[1].TryGetProperty("cite", out _).Should().BeFalse();
     }
 
+    [Fact]
+    public void Annotate_numbers_topics_get_linked_notes_in_order()
+    {
+        var first = Note(Guid.NewGuid());
+        var second = Note(Guid.NewGuid());
+        var data = JsonSerializer.SerializeToElement(new
+        {
+            id = Guid.NewGuid(),
+            name = "Attention",
+            noteCount = 2,
+            notes = new[]
+            {
+                new { noteId = second.Handle.NoteId, content = "second" },
+                new { noteId = first.Handle.NoteId, content = "first" },
+            },
+        });
+
+        var extracted = AssistantEvidenceProjection.ExtractEvidence("topics_get", data).ToList();
+        extracted.Should().HaveCount(2);
+
+        var annotated = AssistantCitations.Annotate("topics_get", data, extracted, [first, second]);
+
+        annotated.Should().NotBeNull();
+        annotated!.Value.GetProperty("notes")[0].GetProperty("cite").GetInt32().Should().Be(2);
+        annotated.Value.GetProperty("notes")[1].GetProperty("cite").GetInt32().Should().Be(1);
+    }
+
     private static AssistantEvidenceReferenceDto Note(Guid id) =>
         new(new AssistantEvidenceHandleDto(KnowledgeEvidenceKinds.Note, NoteId: id), "Note");
 }

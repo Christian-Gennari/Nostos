@@ -45,6 +45,7 @@ internal static class AssistantEvidenceProjection
             "knowledge_read_evidence" => ExtractKnowledgeReadEvidence(data),
             "notes_list_for_book" => ExtractNoteListForBookEvidence(data),
             "notes_search" => ExtractNoteSearchEvidence(data),
+            "topics_get" => ExtractTopicGetEvidence(data),
             _ => [],
         };
 
@@ -115,6 +116,44 @@ internal static class AssistantEvidenceProjection
                 BookTitle: note.BookTitle);
         }
     }
+
+    public static IEnumerable<AssistantEvidenceReferenceDto> ExtractTopicGetEvidence(
+        JsonElement? data)
+    {
+        if (data is not { ValueKind: JsonValueKind.Object })
+            yield break;
+
+        if (AssistantCapabilityPayloads.Read<TopicGetPayload>(data) is not { Notes: { } notes })
+            yield break;
+
+        foreach (var note in notes)
+        {
+            if (note.NoteId == Guid.Empty)
+                continue;
+
+            var excerpt = !string.IsNullOrWhiteSpace(note.SelectedText)
+                ? note.SelectedText
+                : note.Content;
+
+            yield return new AssistantEvidenceReferenceDto(
+                new AssistantEvidenceHandleDto(
+                    KnowledgeEvidenceKinds.Note,
+                    NoteId: note.NoteId),
+                string.IsNullOrWhiteSpace(note.BookTitle) ? "Note" : $"Note · {note.BookTitle}",
+                ClipEvidence(excerpt),
+                BookTitle: note.BookTitle,
+                BookAuthor: note.BookAuthor);
+        }
+    }
+
+    private sealed record TopicGetPayload(IReadOnlyList<TopicGetNotePayload>? Notes);
+
+    private sealed record TopicGetNotePayload(
+        Guid NoteId,
+        string? BookTitle,
+        string? BookAuthor,
+        string? Content,
+        string? SelectedText);
 
     public static IEnumerable<AssistantEvidenceReferenceDto> ExtractKnowledgeReadEvidence(
         JsonElement? data)

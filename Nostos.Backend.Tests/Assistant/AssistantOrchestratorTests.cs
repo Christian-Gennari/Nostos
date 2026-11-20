@@ -3060,6 +3060,101 @@ public sealed class AssistantOrchestratorTests : IClassFixture<SqliteTestFixture
     }
 
     [Fact]
+    public async Task Topics_get_results_carry_citable_note_and_highlight_evidence()
+    {
+        var h = CreateHarness();
+        var book = await SeedBookAsync(h, "Ways of Seeing", author: "John Berger");
+        var topic = await SeedTopicAsync(h, "Attention");
+
+        var note = await SeedNoteAsync(h, book.Id, "Looking precedes speech.");
+        var highlight = new NoteModel
+        {
+            Id = Guid.NewGuid(),
+            BookId = book.Id,
+            Content = "",
+            SelectedText = "We only see what we look at.",
+            CreatedAt = DateTime.UtcNow.AddMinutes(-1),
+        };
+        h.Db.Notes.Add(highlight);
+        h.Db.NoteTopics.AddRange(
+            new NoteTopicModel { NoteId = note.Id, TopicId = topic.Id },
+            new NoteTopicModel { NoteId = highlight.Id, TopicId = topic.Id });
+        await h.Db.SaveChangesAsync();
+
+        h.Llm
+            .CallsTool("topics_get", JsonSerializer.Serialize(new { topicId = topic.Id }))
+            .Returns("Your topic gathers both your thought [^1] and your highlight [^2]. Bogus [^9].");
+
+        var response = await h.Orchestrator.HandleTurnAsync(
+            Turn(
+                "What connects my topics?",
+                Context(surface: "second-brain", route: "/second-brain")));
+
+        response.Evidence.Should().HaveCount(2);
+        response.Evidence![0].Handle.Kind.Should().Be(KnowledgeEvidenceKinds.Note);
+        response.Evidence[0].Handle.NoteId.Should().Be(note.Id);
+        response.Evidence[0].BookTitle.Should().Be("Ways of Seeing");
+        response.Evidence[0].BookAuthor.Should().Be("John Berger");
+        response.Evidence[0].Excerpt.Should().Contain("Looking precedes speech");
+
+        response.Evidence[1].Handle.Kind.Should().Be(KnowledgeEvidenceKinds.Note);
+        response.Evidence[1].Handle.NoteId.Should().Be(highlight.Id);
+        response.Evidence[1].Excerpt.Should().Contain("We only see what we look at");
+
+        response.Reply.Should().Be("Your topic gathers both your thought [^1] and your highlight [^2]. Bogus.");
+
+        var toolMessage = h.Llm.Requests[1].Messages.Single(message => message.Role == "tool");
+        using var toolJson = JsonDocument.Parse(toolMessage.Content!);
+        var notes = toolJson.RootElement.GetProperty("data").GetProperty("notes");
+        notes[0].GetProperty("cite").GetInt32().Should().Be(1);
+        notes[1].GetProperty("cite").GetInt32().Should().Be(2);
+    }
+
+    [Fact]
+    public async Task Topics_get_deduplicates_shared_notes_across_multiple_topic_reads()
+    {
+        var h = CreateHarness();
+        var book = await SeedBookAsync(h, "Walden");
+        var t1 = await SeedTopicAsync(h, "Solitude");
+        var t2 = await SeedTopicAsync(h, "Attention");
+
+        var shared = await SeedNoteAsync(h, book.Id, "Shared observation.");
+        var second = new NoteModel
+        {
+            Id = Guid.NewGuid(),
+            BookId = book.Id,
+            Content = "Second topic observation.",
+            CreatedAt = DateTime.UtcNow.AddMinutes(-1),
+        };
+        h.Db.Notes.Add(second);
+        h.Db.NoteTopics.AddRange(
+            new NoteTopicModel { NoteId = shared.Id, TopicId = t1.Id },
+            new NoteTopicModel { NoteId = shared.Id, TopicId = t2.Id },
+            new NoteTopicModel { NoteId = second.Id, TopicId = t2.Id });
+        await h.Db.SaveChangesAsync();
+
+        h.Llm
+            .CallsTool("topics_get", JsonSerializer.Serialize(new { topicId = t1.Id }))
+            .CallsTool("topics_get", JsonSerializer.Serialize(new { topicId = t2.Id }))
+            .Returns("Both topics meet at [^1], with context in [^2].");
+
+        var response = await h.Orchestrator.HandleTurnAsync(
+            Turn("What connects my topics?", Context(surface: "second-brain", route: "/second-brain")));
+
+        response.Evidence.Should().HaveCount(2);
+        response.Evidence![0].Handle.NoteId.Should().Be(shared.Id);
+        response.Evidence[1].Handle.NoteId.Should().Be(second.Id);
+        response.Reply.Should().Be("Both topics meet at [^1], with context in [^2].");
+
+        var toolMessages = h.Llm.Requests[2].Messages.Where(message => message.Role == "tool").ToList();
+        using var firstJson = JsonDocument.Parse(toolMessages[0].Content!);
+        using var secondJson = JsonDocument.Parse(toolMessages[1].Content!);
+        firstJson.RootElement.GetProperty("data").GetProperty("notes")[0].GetProperty("cite").GetInt32().Should().Be(1);
+        secondJson.RootElement.GetProperty("data").GetProperty("notes")[0].GetProperty("cite").GetInt32().Should().Be(1);
+        secondJson.RootElement.GetProperty("data").GetProperty("notes")[1].GetProperty("cite").GetInt32().Should().Be(2);
+    }
+
+    [Fact]
     public async Task Book_text_search_sources_are_server_grounded_and_preserve_pdf_locator()
     {
         var bookId = Guid.NewGuid();
