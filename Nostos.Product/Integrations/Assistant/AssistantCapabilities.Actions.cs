@@ -70,7 +70,7 @@ public static partial class AssistantCapabilities
             "notes_capture",
             AssistantTrustClass.Capture,
             AssistantCapabilityCategory.Capture,
-            "Saves one of the user's own thoughts, observations or quotes as a note against the book that is open. Use it for genuine thoughts the user gives you to keep even when they do not literally say 'save' or 'note'. Never use it for corrections, source/book clarifications, answers to a previous question, explicit instructions not to save, or a request to rephrase a note already saved in this conversation (that is notes_rewrite_capture). The book is supplied by the app; never pass one.",
+            "Saves one of the user's own thoughts, observations or quotes as a note against the book that is open. Use it for genuine thoughts the user gives you to keep even when they do not literally say 'save' or 'note'. Never use it for read-only requests about selected text (repeating, quoting back, explaining, translating or summarising a selection), corrections, source/book clarifications, answers to a previous question, explicit instructions not to save, or a request to rephrase a note already saved in this conversation (that is notes_rewrite_capture). The book is supplied by the app; never pass one.",
             """
             {
               "type": "object",
@@ -79,7 +79,7 @@ public static partial class AssistantCapabilities
                 "rewrite": { "type": "boolean", "description": "True only when the user asked you to rephrase, clean up or make the thought more coherent. Nostos then saves a tidied version and keeps their exact words as the original. Never set it on your own judgement." },
                 "topics": { "type": "array", "items": { "type": "string" }, "description": "With rewrite, or when the user asks for topics: up to five topic names the thought is plainly about (a character, a theme, an idea it names). Prefer the exact names of topics that already exist. Ignored otherwise." },
                 "wholeBook": { "type": "boolean", "description": "True when the thought is about the book as a whole (a character across the book, a theme, an overall reaction) rather than the moment the user is at. The note is then saved without a page or timestamp, and the user is not asked for one." },
-                "selectedText": { "type": "string", "description": "A passage quoted from the book itself. When the reader has a passage selected it is already in the current context — capture it here rather than asking for it. It is stored as the quotation exactly as given." },
+                "selectedText": { "type": "string", "description": "A passage quoted from the book itself. Only pass this when the user asked to save, capture, note or highlight the passage — never for read-only requests such as repeating, quoting back or explaining a reader selection. When the reader has a passage selected and the user asks to save it, it is already in the current context — capture it here rather than asking for it. It is stored as the quotation exactly as given." },
                 "quoteRef": { "type": "string", "description": "The quoteRef book_text_find_quote returned for the passage the user named by its first and last words. Nostos stores that passage exactly as the book has it; do not pass selectedText with it." },
                 "captureSource": { "type": "string", "description": "Where the words came from. Defaults to 'text'." }
               },

@@ -50,7 +50,9 @@ internal sealed class AssistantConversationBuilder(
         {
             messages.Add(LlmMessage.System(
                 "A passage is selected in the reader right now: it is the 'selectedText' value in the context above. "
-                + "When the user says to save, keep, note or record a passage, a quote or a highlight, that selection "
+                + "A selection in context is read-only unless the user asks to save, capture, note, keep, remember or record it: "
+                + "if they ask you to repeat, quote back, explain, translate or summarise the selection, answer directly from 'selectedText' and call no capture tool. "
+                + "When the user explicitly says to save, keep, note or record a passage, a quote or a highlight, that selection "
                 + "is the passage — capture it as selectedText in that same turn, and do not ask them for text the app "
                 + "already has."));
         }
