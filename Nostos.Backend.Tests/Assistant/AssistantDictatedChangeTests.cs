@@ -36,6 +36,17 @@ public sealed class AssistantDictatedChangeTests
             && !AssistantDictatedChange.Covers([Step(new UpdateBookOp(Book, IsFinished: true))], "Summarise my notes"))
             .Should().BeTrue();
 
+    [Theory]
+    [InlineData("Mark it as read", true)]
+    [InlineData("Mark this book done", true)]
+    [InlineData("I finished it last night", true)]
+    [InlineData("What have I read lately, and what did I note?", false)]
+    [InlineData("Are we done here? Summarise my notes", false)]
+    [InlineData("Vad har jag läst i år?", false)]
+    public void Finished_needs_an_explicit_instruction(string message, bool expected) =>
+        AssistantDictatedChange.Covers([Step(new UpdateBookOp(Book, IsFinished: true))], message)
+            .Should().Be(expected);
+
     [Fact]
     public void Free_text_is_never_dictated()
     {

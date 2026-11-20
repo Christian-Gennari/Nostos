@@ -26,7 +26,9 @@ internal static partial class AssistantDictatedChange
     [GeneratedRegex(@"\b(favou?rit\w*)\b", RegexOptions.IgnoreCase)]
     private static partial Regex FavouriteWord();
 
-    [GeneratedRegex(@"\b(finish\w*|read|done|l[äa]st|klar)\b", RegexOptions.IgnoreCase)]
+    // "read" or "done" alone is too common ("what have I read?") to count as an
+    // instruction; only "finished" or an explicit "mark it (as) read/done" does.
+    [GeneratedRegex(@"\b(finish\w*|mark(?:ed)?\s+(?:it|this(?:\s+book)?|the\s+book)?\s*(?:as\s+)?(?:read|done)|utl[äa]st|l[äa]st\s+ut|klar\s+med)\b", RegexOptions.IgnoreCase)]
     private static partial Regex FinishedWord();
 
     public static bool Covers(IReadOnlyList<AssistantStagedStep> steps, string? userMessage)
