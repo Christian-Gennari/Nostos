@@ -134,6 +134,24 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
     }
 
     [Fact]
+    public void The_prompt_tells_the_model_to_end_a_capability_answer_with_what_it_cannot_do()
+    {
+        var h = CreateHarness();
+        var builder = new AssistantConversationBuilder(
+            h.Registry, new AssistantContextPacker(new AssistantOptions()));
+        var conversation = builder.BuildConversation(new AssistantTurnRequest(
+            "client", "turn", "What can you do?", new AssistantContextDto("other", "/")));
+
+        // The disclosure line asks for the limits, and the limits are the panel's boundary.
+        var system = conversation[0].Content!;
+        var disclosure = system.Split('\n').Single(line => line.Contains(AssistantConversationBuilder.CapabilitySentence));
+        disclosure.Should().Contain(AssistantConversationBuilder.LimitsSentence);
+        disclosure.Should().Contain("cannot do");
+        AssistantConversationBuilder.LimitsSentence.Should()
+            .Contain("delete books or notes").And.Contain("change settings");
+    }
+
+    [Fact]
     public void Every_library_organisation_capability_is_staged_and_none_deletes_a_book()
     {
         var h = CreateHarness();
