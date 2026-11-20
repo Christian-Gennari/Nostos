@@ -446,6 +446,86 @@ public sealed class LibraryChangesetTests : IClassFixture<SqliteTestFixture>
     }
 
     [Fact]
+    public async Task Undo_keeps_every_book_in_its_created_collection_when_the_old_name_was_taken_after_apply()
+    {
+        var h = await SeedAsync();
+
+        // Plan: delete Fiction, create "Novels", put Dune and Anna in it (#1760).
+        var applied = await h.Service.ApplyAsync(
+        [
+            new DeleteCollectionOp(LibraryCollectionRef.Existing(h.Russian)),
+            new DeleteCollectionOp(LibraryCollectionRef.Existing(h.Fiction)),
+            new CreateCollectionOp("novels", "Novels"),
+            new AddBooksToCollectionOp(LibraryCollectionRef.Created("novels"), [h.Dune, h.AnnaKarenina]),
+        ], expectedDiffHash: null);
+        applied.Success.Should().BeTrue(applied.ErrorMessage);
+        var novels = applied.Diff!.Collections.Single(c => c.Kind == "created").Id;
+
+        // The user makes a new, empty "Fiction" before undoing.
+        var userFiction = Guid.NewGuid();
+        await using (var db = await h.Factory.CreateDbContextAsync())
+        {
+            db.Collections.Add(new CollectionModel { Id = userFiction, Name = "Fiction" });
+            await db.SaveChangesAsync();
+        }
+
+        var reverted = await h.Service.RevertAsync(applied.Undo!);
+
+        reverted.Success.Should().BeTrue();
+        var state = await StateAsync(h);
+        state.Collections.Should().Contain(c => c.Id == novels, "Dune and Anna cannot go back to Fiction, so Novels must stay");
+        state.Collections.Should().Contain(c => c.Id == userFiction, "a collection the user made is never removed");
+        state.Collections.Should().NotContain(c => c.Id == h.Fiction);
+        state.MembershipNames(h.Dune).Should().Equal("Novels");
+        state.MembershipNames(h.AnnaKarenina).Should().Equal("Novels");
+        reverted.Conflicts.Should().Contain(c => c.Contains("\"Dune\"") && c.Contains("could not be restored"));
+        reverted.Conflicts.Should().Contain(c => c.Contains("\"Anna Karenina\"") && c.Contains("could not be restored"));
+        reverted.Conflicts.Should().Contain(c => c.Contains("Novels"));
+        reverted.Conflicts.Should().NotContain(c => c.Contains("books were added"), "nobody added a book after the apply");
+    }
+
+    [Fact]
+    public async Task Undo_removes_the_created_collection_only_when_no_book_is_stranded_by_it()
+    {
+        var h = await SeedAsync();
+
+        // Dune and Anna move to "Novels"; Meditations moves to "Essays". Only Fiction's name is taken later.
+        var applied = await h.Service.ApplyAsync(
+        [
+            new DeleteCollectionOp(LibraryCollectionRef.Existing(h.Russian)),
+            new DeleteCollectionOp(LibraryCollectionRef.Existing(h.Fiction)),
+            new DeleteCollectionOp(LibraryCollectionRef.Existing(h.Philosophy)),
+            new CreateCollectionOp("novels", "Novels"),
+            new CreateCollectionOp("essays", "Essays"),
+            new AddBooksToCollectionOp(LibraryCollectionRef.Created("novels"), [h.Dune, h.AnnaKarenina]),
+            new AddBooksToCollectionOp(LibraryCollectionRef.Created("essays"), [h.Meditations]),
+        ], expectedDiffHash: null);
+        applied.Success.Should().BeTrue(applied.ErrorMessage);
+        var novels = applied.Diff!.Collections.Single(c => c.Kind == "created" && c.Name == "Novels").Id;
+        var essays = applied.Diff.Collections.Single(c => c.Kind == "created" && c.Name == "Essays").Id;
+
+        await using (var db = await h.Factory.CreateDbContextAsync())
+        {
+            db.Collections.Add(new CollectionModel { Id = Guid.NewGuid(), Name = "Fiction" });
+            await db.SaveChangesAsync();
+        }
+
+        var reverted = await h.Service.RevertAsync(applied.Undo!);
+
+        reverted.Success.Should().BeTrue();
+        var state = await StateAsync(h);
+        state.Collections.Should().Contain(c => c.Id == novels);
+        state.Collections.Should().NotContain(c => c.Id == essays, "Meditations went back to Philosophy, so Essays is empty and removed");
+        state.MembershipNames(h.Dune).Should().Equal("Novels");
+        state.MembershipNames(h.AnnaKarenina).Should().Equal("Novels");
+        state.Memberships.Should().Contain((h.Meditations, h.Philosophy));
+        state.MembershipNames(h.Meditations).Should().Equal("Philosophy");
+        reverted.Conflicts.Should().NotContain(c => c.Contains("Meditations"));
+        foreach (var book in new[] { h.Dune, h.AnnaKarenina, h.Meditations })
+            state.Memberships.Should().Contain(m => m.BookId == book, "undo never leaves a book in no collection");
+    }
+
+    [Fact]
     public async Task Undo_reports_conflict_if_step_2e_restored_collection_still_has_a_same_name_sibling()
     {
         var h = await SeedAsync();
