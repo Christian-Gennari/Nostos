@@ -137,7 +137,7 @@ public static partial class AssistantCapabilities
             "writings_create",
             AssistantTrustClass.Act,
             AssistantCapabilityCategory.Writing,
-            "Creates a new Studio document from Markdown when the user asks for a draft to be written down. It always makes a new document and never changes an existing one. Keep citations as Markdown links to nostos:cite/<bookId>?… exactly as tool results gave them, so they stay live in the Studio. Returns the new document's id and a link that opens it.",
+            "Creates a new Studio document from Markdown when the user asks for a draft to be written down. It always makes a new document and never changes an existing one. Keep citations as Markdown links to nostos:cite/<bookId>?… exactly as tool results gave them, so they stay live in the Studio. Never write chat footnote markers like [^1] in a draft: they have no source there and are removed. Returns the new document's id and a link that opens it.",
             """
             {
               "type": "object",
@@ -158,7 +158,9 @@ public static partial class AssistantCapabilities
                 if (name.Length > MaxWritingNameLength)
                     return Invalid($"'name' is limited to {MaxWritingNameLength} characters.");
 
-                var content = Str(args, "content") ?? string.Empty;
+                // A chat marker [^n] points at a reply's evidence row; in a draft it
+                // would be a superscript tied to nothing (issue #1741).
+                var content = AssistantDraftMarkers.StripUnmatched(Str(args, "content") ?? string.Empty);
                 if (content.Length > MaxCreatedWritingChars)
                     return Invalid($"'content' is limited to {MaxCreatedWritingChars} characters.");
 
