@@ -303,6 +303,51 @@ public sealed class NoteProcessingModeTests : IClassFixture<SqliteTestFixture>
         result.Value!.ProcessingMode.Should().Be("verbatim", "nothing was processed, so the honest mode is verbatim");
     }
 
+    [Fact]
+    public async Task A_host_usage_refusal_during_capture_never_loses_the_thought()
+    {
+        var path = _fixture.CreateDatabasePath();
+        var options = new DbContextOptionsBuilder<NostosDbContext>()
+            .UseSqlite($"Data Source={path}")
+            .Options;
+        using var db = new NostosDbContext(options);
+        db.Database.EnsureCreated();
+        var llm = new FakeLlmProvider().Returns("SHOULD NOT BE USED");
+        var service = NoteServiceGraph.Create(db, new ThoughtProcessor(llm, new RefusingUsage()));
+        var book = new PhysicalBookModel { Id = Guid.NewGuid(), Title = "A Book" };
+        db.Books.Add(book);
+        await db.SaveChangesAsync();
+
+        var result = await service.CaptureAsync(
+            new CaptureNoteRequest(book.Id, "the words that must survive", ProcessingMode: "clarify"));
+
+        llm.CallCount.Should().Be(0);
+        result.Success.Should().BeTrue();
+        result.Value!.Content.Should().Be("the words that must survive");
+        result.Value!.ProcessingMode.Should().Be("verbatim");
+    }
+
+    private sealed class RefusingUsage : Nostos.Product.Services.Ai.IAiUsageAccountingService
+    {
+        public Task<Nostos.Product.Services.Ai.AiUsageLease?> BeginLlmTurnAsync(CancellationToken cancellationToken = default) =>
+            throw new Nostos.Product.Services.Ai.AiUsageException(
+                Nostos.Product.Services.Ai.AiUsageBlockReason.LimitReached,
+                "Limit reached.");
+
+        public Task CompleteLlmTurnAsync(
+            Nostos.Product.Services.Ai.AiUsageLease? lease,
+            Nostos.Product.Services.Ai.LlmProviderUsage usage,
+            CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task<Nostos.Product.Services.Ai.AiUsageLease?> BeginSttAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<Nostos.Product.Services.Ai.AiUsageLease?>(null);
+
+        public Task CompleteSttAsync(
+            Nostos.Product.Services.Ai.AiUsageLease? lease,
+            Nostos.Product.Services.Ai.TranscriptionUsage usage,
+            CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
     // ------------------------------------------------------------------
     // Harness
     // ------------------------------------------------------------------

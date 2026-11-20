@@ -1,6 +1,7 @@
 using Nostos.Backend.Services.Ai;
 using Nostos.Backend.Services.Notes;
 using Nostos.Product.Http;
+using Nostos.Product.Services.Ai;
 using Nostos.Shared.Dtos;
 
 namespace Nostos.Backend.Endpoints;
@@ -51,6 +52,12 @@ public static class NoteProcessingEndpoints
                 StatusCodes.Status502BadGateway,
                 ex.Code,
                 ex.Message);
+        }
+        catch (AiUsageException ex)
+        {
+            // The host refused the rewrite before any provider call (a usage
+            // limit, a rate limit, or no access). Nothing changed.
+            return ApiErrors.Problem(ex.StatusCode, ex.Code, ex.Message);
         }
     }
 

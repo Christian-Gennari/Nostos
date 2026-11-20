@@ -17,7 +17,9 @@ internal static class NostosAssistantServices
     internal static IServiceCollection AddNostosAssistantServices(
         this IServiceCollection services)
     {
-        services.AddSingleton<IThoughtProcessor, ThoughtProcessor>();
+        // Scoped: it meters its provider call through the host accounting
+        // service, which a host may scope to the request's account.
+        services.AddScoped<IThoughtProcessor, ThoughtProcessor>();
         services.AddSingleton<AssistantChangesetStore>();
         // SelfHosted has one library per process. A multi-tenant host registers
         // its own owner so changesets, continuations and stoppable turns are

@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Nostos.Backend.Services.Ai;
+using Nostos.Product.Services.Ai;
 using Xunit;
 
 namespace Nostos.Backend.Tests.Services.Ai;
@@ -170,5 +171,122 @@ public sealed class ThoughtProcessorTests
         llm.Responder = _ => new LlmCompletion("ok", "stop", []);
         await processor.ProcessAsync(new string('x', 5000), "light_polish");
         llm.LastRequest.MaxTokens.Should().Be(ThoughtProcessor.MaxTokensCeiling);
+    }
+
+    [Fact]
+    public async Task A_reply_cut_at_the_output_limit_is_not_stored_as_the_rewrite()
+    {
+        var llm = new FakeLlmProvider().Enqueue(new LlmCompletion("The first half of", "length", []));
+        var processor = new ThoughtProcessor(llm);
+
+        var result = await processor.ProcessAsync("the raw words", "clarify");
+
+        result.Text.Should().Be("the raw words");
+        result.Mode.Should().Be(ThoughtProcessingModes.Verbatim);
+        result.FellBackToRaw.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task The_provider_call_is_reserved_bounded_and_settled_through_the_host()
+    {
+        var budget = new FixedBudget(3_000);
+        var usage = new RecordingUsage(budget);
+        var llm = new FakeLlmProvider().Enqueue(new LlmCompletion("Polished.", "stop", [], 120, 30, 5));
+        var processor = new ThoughtProcessor(llm, usage);
+
+        var result = await processor.ProcessAsync(new string('x', 5000), "light_polish");
+
+        result.Text.Should().Be("Polished.");
+        llm.LastRequest.MaxTokens.Should().Be(3_000, "the host budget is below the product ceiling");
+        budget.Recorded.Should().ContainSingle();
+        usage.Completed.Should().ContainSingle().Which.Should().Be(
+            new LlmProviderUsage(1, 120, 30, 5, 150, 0, "Completed", "stop"));
+    }
+
+    [Fact]
+    public async Task A_budget_that_cannot_pay_for_a_rewrite_keeps_the_raw_words_without_a_call()
+    {
+        var usage = new RecordingUsage(new FixedBudget(ThoughtProcessor.MaxTokensFloor - 1));
+        var llm = new FakeLlmProvider().Returns("SHOULD NOT BE USED");
+        var processor = new ThoughtProcessor(llm, usage);
+
+        var result = await processor.ProcessAsync("the raw words", "clarify");
+
+        llm.CallCount.Should().Be(0);
+        result.Text.Should().Be("the raw words");
+        result.Mode.Should().Be(ThoughtProcessingModes.Verbatim);
+        result.FellBackToRaw.Should().BeTrue();
+        usage.Completed.Should().ContainSingle().Which.UpstreamRequestCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task A_failed_provider_call_is_settled_with_unknown_cost_and_still_throws()
+    {
+        var usage = new RecordingUsage(budget: null);
+        var llm = new FakeLlmProvider { Failure = LlmException.RateLimited() };
+        var processor = new ThoughtProcessor(llm, usage);
+
+        var act = () => processor.ProcessAsync("the raw words", "clarify");
+
+        await act.Should().ThrowAsync<LlmException>();
+        usage.Completed.Should().ContainSingle().Which.Should().Be(
+            new LlmProviderUsage(1, null, null, null, null, 0, "ProviderError", null));
+    }
+
+    [Fact]
+    public async Task A_host_refusal_reaches_the_caller_before_any_provider_call()
+    {
+        var usage = new RecordingUsage(budget: null)
+        {
+            Refusal = new AiUsageException(AiUsageBlockReason.LimitReached, "Limit reached."),
+        };
+        var llm = new FakeLlmProvider().Returns("SHOULD NOT BE USED");
+        var processor = new ThoughtProcessor(llm, usage);
+
+        var act = () => processor.ProcessAsync("the raw words", "clarify");
+
+        await act.Should().ThrowAsync<AiUsageException>();
+        llm.CallCount.Should().Be(0);
+        usage.Completed.Should().BeEmpty();
+    }
+
+    private sealed class FixedBudget(int limit) : ILlmCallBudget
+    {
+        public List<LlmCompletion> Recorded { get; } = [];
+
+        public int MaxOutputTokens(LlmCompletionRequest request) => limit;
+
+        public void Record(LlmCompletion completion) => Recorded.Add(completion);
+    }
+
+    private sealed class RecordingUsage(ILlmCallBudget? budget) : IAiUsageAccountingService
+    {
+        public AiUsageException? Refusal { get; init; }
+
+        public List<LlmProviderUsage> Completed { get; } = [];
+
+        public Task<AiUsageLease?> BeginLlmTurnAsync(CancellationToken cancellationToken = default) =>
+            Refusal is not null
+                ? Task.FromException<AiUsageLease?>(Refusal)
+                : Task.FromResult<AiUsageLease?>(
+                    new AiUsageLease(Guid.NewGuid(), AiUsageKind.Llm) { LlmBudget = budget });
+
+        public Task CompleteLlmTurnAsync(
+            AiUsageLease? lease,
+            LlmProviderUsage usage,
+            CancellationToken cancellationToken = default)
+        {
+            Completed.Add(usage);
+            return Task.CompletedTask;
+        }
+
+        public Task<AiUsageLease?> BeginSttAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<AiUsageLease?>(null);
+
+        public Task CompleteSttAsync(
+            AiUsageLease? lease,
+            TranscriptionUsage usage,
+            CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
     }
 }

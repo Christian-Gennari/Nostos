@@ -1,9 +1,11 @@
 using System.Globalization;
 using Nostos.Product.BookText;
+using Nostos.Backend.Services.Ai;
 using Nostos.Backend.Services.Library;
 using Nostos.Backend.Services.Notes;
 using Nostos.Shared.Dtos;
 using Nostos.Shared.Enums;
+using Nostos.Product.Services.Ai;
 
 namespace Nostos.Backend.Integrations.Assistant;
 
@@ -192,7 +194,21 @@ public static partial class AssistantCapabilities
                     return Invalid("'noteId' is required.");
                 }
 
-                var result = await notes.RewriteCaptureAsync(noteId, context.ClientId ?? string.Empty, ct);
+                NoteCommandResult<NoteDto> result;
+                try
+                {
+                    result = await notes.RewriteCaptureAsync(noteId, context.ClientId ?? string.Empty, ct);
+                }
+                catch (Exception ex) when (ex is LlmException or AiUsageException)
+                {
+                    // The rewrite's own provider call failed or was refused. The
+                    // note keeps its words; the turn reports the failure instead
+                    // of losing the whole turn to an exception.
+                    return AssistantToolResult.Fail(
+                        ex is AiUsageException usage ? usage.Code : ((LlmException)ex).Code,
+                        "The note could not be rewritten right now. It keeps its current words.");
+                }
+
                 if (result.Success && StrList(args, "topics") is { Count: > 0 } topics)
                 {
                     await notes.LinkTopicsAsync(topics, [noteId], ct);
