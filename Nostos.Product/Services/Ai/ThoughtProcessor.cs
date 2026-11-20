@@ -1,3 +1,5 @@
+using Nostos.Product.Services.Ai;
+
 namespace Nostos.Backend.Services.Ai;
 
 /// <summary>
@@ -15,10 +17,22 @@ namespace Nostos.Backend.Services.Ai;
 /// <item><b>An empty answer is a fallback, not a loss.</b> The free pool spends
 /// its budget reasoning (measured); when it returns no text the raw transcript is
 /// kept and the effective mode is reported as verbatim.</item>
+/// <item><b>A cut-off rewrite is not stored.</b> A reply the provider ended at
+/// its output limit would silently drop the end of the thought, so it falls
+/// back to the raw transcript the same way.</item>
 /// </list>
+///
+/// The provider call is metered like an Ask Nostos turn: a host reserves usage
+/// before it, may bound its output through <see cref="AiUsageLease.LlmBudget"/>,
+/// and settles it afterwards. SelfHosted uses the no-op accounting service.
 /// </summary>
-public sealed class ThoughtProcessor(ILlmProvider llm) : IThoughtProcessor
+public sealed class ThoughtProcessor(
+    ILlmProvider llm,
+    IAiUsageAccountingService? usageAccounting = null) : IThoughtProcessor
 {
+    private readonly IAiUsageAccountingService _usage =
+        usageAccounting ?? NoOpAiUsageAccountingService.Instance;
+
     /// <summary>
     /// Never ask for less than this: the pool consumes reasoning tokens even for
     /// a two-word answer, and a tight budget truncates real text.
@@ -75,18 +89,69 @@ public sealed class ThoughtProcessor(ILlmProvider llm) : IThoughtProcessor
             ? ClarifySystemPrompt
             : LightPolishSystemPrompt;
 
-        var completion = await llm.CompleteAsync(
-            new LlmCompletionRequest(
-                [LlmMessage.System(prompt), LlmMessage.User(text)],
-                Tools: [],
-                MaxTokens: MaxTokensFor(text)),
-            ct);
+        var request = new LlmCompletionRequest(
+            [LlmMessage.System(prompt), LlmMessage.User(text)],
+            Tools: [],
+            MaxTokens: MaxTokensFor(text));
 
-        if (string.IsNullOrWhiteSpace(completion.Content))
+        // A host can refuse the call here (AiUsageException); nothing is spent.
+        var lease = await _usage.BeginLlmTurnAsync(ct);
+        if (lease?.LlmBudget is { } budget)
+        {
+            var affordable = budget.MaxOutputTokens(request);
+            if (affordable < MaxTokensFloor)
+            {
+                // The host budget cannot pay for a rewrite with room to answer.
+                // Keep the raw words and settle a turn that made no call.
+                await SettleAsync(lease, new LlmProviderUsage(0, 0, 0, 0, 0, 0, "SafetyCeiling", null));
+                return new ThoughtProcessingResult(
+                    text,
+                    ThoughtProcessingModes.Verbatim,
+                    ProviderCalled: false,
+                    FellBackToRaw: true);
+            }
+
+            if (affordable < request.MaxTokens)
+                request = request with { MaxTokens = affordable };
+        }
+
+        LlmCompletion completion;
+        try
+        {
+            completion = await llm.CompleteAsync(request, ct);
+        }
+        catch (Exception ex) when (ex is LlmException or OperationCanceledException)
+        {
+            // The call was attempted, so its unknown cost is settled, never
+            // treated as free. The caller keeps its own failure handling.
+            await SettleAsync(lease, new LlmProviderUsage(
+                1, null, null, null, null, 0,
+                ex is LlmException ? "ProviderError" : "Cancelled",
+                null));
+            throw;
+        }
+
+        lease?.LlmBudget?.Record(completion);
+        await SettleAsync(lease, new LlmProviderUsage(
+            1,
+            completion.PromptTokens,
+            completion.CompletionTokens,
+            completion.ThinkingTokens,
+            completion.PromptTokens is { } input && completion.CompletionTokens is { } output
+                ? input + output
+                : null,
+            0,
+            "Completed",
+            completion.FinishReason));
+
+        var cutShort = string.Equals(completion.FinishReason, "length", StringComparison.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(completion.Content) || cutShort)
         {
             // Measured free-pool behaviour: an empty content with finish_reason
             // "length" means the budget went to reasoning. That is data, not an
-            // error — keep the raw transcript rather than storing nothing.
+            // error — keep the raw transcript rather than storing nothing. A
+            // non-empty reply that stopped at the limit is a partial rewrite,
+            // and storing it would silently lose the end of the thought.
             return new ThoughtProcessingResult(
                 text,
                 ThoughtProcessingModes.Verbatim,
@@ -98,6 +163,13 @@ public sealed class ThoughtProcessor(ILlmProvider llm) : IThoughtProcessor
         // separate and is the source of any later re-run.
         return new ThoughtProcessingResult(completion.Content, normalized, ProviderCalled: true);
     }
+
+    // Settlement never runs on the request token: a disconnect must not strand
+    // the host's reservation.
+    private Task SettleAsync(AiUsageLease? lease, LlmProviderUsage usage) =>
+        lease is null
+            ? Task.CompletedTask
+            : _usage.CompleteLlmTurnAsync(lease, usage, CancellationToken.None);
 
     /// <summary>
     /// A generous, input-scaled budget: the pool's own injected prompt and its

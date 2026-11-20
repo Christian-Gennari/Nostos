@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Nostos.Backend.Services.Ai;
 using Nostos.Backend.Tests.Services.Ai;
 using Nostos.Backend.Tests.Support;
+using Nostos.Product.Services.Ai;
 using Nostos.Shared.Dtos;
 using Xunit;
 
@@ -119,6 +120,53 @@ public sealed class NoteProcessingEndpointTests : IClassFixture<LibraryEndpointF
         // The note and its transcript are untouched by the failure.
         var raw = await client.GetFromJsonAsync<NoteRawTranscriptDto>($"/api/notes/{note.Id}/raw");
         raw!.Content.Should().Be("raw words");
+    }
+
+    [Fact]
+    public async Task A_host_usage_refusal_during_reprocess_is_its_typed_status_and_calls_no_provider()
+    {
+        var provider = new FakeLlmProvider().Returns("SHOULD NOT BE USED");
+
+        using var host = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<ILlmProvider>();
+                services.AddSingleton<ILlmProvider>(provider);
+                services.RemoveAll<IAiUsageAccountingService>();
+                services.AddSingleton<IAiUsageAccountingService>(new RefusingUsageAccounting());
+            });
+        });
+        using var client = host.CreateClient();
+
+        var book = await CreateBookAsync(client);
+        var note = await CreateNoteAsync(client, book.Id, "raw words", "verbatim");
+
+        var response = await client.PostAsJsonAsync(
+            $"/api/notes/{note.Id}/reprocess", new { processingMode = "clarify" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+        (await ProblemTitleAsync(response)).Should().Be("ai_usage_limit_reached");
+        provider.CallCount.Should().Be(0);
+    }
+
+    private sealed class RefusingUsageAccounting : IAiUsageAccountingService
+    {
+        public Task<AiUsageLease?> BeginLlmTurnAsync(CancellationToken cancellationToken = default) =>
+            throw new AiUsageException(AiUsageBlockReason.LimitReached, "The monthly AI allowance is used.");
+
+        public Task CompleteLlmTurnAsync(
+            AiUsageLease? lease,
+            LlmProviderUsage usage,
+            CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task<AiUsageLease?> BeginSttAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<AiUsageLease?>(null);
+
+        public Task CompleteSttAsync(
+            AiUsageLease? lease,
+            TranscriptionUsage usage,
+            CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
     // ------------------------------------------------------------------

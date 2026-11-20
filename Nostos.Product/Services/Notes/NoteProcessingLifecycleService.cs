@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using Nostos.Backend.Data.Interfaces;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Services.Ai;
+using Nostos.Product.Services.Ai;
 using Nostos.Shared.Dtos;
 
 namespace Nostos.Backend.Services.Notes;
@@ -170,10 +171,11 @@ public sealed class NoteProcessingLifecycleService
             model.Content = result.Text;
             model.ProcessingMode = result.Mode;
         }
-        catch (LlmException ex)
+        catch (Exception ex) when (ex is LlmException or AiUsageException)
         {
-            // A thought is never lost to a provider failure: the raw transcript
-            // becomes the content and the stored mode says so honestly.
+            // A thought is never lost to a provider failure or a host usage
+            // limit: the raw transcript becomes the content and the stored mode
+            // says so honestly.
             _logger.LogWarning(
                 ex,
                 "Post-processing capture {NoteId} in mode {Mode} failed; keeping the raw transcript.",

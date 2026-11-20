@@ -304,7 +304,7 @@ public sealed class NostosProductCompositionTests
         AssertRegistered(services, typeof(IPortableImportPreparer), ServiceLifetime.Scoped);
 
         // Assistant
-        AssertRegistered(services, typeof(IThoughtProcessor), typeof(ThoughtProcessor), ServiceLifetime.Singleton);
+        AssertRegistered(services, typeof(IThoughtProcessor), typeof(ThoughtProcessor), ServiceLifetime.Scoped);
         AssertRegistered(services, typeof(AssistantChangesetStore), typeof(AssistantChangesetStore), ServiceLifetime.Singleton);
         AssertRegistered(services, typeof(IAssistantOwner), ServiceLifetime.Scoped);
         AssertRegistered(services, typeof(AssistantChangesetCoordinator), typeof(AssistantChangesetCoordinator), ServiceLifetime.Scoped);

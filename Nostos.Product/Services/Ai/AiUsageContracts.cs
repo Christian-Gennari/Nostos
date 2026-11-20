@@ -1,3 +1,5 @@
+using Nostos.Backend.Services.Ai;
+
 namespace Nostos.Product.Services.Ai;
 
 /// <summary>Provider-neutral usage categories exposed to host implementations.</summary>
@@ -41,7 +43,42 @@ public sealed class AiUsageException(AiUsageBlockReason reason, string message) 
     };
 }
 
-public sealed record AiUsageLease(Guid ReservationId, AiUsageKind Kind);
+public sealed record AiUsageLease(Guid ReservationId, AiUsageKind Kind)
+{
+    /// <summary>
+    /// The host's cost bound for the provider calls this LLM lease pays for, or
+    /// null when the host sets none (SelfHosted). When present, every provider
+    /// call under the lease asks it for an output-token limit first and reports
+    /// its completion afterwards, so a host whose reservation is a fixed amount
+    /// can keep the call's worst-case cost inside it (Nostos-Cloud issue 654).
+    /// </summary>
+    public ILlmCallBudget? LlmBudget { get; init; }
+}
+
+/// <summary>
+/// A host-owned cost bound for the provider calls of one metered LLM lease: one
+/// Ask Nostos turn (up to <c>Assistant:MaxToolIterations</c> calls with a
+/// growing conversation) or one note rewrite (a single call).
+///
+/// Product code never sees a price. It only asks, before each call, how many
+/// output tokens the call may produce, and reports each completion so the host
+/// can count what the lease has spent. A budget instance belongs to one lease
+/// and is used by one caller at a time.
+/// </summary>
+public interface ILlmCallBudget
+{
+    /// <summary>
+    /// The largest output-token limit for the call about to send
+    /// <paramref name="request"/> such that the lease's worst-case cost (the
+    /// calls already reported plus this one at its full input and this limit)
+    /// stays inside what the host reserved. Zero or less means the remaining
+    /// budget cannot pay for this call, and the caller must not send it.
+    /// </summary>
+    int MaxOutputTokens(LlmCompletionRequest request);
+
+    /// <summary>Reports a completed call's provider-reported usage.</summary>
+    void Record(LlmCompletion completion);
+}
 
 public sealed record LlmProviderUsage(
     int UpstreamRequestCount,
