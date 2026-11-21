@@ -168,6 +168,11 @@ function unexpectedConsoleErrors(errors: string[]): string[] {
       // scenario asserts the rendered surfaces after the reload, so a chunk
       // that actually failed to load still fails the run.
       !/error loading dynamically imported module/i.test(line) &&
+      // epub.js's view managers add a window "unload" listener to destroy the
+      // rendition. Chromium now blocks unload handlers by default and logs a
+      // permissions-policy violation; the app adds no unload listener itself,
+      // and the rendition is torn down with the page either way.
+      !/Permissions policy violation: unload is not allowed/i.test(line) &&
       !/\/api\/books\/[0-9a-f-]+\/locations\b/i.test(line) &&
       !/status of 404 .*\/api\/portability\/migration\/active-import\b/i.test(line) &&
       // Only the handled 409 re-review is expected; any other activation
