@@ -1,5 +1,6 @@
 using Nostos.Backend.Configuration;
 using Nostos.Backend.Integrations.Mcp;
+using Nostos.Backend.Middleware;
 using Nostos.Backend.Services.BookUpload;
 using Nostos.Backend.Services.ExternalMedia;
 using Nostos.Backend.Services.Library.Imports;
@@ -33,7 +34,12 @@ public static class DeploymentCapabilitiesEndpoints
                 services.GetService<ICalibreLibraryAvailability>(),
                 services.GetService<ICalibreUploadAvailability>(),
                 services.GetService<Nostos.Backend.Services.Carrel.CarrelSyncService>() is not null)))
-            .AllowAnonymous();
+            .AllowAnonymous()
+            // Configuration and service registrations only; it never opens the
+            // library database. A page reloaded during an activation cutover
+            // needs this answer to start and reattach to the run, so the
+            // maintenance gate must not turn it into a 503.
+            .WithMetadata(new LibraryMaintenanceMemorySafe());
         return routes;
     }
 
