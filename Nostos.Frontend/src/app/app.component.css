@@ -3,12 +3,13 @@
      Keep the values sparse so a surface can be inserted between roles without
      restarting the z-index arms race that caused the mobile assistant overlap.
 
-       floating control < navigation < backdrop < drawer < assistant < system
+       floating control < navigation < selection bar < backdrop < drawer < assistant < system
 
      These are geometry tokens, not theme tokens: every routed surface inherits
      them from app-root, including components rendered through router-outlet. */
   --layer-floating-control: 40;
   --layer-navigation: 50;
+  --layer-selection-bar: 55;
   --layer-backdrop: 60;
   --layer-drawer: 70;
   --layer-assistant: 80;

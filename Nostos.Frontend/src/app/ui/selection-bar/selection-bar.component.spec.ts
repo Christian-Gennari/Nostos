@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
@@ -83,5 +85,22 @@ describe('SelectionBarComponent', () => {
     close.click();
     fixture.detectChanges();
     expect(host.closes()).toBe(1);
+  });
+
+  it('sits above navigation and below modal backdrops in the stacking contract', () => {
+    const appCss = readFileSync(path.resolve(process.cwd(), 'src/app/app.component.css'), 'utf8');
+    const barTs = readFileSync(
+      path.resolve(process.cwd(), 'src/app/ui/selection-bar/selection-bar.component.ts'),
+      'utf8',
+    );
+    const layer = (token: string) => {
+      const match = appCss.match(new RegExp(`--layer-${token}:\\s*(\\d+)`));
+      return match ? Number(match[1]) : NaN;
+    };
+
+    expect(barTs).toContain('z-index: var(--layer-selection-bar)');
+    expect(barTs).not.toContain('var(--layer-system)');
+    expect(layer('selection-bar')).toBeGreaterThan(layer('navigation'));
+    expect(layer('selection-bar')).toBeLessThan(layer('backdrop'));
   });
 });
