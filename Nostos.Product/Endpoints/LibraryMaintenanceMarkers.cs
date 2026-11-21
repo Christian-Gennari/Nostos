@@ -14,8 +14,8 @@ namespace Nostos.Backend.Middleware;
 /// <item>for database work outside maintenance it takes its own short shared
 /// operation lease.</item>
 /// </list>
-/// Used by the activation request/status routes and the recovery list/status
-/// routes.
+/// Used by the activation request/status routes, the recovery list/status
+/// routes and the runtime capabilities route.
 /// </summary>
 public sealed class LibraryMaintenanceMemorySafe;
 

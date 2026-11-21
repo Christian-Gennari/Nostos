@@ -138,6 +138,18 @@ public sealed class TransferAdmissionRetryTests
         resets.Should().Be(1);
     }
 
+    [Fact]
+    public void Backoff_grows_per_attempt_and_adds_bounded_jitter()
+    {
+        var delay = TransferAdmissionRetry.RetryDelay;
+        var first = Enumerable.Range(0, 200).Select(_ => TransferAdmissionRetry.Backoff(1)).ToList();
+        var second = Enumerable.Range(0, 200).Select(_ => TransferAdmissionRetry.Backoff(2)).ToList();
+
+        first.Should().OnlyContain(wait => wait >= delay && wait < delay * 2);
+        second.Should().OnlyContain(wait => wait >= delay * 2 && wait < delay * 3);
+        first.Distinct().Count().Should().BeGreaterThan(1, "contenders must not retry in lockstep");
+    }
+
     private sealed class FakeDbException(string sqlState) : DbException
     {
         public override string? SqlState => sqlState;

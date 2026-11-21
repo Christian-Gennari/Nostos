@@ -61,6 +61,8 @@ public sealed class LibraryMaintenanceHostTests
             }
             (await client.GetAsync("/health/live")).StatusCode.Should().Be(HttpStatusCode.OK);
             (await client.GetAsync("/api/backup/progress")).StatusCode.Should().Be(HttpStatusCode.OK);
+            (await client.GetAsync("/api/runtime/capabilities")).StatusCode.Should().Be(
+                HttpStatusCode.OK, "a page reloaded during a cutover needs it to start and reattach");
         }
         (await client.GetAsync("/health/ready")).StatusCode.Should().Be(HttpStatusCode.OK);
     }

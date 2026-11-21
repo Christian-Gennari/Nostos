@@ -774,10 +774,18 @@ internal static class TransferAdmissionRetry
                 attempt < MaxAttempts && IsTransientContention(exception))
             {
                 onRetry();
-                await wait(RetryDelay * attempt, ct);
+                await wait(Backoff(attempt), ct);
             }
         }
     }
+
+    /// <summary>
+    /// Linear backoff plus up to one <see cref="RetryDelay"/> of random jitter.
+    /// Two admissions that conflict once would otherwise wait exactly as long
+    /// as each other and conflict again on every retry.
+    /// </summary>
+    internal static TimeSpan Backoff(int attempt) =>
+        RetryDelay * attempt + RetryDelay * Random.Shared.NextDouble();
 
     /// <summary>
     /// SQLite 5/6 (busy/locked) and PostgreSQL 40001/40P01
