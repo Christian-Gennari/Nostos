@@ -89,6 +89,6 @@
     "vitest": "^5.1.0"
   },
   "overrides": {
-    "@xmldom/xmldom": "0.8.13"
+    "@xmldom/xmldom": "0.8.15"
   }
 }
