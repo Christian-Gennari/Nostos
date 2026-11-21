@@ -7,6 +7,13 @@ import { DeleteWritingCopy } from './move-writing.helpers';
   standalone: true,
   imports: [ConfirmModal],
   changeDetection: ChangeDetectionStrategy.OnPush,
+  styles: [
+    `
+      :host {
+        display: contents;
+      }
+    `,
+  ],
   template: `
     <app-confirm-modal
       [isOpen]="isOpen()"

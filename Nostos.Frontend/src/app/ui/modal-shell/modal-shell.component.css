@@ -20,6 +20,7 @@
    `--modal-head-padding` and `--modal-card-padding`. */
 
 :host {
+  display: contents;
   --modal-head-padding: 1.25rem 1.5rem;
   --modal-card-padding: 0;
   /* Bound inline from this component's inputs. Declared here as well so the

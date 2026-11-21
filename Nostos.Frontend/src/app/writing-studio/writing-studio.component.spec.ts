@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import process from 'node:process';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, input, output, Input, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
@@ -3626,5 +3629,147 @@ describe('WritingStudio architecture guarantees (#1615)', () => {
     expect(listSubject.observed).toBe(false);
     expect(document.body.classList.contains('nostos-zen')).toBe(false);
     expect(document.body.classList.contains('nostos-studio-typing')).toBe(false);
+  });
+});
+
+describe('WritingStudio layout grid guarantees (#1775)', () => {
+  let fixture: ComponentFixture<WritingStudio>;
+  let component: WritingStudio;
+  let globalStyleEl: HTMLStyleElement;
+
+  const sampleDoc: WritingContentDto = {
+    id: 'd1',
+    name: 'Draft',
+    content: 'Some manuscript words.',
+    updatedAt: '2026-01-01T00:00:00Z',
+  };
+
+  beforeEach(async () => {
+    overrideStudioComponents();
+    globalStyleEl = document.createElement('style');
+    globalStyleEl.textContent = readFileSync(path.resolve(process.cwd(), 'src/styles.css'), 'utf-8');
+    document.head.appendChild(globalStyleEl);
+
+    await TestBed.configureTestingModule({
+      imports: [WritingStudio],
+      providers: [
+        {
+          provide: WritingsService,
+          useValue: {
+            list: vi.fn(() =>
+              of([{ id: 'd1', name: 'Draft', type: 'Document', parentId: null, updatedAt: '2026-01-01T00:00:00Z' }]),
+            ),
+            get: vi.fn(() => of(sampleDoc)),
+            create: vi.fn(() => of({})),
+            update: vi.fn(() => of({})),
+            delete: vi.fn(() => of({})),
+            move: vi.fn(() => of({})),
+            listSources: vi.fn(() => of([])),
+            addSource: vi.fn(() => of({})),
+            removeSource: vi.fn(() => of({})),
+            getPageSetup: vi.fn(() => of(null)),
+            savePageSetup: vi.fn(() => of({})),
+          },
+        },
+        { provide: ToastService, useValue: { error: vi.fn(), success: vi.fn(), info: vi.fn(), show: vi.fn() } },
+        { provide: StarterDraftService, useValue: starterStub() },
+        { provide: TopicsService, useValue: { list: vi.fn(() => of([])), get: vi.fn(() => of({ notes: [] })) } },
+        { provide: BooksService, useValue: { list: vi.fn(() => of({ items: [] })) } },
+        { provide: NotesService, useValue: { list: vi.fn(() => of([])), getMany: vi.fn(() => of([])) } },
+        { provide: AssistantLauncherService, useValue: { available: signal(false) } },
+      ],
+    }).compileComponents();
+
+    localStorage.clear();
+    fixture = TestBed.createComponent(WritingStudio);
+    component = fixture.componentInstance;
+    component.rootItems.set([
+      { id: 'd1', name: 'Draft', type: 'Document', parentId: null, updatedAt: '2026-01-01T00:00:00Z' },
+    ]);
+    component.activeItem.set(sampleDoc);
+    component.editorTitle.set(sampleDoc.name);
+    component.editorText.set(sampleDoc.content);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  });
+
+  afterEach(() => {
+    fixture?.destroy();
+    globalStyleEl?.remove();
+    document.body.classList.remove('nostos-zen');
+    document.documentElement.classList.remove('nostos-scroll-locked');
+  });
+
+  function assertNonGridElement(el: HTMLElement, contextLabel: string): void {
+    const cs = getComputedStyle(el);
+    const allowed = cs.display === 'contents' || cs.display === 'none' || cs.position === 'fixed';
+    expect(
+      allowed,
+      `${contextLabel}: <${el.tagName.toLowerCase()} class="${el.className}"> must be display:contents, display:none, or position:fixed (got display=${cs.display}, position=${cs.position})`,
+    ).toBe(true);
+
+    if (cs.display === 'contents') {
+      for (const nested of Array.from(el.children) as HTMLElement[]) {
+        assertNonGridElement(nested, `${contextLabel} > ${el.tagName.toLowerCase()}`);
+      }
+    }
+  }
+
+  function assertStudioGridChildren(contextLabel: string): void {
+    const layout = fixture.nativeElement.querySelector('.studio-layout') as HTMLElement;
+    expect(layout).toBeTruthy();
+    const layoutChildren = Array.from(layout.children) as HTMLElement[];
+    const nonTrackChildren = layoutChildren.filter(
+      (child) =>
+        !child.matches('main.editor-pane, aside.sidebar-left, aside.sidebar-right'),
+    );
+    expect(nonTrackChildren.length).toBeGreaterThan(0);
+    for (const child of nonTrackChildren) {
+      assertNonGridElement(child, contextLabel);
+    }
+  }
+
+  it('keeps every direct child of .studio-layout except the editor pane and sidebars out of grid flow across all overlay states', () => {
+    assertStudioGridChildren('document open (default)');
+
+    component.pendingDelete.set('d1');
+    fixture.detectChanges();
+    assertStudioGridChildren('delete modal open');
+    component.pendingDelete.set(null);
+
+    component.saveConflict.set({
+      theirs: { ...sampleDoc, content: 'Newer' },
+      title: sampleDoc.name,
+      content: sampleDoc.content,
+    });
+    fixture.detectChanges();
+    assertStudioGridChildren('save conflict modal open');
+    component.saveConflict.set(null);
+
+    component.pageSettingsOpen.set(true);
+    fixture.detectChanges();
+    assertStudioGridChildren('page settings open');
+    component.pageSettingsOpen.set(false);
+
+    component.exportOpen.set(true);
+    fixture.detectChanges();
+    assertStudioGridChildren('export dialog open');
+    component.exportOpen.set(false);
+
+    component.moveOpen.set(true);
+    fixture.detectChanges();
+    assertStudioGridChildren('move dialog open');
+    component.moveOpen.set(false);
+
+    component.shortcutsOpen.set(true);
+    fixture.detectChanges();
+    assertStudioGridChildren('shortcuts modal open');
+    component.shortcutsOpen.set(false);
+
+    component.enterZen();
+    fixture.detectChanges();
+    assertStudioGridChildren('zen mode active');
+    component.exitZen();
   });
 });
