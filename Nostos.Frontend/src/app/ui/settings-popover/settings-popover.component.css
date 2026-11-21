@@ -1,6 +1,10 @@
 /* The settings panel (nostos-settings-popover). It renders in the CDK
    overlay, so these rules are global. The pane is a column, so the panel
    scrolls inside it once the overlay caps the pane at the viewport. */
+nostos-settings-popover {
+  display: contents;
+}
+
 .nostos-settings-popover-pane {
   display: flex;
   flex-direction: column;

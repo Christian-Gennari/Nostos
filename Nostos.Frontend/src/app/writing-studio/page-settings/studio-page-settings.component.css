@@ -1,3 +1,7 @@
+:host {
+  display: contents;
+}
+
 /* The page settings (issues #1041, #1060). The surface, its place under the
    Aa button, its width and the phone sheet are nostos-settings-popover's
    (issue #1201); this file lays out the rows inside it. */

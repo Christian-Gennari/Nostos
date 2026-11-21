@@ -50,6 +50,10 @@ export type ModalShellVariant = 'sheet' | 'dialog';
  *
  * Only the body scrolls, so the close control and the primary action stay
  * reachable however long the content is.
+ *
+ * Wrapper components whose host only renders `<app-modal-shell>` should declare
+ * `:host { display: contents; }` so the wrapper never introduces an extra box
+ * when placed inside a CSS grid or flex container.
  */
 @Component({
   selector: 'app-modal-shell',
