@@ -78,7 +78,7 @@ import { IconButtonComponent } from '../icon-button/icon-button.component';
         position: fixed;
         left: 50%;
         bottom: calc(var(--dock-float-bottom) + var(--dock-rail-h) + 16px);
-        z-index: var(--layer-system);
+        z-index: var(--layer-selection-bar);
         display: block;
         max-width: calc(100vw - 2rem);
         transform: translateX(-50%);
