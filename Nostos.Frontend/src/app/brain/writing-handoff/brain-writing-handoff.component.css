@@ -10,8 +10,14 @@
   overflow: hidden;
 }
 
-:host ::ng-deep .modal-card.handoff-dialog.is-sheet .modal-head.is-divided {
-  padding: 0;
+/* The 40px icon tile sets this header's height; centre the 32px close button
+   with the tile and title rather than anchoring it to the top edge. */
+:host ::ng-deep .handoff-dialog .modal-head.has-close {
+  align-items: center;
+}
+
+:host ::ng-deep .handoff-dialog .modal-close {
+  margin-block: 0;
 }
 
 .handoff-header {
@@ -237,10 +243,6 @@
 
 
 @media (max-width: 768px) {
-  .handoff-header {
-    padding: 0.9rem 1rem;
-  }
-
   .handoff-content {
     padding: 1rem;
   }
@@ -256,7 +258,7 @@
     max-height: 100dvh;
   }
 
-  .handoff-header {
+  :host ::ng-deep .modal-card.handoff-dialog.is-sheet .modal-head {
     padding: 0.5rem 0.85rem;
   }
 
