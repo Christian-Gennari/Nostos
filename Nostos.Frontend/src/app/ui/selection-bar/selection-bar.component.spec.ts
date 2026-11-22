@@ -13,6 +13,7 @@ import { SelectionBarComponent } from './selection-bar.component';
     <nostos-selection-bar
       [count]="count()"
       label="Selected notes"
+      [note]="note()"
       (closed)="closes.set(closes() + 1)"
     >
       <button
@@ -34,6 +35,7 @@ import { SelectionBarComponent } from './selection-bar.component';
 })
 class SelectionBarHarnessComponent {
   readonly count = signal(0);
+  readonly note = signal<string | null>(null);
   readonly closes = signal(0);
 }
 
@@ -43,6 +45,8 @@ describe('SelectionBarComponent', () => {
   const bar = () => fixture.nativeElement.querySelector('.selection-bar') as HTMLElement;
   const count = () => bar().querySelector('.selection-count') as HTMLElement;
   const actions = () => Array.from(bar().querySelectorAll('.selection-action')) as HTMLButtonElement[];
+  const barSource = () =>
+    readFileSync(path.resolve(process.cwd(), 'src/app/ui/selection-bar/selection-bar.component.ts'), 'utf8');
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({ imports: [SelectionBarHarnessComponent] }).compileComponents();
@@ -87,12 +91,53 @@ describe('SelectionBarComponent', () => {
     expect(host.closes()).toBe(1);
   });
 
+  it('keeps the actions on one row, with no note, when the caller passes none', () => {
+    const primary = bar().querySelector('.selection-primary') as HTMLElement;
+    expect(primary).not.toBeNull();
+    expect(primary.contains(count())).toBe(true);
+    expect(primary.contains(bar().querySelector('.selection-actions'))).toBe(true);
+    expect(primary.contains(bar().querySelector('.selection-close'))).toBe(true);
+
+    // Nothing else shares the bar with the action row: there is no second line.
+    expect(bar().children).toHaveLength(1);
+    expect(bar().querySelector('.selection-note')).toBeNull();
+
+    // The bar must never wrap its children into rows; at 390px three actions
+    // and the close control fit one row, and a note may not change that.
+    expect(barSource()).not.toContain('flex-wrap: wrap');
+  });
+
+  it('shows the note on its own line under the actions', () => {
+    host.note.set('Select at most 500 topics at once.');
+    fixture.detectChanges();
+
+    const note = bar().querySelector('.selection-note') as HTMLElement;
+    expect(note.textContent?.trim()).toBe('Select at most 500 topics at once.');
+    expect(note.getAttribute('role')).toBe('alert');
+    expect(note.id).toBe('selection-bar-note');
+
+    // The note is a sibling of the action row, not one of its flex items, so
+    // the actions stay on their row and the note takes the line below them.
+    expect(note.parentElement).toBe(bar());
+    expect(note.closest('.selection-primary')).toBeNull();
+    expect(note.previousElementSibling?.classList.contains('selection-primary')).toBe(true);
+    expect(bar().children).toHaveLength(2);
+  });
+
+  it('removes the note again when the caller clears it', () => {
+    host.note.set('Select at most 500 topics at once.');
+    fixture.detectChanges();
+    expect(bar().querySelector('.selection-note')).not.toBeNull();
+
+    host.note.set(null);
+    fixture.detectChanges();
+    expect(bar().querySelector('.selection-note')).toBeNull();
+    expect(bar().children).toHaveLength(1);
+  });
+
   it('sits above navigation and below modal backdrops in the stacking contract', () => {
     const appCss = readFileSync(path.resolve(process.cwd(), 'src/app/app.component.css'), 'utf8');
-    const barTs = readFileSync(
-      path.resolve(process.cwd(), 'src/app/ui/selection-bar/selection-bar.component.ts'),
-      'utf8',
-    );
+    const barTs = barSource();
     const layer = (token: string) => {
       const match = appCss.match(new RegExp(`--layer-${token}:\\s*(\\d+)`));
       return match ? Number(match[1]) : NaN;
