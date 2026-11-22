@@ -1,5 +1,5 @@
 /**
- * A book the user wants to read and does not have yet. Not a library book: it
+ * A book the user wants to read, owned or not yet. Not a library book: it
  * has no format, no file and no reading state.
  */
 export interface ReadingListEntry {

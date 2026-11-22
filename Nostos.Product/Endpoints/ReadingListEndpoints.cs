@@ -5,7 +5,8 @@ using Nostos.Shared.Dtos;
 namespace Nostos.Backend.Endpoints;
 
 /// <summary>
-/// The reading list: books the user wants to read and does not have yet.
+/// The reading list: books the user wants to read, whether or not they own
+/// them yet.
 /// </summary>
 public static class ReadingListEndpoints
 {

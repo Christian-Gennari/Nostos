@@ -828,7 +828,7 @@ collection still has child collections.
 
 ## Reading List — `/api/reading-list`
 
-Books the user wants to read and does not have yet, implemented by
+Books the user wants to read, whether or not they own them yet, implemented by
 [`ReadingListEndpoints`](../Nostos.Product/Endpoints/ReadingListEndpoints.cs).
 "Next up" is an ordered shelf; everything not on it is "Someday". The list is
 returned whole, so its ceiling is a hard 2000 entries (`409 reading_list_full`

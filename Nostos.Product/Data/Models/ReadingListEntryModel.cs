@@ -3,7 +3,7 @@ using System.ComponentModel.DataAnnotations;
 namespace Nostos.Backend.Data.Models;
 
 /// <summary>
-/// A book the user wants to read and does not have yet.
+/// A book the user wants to read, whether or not they own it yet.
 ///
 /// Deliberately NOT a <see cref="BookModel"/>: a wish has no format, no file
 /// and no reading state, and the library means "books I have". Keeping wishes
