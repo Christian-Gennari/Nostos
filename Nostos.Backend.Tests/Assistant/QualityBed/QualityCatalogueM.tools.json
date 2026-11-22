@@ -4,7 +4,7 @@
     {
       "name": "add_book",
       "title": "Add a book to the library",
-      "description": "Adds a book to the user's library from the details you give: a paper book by default, or an ebook or audiobook entry without its file. Use it only when the user asks to add a book. Nostos looks nothing up elsewhere, so pass the details you have. A book already in the library (same ISBN, or same title and author) comes back with `duplicate: true` and no second copy is made. When Nostos cannot tell, it returns `candidates` and adds nothing: ask the user, then call again with `confirmedBookId` or `forceCreate: true`. A matching entry on To read moves to the library, and its reason stays as a note on the book.",
+      "description": "Adds a book to the user's library from the details you give: a paper book by default, or an ebook or audiobook entry without its file. Use it only when the user asks to add a book. Nostos looks nothing up elsewhere, so pass the details you have. A book already in the library (same ISBN, or same title and author) comes back with `duplicate: true` and no second copy is made. When Nostos cannot tell, it returns `candidates` and adds nothing: ask the user, then call again with `confirmedBookId` or `forceCreate: true`. A To read entry for a book this call adds moves to the library, and its reason stays as a note on the book. An entry that was already in the library before the call stays on To read and comes back in `onToRead`.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
@@ -137,7 +137,7 @@
     {
       "name": "add_to_reading_list",
       "title": "Put a book on To read",
-      "description": "Puts a book the user wants to read on their To read list. A book already there is not added twice. Check `list_books` first if they may own it.",
+      "description": "Puts a book the user wants to read on their To read list. A book already there is not added twice. A book they already own may go on the list too: the entry comes back with `ownedBookId` set.",
       "annotations": {
         "readOnlyHint": false,
         "destructiveHint": false,
@@ -682,7 +682,7 @@
     {
       "name": "reading_list",
       "title": "To read",
-      "description": "The books the user wants to read but does not have yet: Next up first, then the rest.",
+      "description": "The books the user wants to read, whether or not they own them yet: Next up first, then the rest. An entry with `ownedBookId` is already in the library (that book's id); the user keeps it on To read until they take it off the list.",
       "annotations": {
         "readOnlyHint": true,
         "destructiveHint": null,

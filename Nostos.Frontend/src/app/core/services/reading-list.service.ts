@@ -4,7 +4,7 @@ import { Observable, map, tap } from 'rxjs';
 import { ReadingListEntry, SaveReadingListEntry } from '../dtos/reading-list.dtos';
 
 /**
- * The reading list: books the user wants and does not have yet.
+ * The reading list: books the user wants to read, owned or not yet.
  *
  * The list is small and returned whole, so this service holds it as one signal
  * that the page and the library sidebar's count both read. Every write answers

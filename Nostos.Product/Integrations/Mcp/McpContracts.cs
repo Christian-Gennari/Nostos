@@ -162,7 +162,8 @@ public sealed record McpDeletedNote(
 /// <summary>
 /// What <c>add_book</c> did: <c>created</c>, <c>matched</c> (already in the
 /// library, <c>duplicate</c> true) or <c>choose</c> (nothing added; the
-/// <c>candidates</c> may be the same book).
+/// <c>candidates</c> may be the same book). <c>OnToRead</c> lists the entries
+/// for this book that were already in the library and so stay on To read.
 /// </summary>
 public sealed record McpAddedBook(
     string Outcome,
@@ -170,12 +171,16 @@ public sealed record McpAddedBook(
     McpBookSummary? Book,
     IReadOnlyList<McpMovedFromToRead>? MovedFromToRead,
     IReadOnlyList<McpBookCandidate>? Candidates,
-    string? Message);
+    string? Message,
+    IReadOnlyList<McpOnToRead>? OnToRead = null);
 
 public sealed record McpBookCandidate(Guid Id, string Title, string? Author, string? Isbn, string Url);
 
 /// <summary>A To read entry that moved to the library; <c>ReasonKeptAsNote</c> when its why or recommender is now a note on the book.</summary>
 public sealed record McpMovedFromToRead(Guid EntryId, string Title, bool ReasonKeptAsNote);
+
+/// <summary>A To read entry for a book the user already owned, left on the list; <c>Shelf</c> is <c>next</c> or <c>someday</c>.</summary>
+public sealed record McpOnToRead(Guid EntryId, string Title, string Shelf);
 
 /// <summary>What <c>update_book</c> changed, kept and left, and the arguments that undo it.</summary>
 public sealed record McpUpdatedBook(

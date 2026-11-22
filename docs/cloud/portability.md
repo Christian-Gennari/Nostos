@@ -344,7 +344,7 @@ This is an explicit provider-independent representation, not an EF entity graph.
 - Writing Studio documents and folder hierarchy;
 - writing/note links (`WritingNotes`, introduced in DataVersion 2);
 - remembered e-reader book mappings (`NoteImportBookLinks`, introduced in DataVersion 3);
-- the reading list of books the user wants and does not have yet (`ReadingListEntries`, introduced in DataVersion 5);
+- the reading list of books the user wants to read, owned or not yet (`ReadingListEntries`, introduced in DataVersion 5);
 - generic acquisition provenance and assistant capture-processing preference.
 
 ## Data classification

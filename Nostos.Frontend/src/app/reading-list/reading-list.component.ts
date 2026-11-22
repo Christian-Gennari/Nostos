@@ -54,7 +54,8 @@ function asIsbn(typed: string): string | null {
 }
 
 /**
- * The reading list: books the user wants to read and does not have yet.
+ * The reading list: books the user wants to read, whether or not they own
+ * them yet.
  *
  * Two tiers. "Next up" is a short shelf in reading order; "Someday" is
  * everything else, newest first, with no order to keep. Adding takes a title

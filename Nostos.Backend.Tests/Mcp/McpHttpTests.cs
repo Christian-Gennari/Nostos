@@ -672,6 +672,42 @@ public sealed class McpHttpTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Adding_a_book_the_user_already_owns_and_keeps_on_To_read_leaves_the_entry_there()
+    {
+        var owned = await CreateBookAsync("Time and Free Will", "Henri Bergson", "1889");
+        var listed = await CallAsync("add_to_reading_list", new()
+        {
+            ["title"] = "Time and Free Will",
+            ["author"] = "Henri Bergson",
+            ["why"] = "Before Matter and Memory.",
+            ["readNext"] = true,
+        });
+        var entryId = listed.GetProperty("entry").GetProperty("id").GetGuid();
+        listed.GetProperty("entry").GetProperty("ownedBookId").GetGuid().Should().Be(owned);
+
+        var matched = await CallAsync("add_book", new() { ["title"] = "Time and Free Will", ["author"] = "Henri Bergson" });
+
+        matched.GetProperty("outcome").GetString().Should().Be("matched");
+        matched.GetProperty("book").GetProperty("id").GetGuid().Should().Be(owned);
+        matched.TryGetProperty("movedFromToRead", out _).Should().BeFalse();
+        var kept = matched.GetProperty("onToRead").EnumerateArray().Should().ContainSingle().Subject;
+        kept.GetProperty("entryId").GetGuid().Should().Be(entryId);
+        kept.GetProperty("shelf").GetString().Should().Be("next");
+        matched.GetProperty("message").GetString().Should().Contain("To read");
+
+        // A separate copy made on purpose does not take the entry off either.
+        var separate = await CallAsync("add_book", new() { ["title"] = "Time and Free Will", ["author"] = "Henri Bergson", ["forceCreate"] = true });
+        separate.GetProperty("outcome").GetString().Should().Be("created");
+        separate.TryGetProperty("movedFromToRead", out _).Should().BeFalse();
+
+        var list = await CallAsync("reading_list", new());
+        list.GetProperty("total").GetInt32().Should().Be(1);
+        list.GetProperty("entries")[0].GetProperty("id").GetGuid().Should().Be(entryId);
+        await using var db = await Contexts().CreateDbContextAsync();
+        (await db.Notes.CountAsync(n => n.Content.Contains("Before Matter and Memory."))).Should().Be(0, "the reason only moves to a book when the entry leaves the list");
+    }
+
+    [Fact]
     public async Task A_title_alone_that_may_be_another_book_adds_nothing_and_offers_the_candidates()
     {
         var existing = await CreateBookAsync("Austerlitz", "W. G. Sebald", "2001");
