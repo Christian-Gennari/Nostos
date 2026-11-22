@@ -32,6 +32,15 @@
         routerLink="/brain/kinds"
         [queryParams]="{ filter: 'untyped' }"
       >Sort them</a>
+      @if (assistantAvailable()) {
+      <button
+        appChip
+        type="button"
+        class="map-legend-sort map-legend-ask"
+        (click)="sortWithAssistant.emit()"
+        data-testid="map-legend-sort-with-assistant"
+      >Sort them with Ask Nostos</button>
+      }
     </span>
     } @else {
     <button

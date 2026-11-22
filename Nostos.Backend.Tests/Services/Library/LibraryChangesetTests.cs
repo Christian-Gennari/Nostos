@@ -561,7 +561,9 @@ public sealed class LibraryChangesetTests : IClassFixture<SqliteTestFixture>
                 new CollectionSnapshot(h.Russian, new CollectionState("Russian", h.Fiction), new CollectionState("Russian", recreatedFictionId)),
             ],
             Memberships: [],
-            Books: []);
+            Books: [],
+            TopicKinds: [],
+            TopicKindAssignments: []);
 
         var reverted = await h.Service.RevertAsync(undo);
 

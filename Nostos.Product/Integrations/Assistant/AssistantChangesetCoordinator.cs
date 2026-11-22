@@ -229,7 +229,7 @@ public sealed class AssistantChangesetCoordinator(
     // ------------------------------------------------------------------
 
     private static readonly LibraryChangesetDiffDto EmptyDiff =
-        new([], [], [], new LibraryChangesetCountsDto(0, 0, 0, 0, 0, 0, 0, 0));
+        new([], [], [], new LibraryChangesetCountsDto(0, 0, 0, 0, 0, 0, 0, 0), [], []);
 
     private AssistantChangesetActionResponse? Find(
         string? changesetId,
@@ -262,8 +262,34 @@ public sealed class AssistantChangesetCoordinator(
         return result;
     }
 
-    private static List<LibraryChangeOp> Included(StoredAssistantChangeset changeset, HashSet<int> excluded) =>
-        changeset.Steps.Where((_, index) => !excluded.Contains(index)).Select(s => s.Op).ToList();
+    private static List<LibraryChangeOp> Included(StoredAssistantChangeset changeset, HashSet<int> excluded)
+    {
+        var included = changeset.Steps.Where((_, index) => !excluded.Contains(index)).Select(s => s.Op).ToList();
+
+        // A kind the changeset creates is only there for the topics it
+        // classifies. When the reader unticks every topic of a new kind, the
+        // kind itself goes too; a kind staged on its own stays.
+        var allCreated = changeset.Steps.Select(step => step.Op).OfType<CreateTopicKindOp>()
+            .Select(op => op.Ref)
+            .ToHashSet(StringComparer.Ordinal);
+        if (allCreated.Count == 0)
+            return included;
+
+        var usedEverywhere = changeset.Steps.Select(step => step.Op).OfType<SetTopicKindOp>()
+            .Where(op => op.Kind?.Ref is not null)
+            .Select(op => op.Kind!.Value.Ref!)
+            .ToHashSet(StringComparer.Ordinal);
+        var usedNow = included.OfType<SetTopicKindOp>()
+            .Where(op => op.Kind?.Ref is not null)
+            .Select(op => op.Kind!.Value.Ref!)
+            .ToHashSet(StringComparer.Ordinal);
+
+        return included
+            .Where(op => op is not CreateTopicKindOp createKind
+                || !usedEverywhere.Contains(createKind.Ref)
+                || usedNow.Contains(createKind.Ref))
+            .ToList();
+    }
 
     private static AssistantChangesetActionResponse Ok(StoredAssistantChangeset changeset) =>
         new(true, null, null, changeset.ToDto(), []);

@@ -7,6 +7,7 @@ import { catchError, map, of, startWith, switchMap } from 'rxjs';
 
 import { NotesService } from '../core/services/notes.service';
 import type { TopicDto } from '../core/services/topics.service';
+import { AssistantService } from '../ui/assistant/assistant.service';
 import { ButtonComponent } from '../ui/button/button.component';
 import { InputDirective } from '../ui/form-control/form-control.directive';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
@@ -80,6 +81,10 @@ export class BrainMapPage {
   private readonly router = inject(Router);
   private readonly notes = inject(NotesService);
   readonly state = inject(BrainStateService);
+  private readonly assistant = inject(AssistantService);
+
+  /** The untyped row offers Ask Nostos only when a provider is configured. */
+  readonly assistantAvailable = computed(() => this.assistant.surfaceAvailable());
 
   private readonly map = viewChild(TopicMapComponent);
   private readonly controlsTrigger = viewChild<ElementRef<HTMLElement>>('mapControlsTrigger');
@@ -272,6 +277,19 @@ export class BrainMapPage {
       queryParamsHandling: 'merge',
     });
   }
+
+  /**
+   * The legend's "Sort them with Ask Nostos" opens the composed request in the
+   * composer, visible and editable; it is never sent on the reader's behalf.
+   */
+  sortUnkindedWithAssistant(): void {
+    if (!this.assistant.surfaceAvailable()) return;
+    this.assistant.updateDraft(BrainMapPage.SORT_UNKINDED_REQUEST);
+    this.assistant.requestSurfaceOpen();
+  }
+
+  static readonly SORT_UNKINDED_REQUEST =
+    'Give a kind to my topics that have none. Use the kinds I have; propose a new kind only if many topics need it.';
 
   openTopic(topicId: string | null = this.focus()): void {
     if (topicId) void this.router.navigate(['/brain/topics', topicId]);

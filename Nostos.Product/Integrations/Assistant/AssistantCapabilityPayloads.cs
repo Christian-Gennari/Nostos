@@ -91,7 +91,9 @@ internal static class AssistantCapabilityPayloads
 
     /// <summary>The topics <c>topics_list</c> / <c>topics_search</c> answered with.</summary>
     public static IReadOnlyList<TopicDto>? ReadTopics(JsonElement? data) =>
-        Read<List<TopicDto>>(data);
+        // topics_list answers with one page; topics_search still answers with a
+        // bare array. Both are a topic read for the proposal-evidence rule.
+        Read<TopicPageDto>(data)?.Items ?? Read<List<TopicDto>>(data);
 
     /// <summary>The topic ids those rows name, skipping a row that named none.</summary>
     public static IEnumerable<Guid> ReadTopicIds(JsonElement? data) =>

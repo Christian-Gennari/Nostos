@@ -24,8 +24,34 @@
   }
 
   @if (inReview()) {
+  @if (kindGroups().length) {
+  <ul class="changeset__kind-groups" data-testid="assistant-changeset-kind-groups">
+    @for (group of kindGroups(); track group.key) {
+    <li class="changeset__kind-group" [class.changeset__kind-group--off]="!group.included">
+      <label class="changeset__kind-head">
+        <input
+          type="checkbox"
+          appCheckbox
+          [checked]="group.included"
+          [disabled]="disabled() || group.stepIndexes.length === 0"
+          (change)="toggleKindGroup(group, $event)"
+          data-testid="assistant-changeset-kind-toggle"
+        />
+        @if (group.color) {
+        <span class="changeset__kind-swatch" aria-hidden="true" [style.background]="group.color"></span>
+        }
+        <span class="changeset__kind-name">{{ group.name }}</span>
+        <span class="changeset__kind-count">({{ group.topics.length }})</span>
+        @if (group.isNew) {<span class="changeset__kind-new">New</span>}
+      </label>
+      <p class="changeset__kind-topics">{{ groupPreview(group) }}</p>
+    </li>
+    }
+  </ul>
+  }
+  @if (otherSteps().length) {
   <ol class="changeset__steps" data-testid="assistant-changeset-steps">
-    @for (step of changeset().steps; track step.index) {
+    @for (step of otherSteps(); track step.index) {
     <li class="changeset__step" [class.changeset__step--off]="!step.included">
       @if (changeset().steps.length > 1) {
       <label class="changeset__step-control">
@@ -46,6 +72,7 @@
     }
   </ol>
   }
+  }
 
   @if (hasDetails()) {
   <button
@@ -63,6 +90,43 @@
 
   @if (detailsOpen()) {
   <div class="changeset__details" data-testid="assistant-changeset-details">
+    @if (kindGroups().length) {
+    <section class="changeset__group">
+      <h4>Topics</h4>
+      @for (group of kindGroups(); track group.key) {
+      <div class="changeset__kind-detail">
+        <p class="changeset__kind-detail-head">
+          @if (group.color) {
+          <span class="changeset__kind-swatch" aria-hidden="true" [style.background]="group.color"></span>
+          }
+          <span>{{ group.name }}</span>
+          <span class="changeset__kind-count">({{ group.topics.length }})</span>
+          @if (group.isNew) {<span class="changeset__kind-new">New</span>}
+        </p>
+        <ul>
+          @for (topic of group.topics; track topic.topicId) {
+          <li>
+            <label class="changeset__topic-control">
+              <input
+                type="checkbox"
+                appCheckbox
+                [checked]="topicIncluded(topic.stepIndex)"
+                [disabled]="disabled() || topic.stepIndex === null"
+                (change)="toggleKindTopic(topic.stepIndex, $event)"
+                [attr.data-testid]="'assistant-changeset-topic-toggle'"
+              />
+              <span>{{ topic.topicName }}</span>
+              @if (topic.previousKindName) {
+              <span class="changeset__note"> · was {{ topic.previousKindName }}</span>
+              }
+            </label>
+          </li>
+          }
+        </ul>
+      </div>
+      }
+    </section>
+    }
     @if (collectionLines().length) {
     <section class="changeset__group">
       <h4>Collections</h4>

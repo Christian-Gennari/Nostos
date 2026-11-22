@@ -136,6 +136,8 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
    * `kindPickerRequested`.
    */
   @Input() kindPickerEnabled = false;
+  /** An AI provider is configured, so the untyped row offers Ask Nostos. */
+  @Input() assistantAvailable = false;
 
   @Output() readonly cameraKept = new EventEmitter<MapCamera>();
   @Output() readonly topicSelected = new EventEmitter<string>();
@@ -146,6 +148,8 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
   @Output() readonly scopeInfo = new EventEmitter<MapScopeInfo>();
   @Output() readonly kindToggled = new EventEmitter<string>();
   @Output() readonly clearKindFilter = new EventEmitter<void>();
+  /** The reader asked Ask Nostos to sort the topics that have no kind. */
+  @Output() readonly sortWithAssistant = new EventEmitter<void>();
   /** Asks the page to open the kind picker for this topic (wired by #1769). */
   @Output() readonly kindPickerRequested = new EventEmitter<{ topicId: string; kindId: string | null }>();
 

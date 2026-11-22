@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Data;
+using Nostos.Backend.Data.Interfaces;
 using Nostos.Backend.Data.Models;
+using Nostos.Backend.Data.Repositories;
 using Nostos.Shared.Dtos;
 
 namespace Nostos.Backend.Services.Library;
@@ -46,7 +48,10 @@ public sealed class LibraryChangesetService(
         return await mutations.RunInTransactionAsync<LibraryChangesetResult>(async (db, token) =>
         {
             var editedBookIds = ops.OfType<UpdateBookOp>().Select(op => op.BookId).ToHashSet();
-            var before = await LibraryChangesetDiff.SnapshotAsync(db, editedBookIds, token);
+            var editedTopicIds = ops.OfType<SetTopicKindOp>()
+                .SelectMany(op => op.TopicIds)
+                .ToHashSet();
+            var before = await LibraryChangesetDiff.SnapshotAsync(db, editedBookIds, editedTopicIds, token);
 
             var refs = new Dictionary<string, Guid>(StringComparer.Ordinal);
             for (var index = 0; index < ops.Count; index++)
@@ -60,7 +65,7 @@ public sealed class LibraryChangesetService(
                 }
             }
 
-            var after = await LibraryChangesetDiff.SnapshotAsync(db, editedBookIds, token);
+            var after = await LibraryChangesetDiff.SnapshotAsync(db, editedBookIds, editedTopicIds, token);
             var diff = await LibraryChangesetDiff.BuildAsync(db, before, after, token);
             var hash = LibraryChangesetDiff.Hash(diff);
             var stateVersion = await LibraryChangesetDiff.CurrentVersionAsync(db, token);
@@ -121,6 +126,7 @@ public sealed class LibraryChangesetService(
 
         // A reference must be created before it is used, and only once.
         var created = new HashSet<string>(StringComparer.Ordinal);
+        var createdKinds = new HashSet<string>(StringComparer.Ordinal);
         for (var index = 0; index < ops.Count; index++)
         {
             foreach (var used in ReferencesUsedBy(ops[index]))
@@ -130,9 +136,20 @@ public sealed class LibraryChangesetService(
                         $"Operation {index + 1} names collection '{name}' before it is created.", "0", index);
             }
 
+            foreach (var used in KindReferencesUsedBy(ops[index]))
+            {
+                if (used.Ref is { } name && !createdKinds.Contains(name))
+                    return LibraryChangesetResult.Fail(LibraryChangesetErrorCodes.UnknownReference,
+                        $"Operation {index + 1} names topic kind '{name}' before it is created.", "0", index);
+            }
+
             if (ops[index] is CreateCollectionOp create && !created.Add(create.Ref))
                 return LibraryChangesetResult.Fail(LibraryChangesetErrorCodes.DuplicateReference,
                     $"Collection reference '{create.Ref}' is created twice.", "0", index);
+
+            if (ops[index] is CreateTopicKindOp createKind && !createdKinds.Add(createKind.Ref))
+                return LibraryChangesetResult.Fail(LibraryChangesetErrorCodes.DuplicateReference,
+                    $"Topic kind reference '{createKind.Ref}' is created twice.", "0", index);
         }
 
         return null;
@@ -148,6 +165,12 @@ public sealed class LibraryChangesetService(
         SetBookCollectionsOp set => set.Collections,
         AddBooksToCollectionOp add => [add.Collection],
         RemoveBooksFromCollectionOp remove => [remove.Collection],
+        _ => [],
+    };
+
+    private static IEnumerable<TopicKindRef> KindReferencesUsedBy(LibraryChangeOp op) => op switch
+    {
+        SetTopicKindOp { Kind: { } kind } => [kind],
         _ => [],
     };
 
@@ -281,10 +304,95 @@ public sealed class LibraryChangesetService(
                         IsFinished: update.IsFinished,
                         EditionRating: update.EditionRating), ct)).Result);
 
+            case CreateTopicKindOp createKind:
+                return await CreateTopicKindAsync(db, createKind, refs, ct);
+
+            case SetTopicKindOp setKind:
+                return await SetTopicKindAsync(db, setKind, refs, ct);
+
             default:
                 throw new ArgumentOutOfRangeException(nameof(op), op.GetType().Name, "Unknown changeset operation.");
         }
     }
+
+    private static async Task<OperationFailure?> CreateTopicKindAsync(
+        NostosDbContext db,
+        CreateTopicKindOp op,
+        Dictionary<string, Guid> refs,
+        CancellationToken ct)
+    {
+        var colorKey = op.ColorKey;
+        if (string.IsNullOrWhiteSpace(colorKey))
+        {
+            var used = await db.TopicKinds.AsNoTracking()
+                .Select(kind => kind.ColorKey)
+                .ToListAsync(ct);
+            colorKey = TopicKindModel.PaletteColorKeys
+                .FirstOrDefault(candidate => !used.Contains(candidate, StringComparer.Ordinal));
+            if (colorKey is null)
+            {
+                return new OperationFailure(
+                    LibraryChangesetErrorCodes.TopicKindLimit,
+                    $"A library can have at most {TopicKindModel.MaxKinds} topic kinds. Delete one before adding another.");
+            }
+        }
+
+        // The repository is bound to the transaction's context so creation and
+        // every assignment commit or roll back together.
+        var repository = new TopicRepository(db);
+        var outcome = await repository.CreateKindAsync(op.Name, colorKey, ct);
+        if (outcome.Status != TopicKindMutationStatus.Success)
+            return KindFailure(outcome.Status, outcome.ErrorMessage);
+
+        refs[op.Ref] = outcome.Kind!.Id;
+        return null;
+    }
+
+    private static async Task<OperationFailure?> SetTopicKindAsync(
+        NostosDbContext db,
+        SetTopicKindOp op,
+        Dictionary<string, Guid> refs,
+        CancellationToken ct)
+    {
+        if (op.TopicIds.Count == 0)
+            return new OperationFailure(LibraryChangesetErrorCodes.TopicNotFound, "No topics were named.");
+
+        var kindId = op.Kind is { } reference ? ResolveKind(reference, refs) : (Guid?)null;
+        var repository = new TopicRepository(db);
+        var outcome = await repository.SetTopicKindsAsync(
+            op.TopicIds.Distinct().Select(topicId => new TopicKindAssignment(topicId, kindId)).ToList(),
+            source: TopicKindSources.Assistant,
+            overwriteReaderKinds: op.OverwriteReaderKinds,
+            ignoreUnknownTopicIds: false,
+            ct);
+
+        return outcome.Status switch
+        {
+            SetTopicsKindStatus.Success => null,
+            SetTopicsKindStatus.TopicNotFound => new OperationFailure(
+                LibraryChangesetErrorCodes.TopicNotFound, "One or more topics were not found."),
+            SetTopicsKindStatus.KindNotFound => new OperationFailure(
+                LibraryChangesetErrorCodes.TopicKindNotFound, "Topic kind not found."),
+            _ => new OperationFailure(
+                "topic_kind_invalid", outcome.ErrorMessage ?? "The topic kind could not be set."),
+        };
+    }
+
+    private static OperationFailure KindFailure(TopicKindMutationStatus status, string? message) => status switch
+    {
+        TopicKindMutationStatus.InvalidInput => new OperationFailure(
+            "topic_kind_invalid", message ?? "The topic kind is not valid."),
+        TopicKindMutationStatus.Conflict => new OperationFailure(
+            LibraryChangesetErrorCodes.TopicKindDuplicate, message ?? "A topic kind with this name already exists."),
+        TopicKindMutationStatus.LimitReached => new OperationFailure(
+            LibraryChangesetErrorCodes.TopicKindLimit,
+            message ?? $"A library can have at most {TopicKindModel.MaxKinds} topic kinds."),
+        _ => new OperationFailure(
+            LibraryChangesetErrorCodes.TopicKindNotFound, message ?? "Topic kind not found."),
+    };
+
+    private static Guid ResolveKind(TopicKindRef reference, Dictionary<string, Guid> refs) =>
+        reference.Id ?? refs[reference.Ref!];
 
     private async Task<OperationFailure?> SetMembershipAsync(
         NostosDbContext db,
@@ -329,6 +437,58 @@ public sealed class LibraryChangesetService(
         {
             var conflicts = new List<string>();
             var restored = 0;
+
+            // 0. Topic kinds: put every topic's kind and source back, then remove
+            //    the kinds the changeset created once nothing uses them. Restoring
+            //    first means a created kind is empty by the time it is removed.
+            var assignedTopicIds = undo.TopicKindAssignments.Select(s => s.TopicId).ToList();
+            if (assignedTopicIds.Count > 0)
+            {
+                var topics = await db.Topics
+                    .Where(t => assignedTopicIds.Contains(t.Id))
+                    .ToDictionaryAsync(t => t.Id, token);
+                foreach (var snapshot in undo.TopicKindAssignments)
+                {
+                    if (!topics.TryGetValue(snapshot.TopicId, out var topic))
+                        continue;
+
+                    if (topic.KindId != snapshot.After.KindId
+                        || !string.Equals(topic.KindSource, snapshot.After.Source, StringComparison.Ordinal))
+                    {
+                        conflicts.Add($"Kept the kind of \"{snapshot.TopicName}\": it was changed after this was applied.");
+                        continue;
+                    }
+
+                    topic.KindId = snapshot.Before.KindId;
+                    topic.KindSource = snapshot.Before.Source;
+                    restored++;
+                }
+
+                await db.SaveChangesAsync(token);
+            }
+
+            foreach (var snapshot in undo.TopicKinds.Where(s => s.Before is null && s.After is not null))
+            {
+                var kind = await db.TopicKinds.FirstOrDefaultAsync(k => k.Id == snapshot.Id, token);
+                if (kind is null)
+                    continue;
+
+                if (kind.Name != snapshot.After!.Name
+                    || kind.ColorKey != snapshot.After.ColorKey
+                    || kind.SortOrder != snapshot.After.SortOrder)
+                {
+                    conflicts.Add($"Kept the kind \"{kind.Name}\": it was changed after this was applied.");
+                    continue;
+                }
+
+                if (await db.Topics.AnyAsync(t => t.KindId == snapshot.Id, token))
+                    continue;
+
+                db.TopicKinds.Remove(kind);
+                restored++;
+            }
+
+            await db.SaveChangesAsync(token);
 
             var current = await db.Collections.ToDictionaryAsync(c => c.Id, token);
 

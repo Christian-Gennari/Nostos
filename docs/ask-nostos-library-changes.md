@@ -1,9 +1,10 @@
 # How Ask Nostos changes your library
 
 Ask Nostos can reorganise the library: create, rename, move and delete
-collections, file books into them or take them out, and edit a book's own
-details (title, author, description, rating, favourite, review, finished). It
-does this as one **changeset** per request, whatever the size of the request.
+collections, file books into them or take them out, edit a book's own details
+(title, author, description, rating, favourite, review, finished), and give
+**topic kinds** to topics or create a new kind. It does this as one
+**changeset** per request, whatever the size of the request.
 
 ## What you see
 
@@ -17,6 +18,10 @@ does this as one **changeset** per request, whatever the size of the request.
   affected. **Apply changes** applies all the ticked steps together; **Discard**
   changes nothing. Right after the card appears, replying "yes" or "no" does
   the same.
+- **Topic kinds are grouped by kind.** A kind the changeset creates comes
+  first, with its colour and a "New" marker. Each group has one checkbox, and
+  **Show every change** lists the topics in it so a wrong guess can be
+  unticked on its own.
 - **Nothing is applied half way.** A review changes nothing until you apply it,
   and an apply is all or nothing.
 
@@ -33,12 +38,43 @@ actually do, not which tool proposed them. Changes wait for review when they:
 - take more than 3 books out of collections;
 - touch more than 25 books;
 - edit the details of more than 10 books;
+- give, change or clear the kind of more than 10 topics
+  (`Assistant:AutoApplyTopicKinds`), or create a topic kind at all;
 - were worked out after reading book text, notes or book descriptions, which
   can carry instructions the user did not write; or
 - come from a turn that stopped early (step, token or time limit, or a
   repeated tool loop), because Nostos cannot know the model had finished.
 
 The limits are `Assistant:AutoApply*` settings (`AssistantOptions`).
+
+## Topic kinds
+
+Ask Nostos reads kinds with `topics_list_kinds`, and each topic's kind and who
+set it (`reader`, `assistant`, `connected-app`) with `topics_list` and
+`topics_get`. It classifies through `topics_set_kind` (many topics, one kind, or
+clear) and creates a kind with `topics_create_kind`.
+
+- **A kind you set is yours.** Ask Nostos never replaces a kind whose source is
+  `reader` unless you named that topic in the same request. The result tells
+  the model "Kept N kinds you set yourself", so it can report what it left
+  alone.
+- **Creating a kind always waits for review**, even inside an otherwise small
+  changeset.
+- Applied kinds carry the `assistant` source. They appear in the Brain's
+  "Set by Ask Nostos" filter (issue #1769) and can be sorted again by hand.
+- Undo restores every topic's kind and source from before the changeset, then
+  deletes a kind the changeset created once no topic uses it any more. A kind
+  another topic started using is kept.
+
+**Where you start it.** The map legend's **No kind (n)** row offers **Sort them
+with Ask Nostos** when an AI provider is configured. It opens Ask Nostos with
+the request already in the composer — "Give a kind to my topics that have none.
+Use the kinds I have; propose a new kind only if many topics need it." — visible
+and editable before you send it. On a large library the model reads
+`topics_list` a page at a time (the `untyped` filter) and may stage several
+`topics_set_kind` calls; they arrive on one review card. If a turn's execution
+budget runs out first, the review card shows how many it sorted, and a second
+run continues from the topics that still have no kind.
 
 ## What Ask Nostos never does
 

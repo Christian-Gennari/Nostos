@@ -75,5 +75,7 @@ public sealed class LibraryChangesetDiffTests
             ],
             [new LibraryMembershipChangeDto(Guid.Empty, "A Book", null, ["Fiction"], [])],
             [new LibraryBookEditDto(Guid.Empty, "A Book", [new LibraryFieldChangeDto("Title", "Old", "A Book")])],
-            Counts);
+            Counts,
+            [],
+            []);
 }

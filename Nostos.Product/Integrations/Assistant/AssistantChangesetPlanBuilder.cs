@@ -117,6 +117,8 @@ internal static class AssistantChangesetPlanBuilder
                 ops.Add(update);
         }
 
+        ops.AddRange(BuildTopicKindOps(before, after));
+
         var dependsOn = ComputeDependencies(ops, before.Collections, moveStepByCollection);
         return new CanonicalPlan(ops, dependsOn, deletedDescendantCounts);
     }
@@ -301,10 +303,13 @@ internal static class AssistantChangesetPlanBuilder
         IReadOnlyDictionary<Guid, int>? moveStepByCollection)
     {
         var createStepByRef = new Dictionary<string, int>(StringComparer.Ordinal);
+        var createKindStepByRef = new Dictionary<string, int>(StringComparer.Ordinal);
         for (var i = 0; i < ops.Count; i++)
         {
             if (ops[i] is CreateCollectionOp create)
                 createStepByRef[create.Ref] = i;
+            if (ops[i] is CreateTopicKindOp createKind)
+                createKindStepByRef[createKind.Ref] = i;
         }
 
         var result = new List<IReadOnlyList<int>>(ops.Count);
@@ -316,6 +321,13 @@ internal static class AssistantChangesetPlanBuilder
             {
                 if (reference.Ref is { } name && createStepByRef.TryGetValue(name, out var createStep) && createStep < i)
                     deps.Add(createStep);
+            }
+
+            if (op is SetTopicKindOp { Kind.Ref: { } kindRef }
+                && createKindStepByRef.TryGetValue(kindRef, out var createKindStep)
+                && createKindStep < i)
+            {
+                deps.Add(createKindStep);
             }
 
             // If a surviving child was moved out of a deleted collection's subtree,
@@ -348,6 +360,62 @@ internal static class AssistantChangesetPlanBuilder
         RemoveBooksFromCollectionOp remove => [remove.Collection],
         _ => [],
     };
+
+    private static List<LibraryChangeOp> BuildTopicKindOps(
+        LibraryChangesetDiff.LibrarySnapshot before,
+        LibraryChangesetDiff.LibrarySnapshot after)
+    {
+        var ops = new List<LibraryChangeOp>();
+        var createdRefById = new Dictionary<Guid, string>();
+        var usedRefs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        var createdKinds = after.TopicKinds
+            .Where(pair => !before.TopicKinds.ContainsKey(pair.Key))
+            .OrderBy(pair => pair.Value.SortOrder)
+            .ThenBy(pair => pair.Value.Name, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(pair => pair.Value.Name, StringComparer.Ordinal)
+            .ThenBy(pair => pair.Key)
+            .ToList();
+        foreach (var (id, kind) in createdKinds)
+        {
+            var reference = AllocateRef($"kind:{kind.Name}", usedRefs);
+            createdRefById[id] = reference;
+            ops.Add(new CreateTopicKindOp(reference, kind.Name, kind.ColorKey));
+        }
+
+        var assignments = before.TopicKindAssignments.Keys
+            .Union(after.TopicKindAssignments.Keys)
+            .Where(topicId => before.TopicKindAssignments.GetValueOrDefault(topicId)
+                != after.TopicKindAssignments.GetValueOrDefault(topicId))
+            .OrderBy(topicId => KindName(after, after.TopicKindAssignments.GetValueOrDefault(topicId)?.KindId) ?? "\uFFFF",
+                StringComparer.OrdinalIgnoreCase)
+            .ThenBy(topicId => after.TopicKindAssignments.GetValueOrDefault(topicId)?.TopicName
+                ?? before.TopicKindAssignments.GetValueOrDefault(topicId)?.TopicName ?? string.Empty,
+                StringComparer.OrdinalIgnoreCase)
+            .ThenBy(topicId => topicId)
+            .ToList();
+
+        foreach (var topicId in assignments)
+        {
+            var now = after.TopicKindAssignments.GetValueOrDefault(topicId);
+            TopicKindRef? kind = null;
+            if (now?.KindId is { } kindId)
+            {
+                kind = createdRefById.TryGetValue(kindId, out var reference)
+                    ? TopicKindRef.Created(reference)
+                    : TopicKindRef.Existing(kindId);
+            }
+
+            // The plan reproduces the net effect that was already validated, so
+            // it may overwrite a reader kind that the changeset changed on purpose.
+            ops.Add(new SetTopicKindOp([topicId], kind, OverwriteReaderKinds: true));
+        }
+
+        return ops;
+    }
+
+    private static string? KindName(LibraryChangesetDiff.LibrarySnapshot snapshot, Guid? kindId) =>
+        kindId is { } id && snapshot.TopicKinds.TryGetValue(id, out var kind) ? kind.Name : null;
 
     private static UpdateBookOp? BuildUpdateBookOp(Guid bookId, BookFieldsState was, BookFieldsState now)
     {

@@ -266,7 +266,7 @@ public sealed class AssistantReviewClaimConsistencyTests : IClassFixture<SqliteT
                 "cs-1",
                 "applied",
                 [],
-                new LibraryChangesetDiffDto([], [], [], new LibraryChangesetCountsDto(1, 0, 0, 0, 0, 0, 0, 0)),
+                new LibraryChangesetDiffDto([], [], [], new LibraryChangesetCountsDto(1, 0, 0, 0, 0, 0, 0, 0), [], []),
                 "hash",
                 "tok-1",
                 [],

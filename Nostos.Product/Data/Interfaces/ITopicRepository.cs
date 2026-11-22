@@ -11,6 +11,18 @@ public interface ITopicRepository
     Task<List<TopicDto>> GetAllWithUsageCountAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// One page of topics, ordered by usage desc then name asc, optionally only
+    /// topics with no kind or only one kind. The assistant's large-library
+    /// classification reads the library in pages rather than all at once.
+    /// </summary>
+    Task<TopicPageDto> GetPageWithUsageAsync(
+        int page,
+        int pageSize,
+        bool unkindedOnly,
+        Guid? kindId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Returns topics whose linked notes match the given term in Content, SelectedText, or Book Title.
     /// </summary>
     Task<List<TopicDto>> SearchByNoteTextAsync(string term, CancellationToken cancellationToken = default);

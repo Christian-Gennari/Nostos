@@ -13,6 +13,15 @@ public record TopicDto(
     Guid? KindId = null,
     string? KindSource = null);
 
+/// <summary>One page of topics for the assistant's paged classification read.</summary>
+public record TopicPageDto(
+    IReadOnlyList<TopicDto> Items,
+    int Page,
+    int PageSize,
+    int Total,
+    int TotalPages,
+    int UnkindedTotal);
+
 // For the detail view
 public record TopicDetailDto(Guid Id, string Name, List<NoteContextDto> Notes);
 

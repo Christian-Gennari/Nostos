@@ -235,7 +235,43 @@ public static partial class AssistantCapabilities
             "topics_list",
             AssistantTrustClass.Suggest,
             AssistantCapabilityCategory.KnowledgeRetrieval,
-            "Lists topics ordered by usage.",
+            "Lists topics ordered by usage, one page at a time, each with its kind and who set it. Use untyped to find topics that have no kind yet, and page through a large library rather than asking for all of it at once.",
+            """
+            {
+              "type": "object",
+              "properties": {
+                "page": { "type": "integer", "minimum": 1, "description": "The 1-based page of topics to return. Defaults to 1." },
+                "pageSize": { "type": "integer", "minimum": 1, "maximum": 200, "description": "How many topics per page. Defaults to 50." },
+                "untyped": { "type": "boolean", "description": "True to list only topics that have no kind yet." },
+                "kindId": { "type": "string", "format": "uuid", "description": "Only topics with this kind. Omit it for every kind." }
+              },
+              "required": [],
+              "additionalProperties": true
+            }
+            """,
+            async (context, args, ct) =>
+            {
+                var page = Num(args, "page") ?? 1;
+                var pageSize = Num(args, "pageSize") ?? 50;
+                if (page < 1)
+                    return Invalid("'page' must be at least 1.");
+                if (pageSize is < 1 or > 200)
+                    return Invalid("'pageSize' must be between 1 and 200.");
+
+                var result = await topics.GetPageWithUsageAsync(
+                    page,
+                    pageSize,
+                    Bool(args, "untyped") ?? false,
+                    Id(args, "kindId"),
+                    ct);
+                return AssistantToolResult.Ok(Element(result));
+            }),
+
+        new AssistantCapability(
+            "topics_list_kinds",
+            AssistantTrustClass.Suggest,
+            AssistantCapabilityCategory.KnowledgeRetrieval,
+            "Lists the topic kinds the library has, each with its colour and how many topics use it. Use these ids or names with topics_set_kind.",
             """
             {
               "type": "object",
@@ -246,8 +282,8 @@ public static partial class AssistantCapabilities
             """,
             async (context, args, ct) =>
             {
-                var result = await topics.GetAllWithUsageCountAsync();
-                return AssistantToolResult.Ok(Element(result));
+                var kinds = await topics.GetAllKindsAsync(ct);
+                return AssistantToolResult.Ok(Element(kinds));
             }),
 
         new AssistantCapability(
@@ -316,11 +352,18 @@ public static partial class AssistantCapabilities
                     .ThenBy(note => note.Id)
                     .ToList();
 
+                var kind = topic.KindId is { } kindId
+                    ? (await topics.GetAllKindsAsync(ct)).FirstOrDefault(candidate => candidate.Id == kindId)
+                    : null;
+
                 return AssistantToolResult.Ok(Element(new
                 {
                     id = topic.Id,
                     name = topic.Topic,
                     description = topic.Description,
+                    kindId = topic.KindId,
+                    kindName = kind?.Name,
+                    kindSource = topic.KindSource,
                     noteCount = linked.Count,
                     notes = linked.Take(limit ?? 30).Select(note => new
                     {

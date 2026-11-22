@@ -14,6 +14,28 @@ These are deterministic, provider-neutral payload measurements. They deliberatel
 
 ## Baseline: all tools
 
+> **Current catalogue (issue #1770).** The assistant now exposes **39**
+> capabilities. `AssistantCapabilityCatalogueMetrics` measures:
+>
+> | Category | Count |
+> | --- | ---: |
+> | Knowledge retrieval | 10 |
+> | Source navigation | 2 |
+> | Library read | 5 |
+> | Capture | 2 |
+> | Organization | 14 |
+> | Ordinary action | 3 |
+> | Writing | 3 |
+> | **Total** | **39** |
+>
+> - serialized structured tool catalogue: **29,864 UTF-8 bytes**
+> - tool descriptions alone: **6,985 UTF-8 bytes**
+> - duplicate legacy `Available abilities...` prose: **8,654 UTF-8 bytes**
+>
+> The 2026-11 slice adds `topics_list_kinds`, `topics_create_kind` and
+> `topics_set_kind`, and gives `topics_list` paging. The numbers below are the
+> original #563 baseline and are kept as the measurement it was taken from.
+
 The normal core catalogue contains 25 capabilities:
 
 | Category | Count |

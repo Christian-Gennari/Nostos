@@ -141,6 +141,15 @@
   border-radius: var(--radius-sm);
 }
 
+/* The Ask Nostos entry point is a button with the same quiet link styling. */
+.map-legend-ask {
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+}
+
 /* Inside the phone's Controls sheet the chips are the primary controls, so
    they get a real tap target rather than the map's quiet 22 px row. */
 @media (max-width: 768px) {

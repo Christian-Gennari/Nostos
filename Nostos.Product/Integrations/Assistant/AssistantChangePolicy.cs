@@ -56,6 +56,17 @@ public static class AssistantChangePolicy
         if (counts.BookEdits > options.AutoApplyMaxBookEdits)
             reasons.Add($"Edits the details of {Books(counts.BookEdits)}.");
 
+        if (counts.TopicKindsCreated > 0)
+        {
+            var kinds = diff.TopicKinds.Where(kind => kind.Kind == "created").Select(kind => $"“{kind.Name}”").ToList();
+            reasons.Add(kinds.Count == 1
+                ? $"Creates the topic kind {kinds[0]}, so you decide what it means."
+                : $"Creates {kinds.Count} topic kinds, so you decide what they mean.");
+        }
+
+        if (counts.TopicKindChanges > options.AutoApplyTopicKinds)
+            reasons.Add($"Gives a kind to {counts.TopicKindChanges} topics.");
+
         if (readUntrustedContent)
             reasons.Add("It was worked out from book text or notes, so you decide.");
 

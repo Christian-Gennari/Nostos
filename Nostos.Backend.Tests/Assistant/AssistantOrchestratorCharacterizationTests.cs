@@ -103,7 +103,7 @@ public sealed class AssistantOrchestratorCharacterizationTests : IClassFixture<S
 
         Snapshot(ToolResultFor(h, "topics_list")).Should().Be(
             """
-            [{"id":"{id}","name":"Homecoming","usageCount":0,"noteMatchCount":0,"noteMatchSnippet":null,"description":null,"kindId":null,"kindSource":null},{"id":"{id}","name":"Memory","usageCount":0,"noteMatchCount":0,"noteMatchSnippet":null,"description":null,"kindId":null,"kindSource":null}]
+            {"items":[{"id":"{id}","name":"Homecoming","usageCount":0,"noteMatchCount":0,"noteMatchSnippet":null,"description":null,"kindId":null,"kindSource":null},{"id":"{id}","name":"Memory","usageCount":0,"noteMatchCount":0,"noteMatchSnippet":null,"description":null,"kindId":null,"kindSource":null}],"page":1,"pageSize":50,"total":2,"totalPages":1,"unkindedTotal":2}
             """);
 
         Snapshot(response).Should().Be(
@@ -227,7 +227,7 @@ public sealed class AssistantOrchestratorCharacterizationTests : IClassFixture<S
 
         Snapshot(response).Should().Be(
             """
-            {"reply":"Here\u0027s what I\u0027d change. Nothing changes until you apply it.","acknowledgement":null,"anchorPrompt":null,"suggestions":[],"changeset":{"changesetId":"{id}","status":"review","steps":[{"index":0,"summary":"Delete collection \u201CFiction\u201D","included":true,"dependsOn":[]}],"diff":{"collections":[{"id":"{id}","kind":"deleted","name":"Fiction","previousName":null,"parentName":null,"previousParentName":null,"parentChanged":false,"bookCount":1}],"memberships":[{"bookId":"{id}","title":"Dune","author":"Author","added":[],"removed":["Fiction"]}],"bookEdits":[],"counts":{"collectionsCreated":0,"collectionsDeleted":1,"collectionsUpdated":0,"booksTouched":1,"membershipsAdded":0,"membershipsRemoved":1,"booksLosingMembership":1,"bookEdits":0},"isEmpty":false},"diffHash":"{hash}","actionToken":"{hash}","reviewReasons":["Deletes \u201CFiction\u201D, which holds 1 book."],"canUndo":false},"capturedNoteId":null,"executedCapabilities":[],"sources":[],"error":null,"evidence":[],"resolvedBook":null}
+            {"reply":"Here\u0027s what I\u0027d change. Nothing changes until you apply it.","acknowledgement":null,"anchorPrompt":null,"suggestions":[],"changeset":{"changesetId":"{id}","status":"review","steps":[{"index":0,"summary":"Delete collection \u201CFiction\u201D","included":true,"dependsOn":[]}],"diff":{"collections":[{"id":"{id}","kind":"deleted","name":"Fiction","previousName":null,"parentName":null,"previousParentName":null,"parentChanged":false,"bookCount":1}],"memberships":[{"bookId":"{id}","title":"Dune","author":"Author","added":[],"removed":["Fiction"]}],"bookEdits":[],"counts":{"collectionsCreated":0,"collectionsDeleted":1,"collectionsUpdated":0,"booksTouched":1,"membershipsAdded":0,"membershipsRemoved":1,"booksLosingMembership":1,"bookEdits":0,"topicKindsCreated":0,"topicKindChanges":0},"topicKinds":[],"topicKindAssignments":[],"isEmpty":false},"diffHash":"{hash}","actionToken":"{hash}","reviewReasons":["Deletes \u201CFiction\u201D, which holds 1 book."],"canUndo":false},"capturedNoteId":null,"executedCapabilities":[],"sources":[],"error":null,"evidence":[],"resolvedBook":null}
             """);
 
         h.Usage.Completed.Should().ContainSingle().Which.ResultCategory.Should().Be("Completed");

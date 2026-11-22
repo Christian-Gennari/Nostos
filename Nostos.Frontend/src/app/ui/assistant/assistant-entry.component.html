@@ -235,6 +235,7 @@
       (discard)="assistantService.discardChangeset(artifact.changeset.changesetId)"
       (undo)="assistantService.undoChangeset(artifact.changeset.changesetId)"
       (stepToggled)="assistantService.setChangesetStepIncluded(artifact.changeset.changesetId, $event.index, $event.included)"
+      (stepsToggled)="assistantService.setChangesetStepsIncluded(artifact.changeset.changesetId, $event.indexes, $event.included)"
       (detailsToggled)="onChangesetDetailsToggled(artifact.changeset.changesetId, $event)"
     />
     }

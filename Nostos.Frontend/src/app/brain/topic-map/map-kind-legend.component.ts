@@ -30,7 +30,11 @@ export class MapKindLegendComponent {
   readonly entries = input<readonly KindLegendEntry[]>([]);
   /** Topics in scope that the filter hides; 0 means every kind is shown. */
   readonly hiddenByKindCount = input(0);
+  /** An AI provider is configured, so the untyped row can offer Ask Nostos. */
+  readonly assistantAvailable = input(false);
 
   readonly toggled = output<string>();
   readonly cleared = output<void>();
+  /** The reader asked Ask Nostos to sort the topics that have no kind. */
+  readonly sortWithAssistant = output<void>();
 }

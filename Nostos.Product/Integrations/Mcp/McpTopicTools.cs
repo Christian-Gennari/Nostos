@@ -30,9 +30,28 @@ public sealed class McpTopicTools(IHttpContextAccessor http) : NostosMcpTool(htt
 
         List<TopicDto> topics;
         if (string.IsNullOrWhiteSpace(search))
-            topics = await RunAsync<List<TopicDto>>("topics_list", new { }, cancellationToken);
+        {
+            // The capability pages a large library; a connected app listing
+            // topics still sees every topic, so read each page in turn.
+            topics = [];
+            const int pageSize = 200;
+            var page = 1;
+            while (true)
+            {
+                var result = await RunAsync<TopicPageDto>(
+                    "topics_list",
+                    new { page, pageSize },
+                    cancellationToken);
+                topics.AddRange(result.Items);
+                if (result.TotalPages == 0 || page >= result.TotalPages)
+                    break;
+                page++;
+            }
+        }
         else
+        {
             topics = await RunAsync<List<TopicDto>>("topics_search", new { term = search.Trim() }, cancellationToken);
+        }
 
         if (withoutKind)
             topics = topics.Where(t => t.KindId is null).ToList();

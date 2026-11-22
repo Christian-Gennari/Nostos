@@ -5,12 +5,28 @@ import type {
   AssistantChangesetDto,
   LibraryChangesetCountsDto,
   LibraryCollectionChangeDto,
+  LibraryTopicKindAssignmentDto,
 } from '../assistant.service';
 import { CheckboxDirective } from '../../check/check.directive';
 import { plural } from '../../../core/format';
+import { kindCssVar } from '../../../brain/topic-map/topic-map.helpers';
 
 /** How many books the details list shows before it summarises the rest. */
 const BOOK_LIST_LIMIT = 40;
+
+/** How many topic names a kind group shows before "and N more". */
+const KIND_PREVIEW_LIMIT = 5;
+
+/** A kind's topics as one review group with one checkbox. */
+interface KindGroup {
+  key: string;
+  name: string;
+  color: string | null;
+  isNew: boolean;
+  topics: LibraryTopicKindAssignmentDto[];
+  stepIndexes: number[];
+  included: boolean;
+}
 
 /**
  * One turn's library changes, as the user decides on them.
@@ -44,6 +60,8 @@ export class AssistantChangesetCardComponent {
   readonly discard = output<void>();
   readonly undo = output<void>();
   readonly stepToggled = output<{ index: number; included: boolean }>();
+  /** Several steps at once, for a kind group's one checkbox. */
+  readonly stepsToggled = output<{ indexes: number[]; included: boolean }>();
   /** The full diff opened or closed; the transcript keeps this card's header in view. */
   readonly detailsToggled = output<boolean>();
 
@@ -68,18 +86,88 @@ export class AssistantChangesetCardComponent {
 
   readonly headline = computed(() => {
     const changeset = this.changeset();
+    const diff = changeset.diff;
     // After an undo or a discard the counts would describe changes that no
     // longer stand, so the card says what became of them instead.
     if (this.status() === 'undone') return 'These changes were undone.';
     if (this.status() === 'discarded') return 'These changes were not applied. Nothing changed.';
-    if (changeset.diff.collections.length + changeset.diff.memberships.length + changeset.diff.bookEdits.length === 0) {
+    if (
+      diff.collections.length + diff.memberships.length + diff.bookEdits.length
+        + (diff.topicKinds?.length ?? 0) + (diff.topicKindAssignments?.length ?? 0) === 0
+    ) {
       return this.inReview() ? 'Every step is left out.' : 'Nothing changed.';
     }
-    return describe(changeset.diff.counts, changeset.diff.memberships.length, this.inReview());
+    return describe(changeset.diff.counts, diff.memberships.length, this.inReview());
   });
 
   readonly includedCount = computed(() => this.changeset().steps.filter((step) => step.included).length);
   readonly canApply = computed(() => this.inReview() && this.includedCount() > 0 && !this.disabled());
+
+  readonly kindGroups = computed<KindGroup[]>(() => {
+    const diff = this.changeset().diff;
+    const assignments = diff.topicKindAssignments ?? [];
+    if (assignments.length === 0) return [];
+
+    const createdOrder = new Map<string, number>();
+    const createdColors = new Map<string, string | null>();
+    const createdSteps = new Map<string, number>();
+    (diff.topicKinds ?? []).forEach((kind, order) => {
+      if (kind.kind !== 'created') return;
+      createdOrder.set(kind.id, order);
+      createdColors.set(kind.id, kindCssVar(kind.colorKey));
+      if (kind.stepIndex !== null && kind.stepIndex !== undefined) {
+        createdSteps.set(kind.id, kind.stepIndex);
+      }
+    });
+
+    const stepIncluded = new Map(this.changeset().steps.map((step) => [step.index, step.included]));
+    const groups = new Map<string, KindGroup>();
+    for (const assignment of assignments) {
+      const key = assignment.kindId ?? 'none';
+      let group = groups.get(key);
+      if (!group) {
+        group = {
+          key,
+          name: assignment.kindName ?? 'No kind',
+          color: assignment.kindId ? createdColors.get(assignment.kindId) ?? null : null,
+          isNew: assignment.kindId ? createdOrder.has(assignment.kindId) : false,
+          topics: [],
+          stepIndexes: [],
+          included: true,
+        };
+        groups.set(key, group);
+        if (assignment.kindId && createdSteps.has(assignment.kindId)) {
+          group.stepIndexes.push(createdSteps.get(assignment.kindId)!);
+        }
+      }
+      group.topics.push(assignment);
+      if (assignment.stepIndex !== null) group.stepIndexes.push(assignment.stepIndex);
+    }
+
+    const ordered = [...groups.values()];
+    for (const group of ordered) {
+      group.included = group.stepIndexes.every((index) => stepIncluded.get(index) !== false);
+    }
+    ordered.sort((a, b) => {
+      if (a.isNew !== b.isNew) return a.isNew ? -1 : 1;
+      if (a.isNew && b.isNew) {
+        return (createdOrder.get(a.key) ?? 0) - (createdOrder.get(b.key) ?? 0);
+      }
+      if (a.key === 'none') return 1;
+      if (b.key === 'none') return -1;
+      return a.name.localeCompare(b.name);
+    });
+    return ordered;
+  });
+
+  /** Steps that are not part of a kind group, still shown as their own lines. */
+  readonly otherSteps = computed(() => {
+    const kindSteps = new Set(this.kindGroups().flatMap((group) => group.stepIndexes));
+    for (const kind of this.changeset().diff.topicKinds ?? []) {
+      if (kind.stepIndex !== null && kind.stepIndex !== undefined) kindSteps.add(kind.stepIndex);
+    }
+    return this.changeset().steps.filter((step) => !kindSteps.has(step.index));
+  });
 
   readonly collectionLines = computed(() => this.changeset().diff.collections.map(collectionLine));
   readonly bookLines = computed(() =>
@@ -93,7 +181,7 @@ export class AssistantChangesetCardComponent {
   readonly hiddenBooks = computed(() => Math.max(0, this.changeset().diff.memberships.length - BOOK_LIST_LIMIT));
   readonly edits = computed(() => this.changeset().diff.bookEdits);
   readonly hasDetails = computed(() =>
-    this.collectionLines().length + this.bookLines().length + this.edits().length > 0);
+    this.kindGroups().length + this.collectionLines().length + this.bookLines().length + this.edits().length > 0);
 
   toggleDetails(): void {
     this.detailsOpen.update((open) => !open);
@@ -103,6 +191,29 @@ export class AssistantChangesetCardComponent {
   toggleStep(index: number, event: Event): void {
     const included = (event.target as HTMLInputElement).checked;
     this.stepToggled.emit({ index, included });
+  }
+
+  /** One checkbox for a kind group ticks or unticks every topic in it. */
+  toggleKindGroup(group: KindGroup, event: Event): void {
+    const included = (event.target as HTMLInputElement).checked;
+    this.stepsToggled.emit({ indexes: group.stepIndexes, included });
+  }
+
+  topicIncluded(stepIndex: number | null): boolean {
+    if (stepIndex === null) return true;
+    return this.changeset().steps[stepIndex]?.included !== false;
+  }
+
+  toggleKindTopic(stepIndex: number | null, event: Event): void {
+    if (stepIndex === null) return;
+    this.toggleStep(stepIndex, event);
+  }
+
+  /** "Dewey, Freire, Montessori, and 11 more" under a group's checkbox. */
+  groupPreview(group: KindGroup): string {
+    const names = group.topics.map((topic) => topic.topicName);
+    if (names.length <= KIND_PREVIEW_LIMIT) return names.join(', ');
+    return `${names.slice(0, KIND_PREVIEW_LIMIT).join(', ')}, and ${names.length - KIND_PREVIEW_LIMIT} more`;
   }
 
   /** A step that needs a left-out step cannot be ticked on its own. */
@@ -130,6 +241,12 @@ function describe(counts: LibraryChangesetCountsDto, booksRefiled: number, futur
         : `${verb('refile', 'refiled')} ${books}`);
   }
   if (counts.bookEdits) parts.push(`${verb('edit', 'edited')} ${plural(counts.bookEdits, 'book')}`);
+  if (counts.topicKindChanges) {
+    parts.push(`${verb('give', 'gave')} ${plural(counts.topicKindChanges, 'topic')} a kind`);
+  }
+  if (counts.topicKindsCreated) {
+    parts.push(`${verb('create', 'created')} ${plural(counts.topicKindsCreated, 'topic kind')}`);
+  }
 
   const sentence = parts.length > 1
     ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`

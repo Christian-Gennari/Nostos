@@ -53,11 +53,59 @@ public sealed class StoredAssistantChangeset
         },
         Steps.Select((step, index) => new AssistantChangeStepDto(
             index, step.Summary, !Excluded.Contains(index), step.DependsOn)).ToList(),
-        Diff,
+        WithStepIndexes(),
         DiffHash,
         ActionToken,
         ReviewReasons,
         Status == AssistantChangesetStatus.Applied && Undo is not null);
+
+    /// <summary>
+    /// Names the review step each topic-kind assignment belongs to, so the
+    /// review card can tick or untick one topic without the whole group. The
+    /// diff is recomputed on every preview, so this is worked out from the
+    /// steps that are present now, never stored.
+    /// </summary>
+    private LibraryChangesetDiffDto WithStepIndexes()
+    {
+        if (Diff.TopicKindAssignments.Count == 0)
+            return Diff;
+
+        var stepByTopic = new Dictionary<Guid, int>();
+        for (var index = 0; index < Steps.Count; index++)
+        {
+            if (Steps[index].Op is not SetTopicKindOp setKind)
+                continue;
+            foreach (var topicId in setKind.TopicIds)
+                stepByTopic[topicId] = index;
+        }
+
+        var assignments = Diff.TopicKindAssignments
+            .Select(assignment => assignment.StepIndex is null
+                && stepByTopic.TryGetValue(assignment.TopicId, out var index)
+                    ? assignment with { StepIndex = index }
+                    : assignment)
+            .ToList();
+
+        var stepByKindName = new Dictionary<string, int>(StringComparer.Ordinal);
+        for (var index = 0; index < Steps.Count; index++)
+        {
+            if (Steps[index].Op is CreateTopicKindOp createKind)
+                stepByKindName[createKind.Name] = index;
+        }
+
+        var kinds = Diff.TopicKinds
+            .Select(kind => kind.StepIndex is null
+                && kind.Kind == "created"
+                && stepByKindName.TryGetValue(kind.Name, out var index)
+                    ? kind with { StepIndex = index }
+                    : kind)
+            .ToList();
+
+        return assignments.SequenceEqual(Diff.TopicKindAssignments)
+            && kinds.SequenceEqual(Diff.TopicKinds)
+            ? Diff
+            : Diff with { TopicKindAssignments = assignments, TopicKinds = kinds };
+    }
 }
 
 /// <summary>

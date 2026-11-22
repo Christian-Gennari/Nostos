@@ -11,9 +11,14 @@ public sealed record LibraryChangesetDiffDto(
     IReadOnlyList<LibraryCollectionChangeDto> Collections,
     IReadOnlyList<LibraryMembershipChangeDto> Memberships,
     IReadOnlyList<LibraryBookEditDto> BookEdits,
-    LibraryChangesetCountsDto Counts)
+    LibraryChangesetCountsDto Counts,
+    // APPENDED (issue #1770): topic kinds the changeset creates and the topics
+    // whose kind it gives, changes or clears.
+    IReadOnlyList<LibraryTopicKindChangeDto> TopicKinds,
+    IReadOnlyList<LibraryTopicKindAssignmentDto> TopicKindAssignments)
 {
-    public bool IsEmpty => Collections.Count == 0 && Memberships.Count == 0 && BookEdits.Count == 0;
+    public bool IsEmpty => Collections.Count == 0 && Memberships.Count == 0 && BookEdits.Count == 0
+        && TopicKinds.Count == 0 && TopicKindAssignments.Count == 0;
 }
 
 /// <summary>
@@ -47,6 +52,37 @@ public sealed record LibraryBookEditDto(
     string Title,
     IReadOnlyList<LibraryFieldChangeDto> Fields);
 
+/// <summary>
+/// One topic kind the changeset creates. <paramref name="Kind"/> is
+/// <c>created</c> (a changeset never edits or deletes a kind).
+/// </summary>
+public sealed record LibraryTopicKindChangeDto(
+    Guid Id,
+    string Kind,
+    string Name,
+    string? PreviousName,
+    string ColorKey,
+    int TopicCount,
+    // APPENDED: the review step that creates this kind, so the card can keep
+    // the create out of the step list when its group already says "New".
+    int? StepIndex = null);
+
+/// <summary>
+/// One topic whose kind the changeset changes. <paramref name="KindId"/> and
+/// <paramref name="KindName"/> are what it becomes; null clears the kind.
+/// <paramref name="PreviousKindName"/> is what it had before, for the review
+/// card's "was …" note. <paramref name="StepIndex"/> names the review step this
+/// topic belongs to, so the card can leave one topic out without the rest.
+/// </summary>
+public sealed record LibraryTopicKindAssignmentDto(
+    Guid TopicId,
+    string TopicName,
+    Guid? KindId,
+    string? KindName,
+    string? PreviousKindName,
+    string? Source,
+    int? StepIndex = null);
+
 /// <summary>One field of a book, before and after, as display text.</summary>
 public sealed record LibraryFieldChangeDto(string Field, string? Before, string? After);
 
@@ -59,4 +95,8 @@ public sealed record LibraryChangesetCountsDto(
     int MembershipsAdded,
     int MembershipsRemoved,
     int BooksLosingMembership,
-    int BookEdits);
+    int BookEdits,
+    // APPENDED (issue #1770). TopicKindChanges counts every topic whose kind
+    // the changeset gives, changes or clears.
+    int TopicKindsCreated = 0,
+    int TopicKindChanges = 0);

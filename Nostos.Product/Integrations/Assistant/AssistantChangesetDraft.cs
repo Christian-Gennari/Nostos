@@ -23,6 +23,7 @@ public sealed class AssistantChangesetDraft(ILibraryChangesetService changesets,
     private readonly List<LibraryChangeOp> _rawOps = [];
     private readonly List<AssistantStagedStep> _steps = [];
     private readonly Dictionary<string, LibraryCollectionRef> _liveNamedCollections = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, TopicKindRef> _liveNamedKinds = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<Guid, BookDto?> _books = [];
     private Dictionary<Guid, CollectionDto>? _collections;
     private LibraryChangesetPreviewState? _lastPreviewState;
@@ -72,6 +73,33 @@ public sealed class AssistantChangesetDraft(ILibraryChangesetService changesets,
     }
 
     /// <summary>
+    /// Reads a topic-kind argument: an existing kind's id, or the name (or
+    /// <c>ref</c>) of a kind created earlier in this turn.
+    /// </summary>
+    public bool TryResolveTopicKind(string? value, out TopicKindRef reference, out int? createdBy)
+    {
+        reference = default;
+        createdBy = null;
+        if (string.IsNullOrWhiteSpace(value))
+            return false;
+
+        var trimmed = value.Trim();
+        if (Guid.TryParse(trimmed, out var id))
+        {
+            reference = TopicKindRef.Existing(id);
+            return true;
+        }
+
+        if (_liveNamedKinds.TryGetValue(trimmed, out var live))
+        {
+            reference = live;
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Stages one operation. On success the result tells the model what the
     /// whole changeset would now do; on failure nothing is staged and the
     /// canonical failure is returned as-is.
@@ -104,6 +132,7 @@ public sealed class AssistantChangesetDraft(ILibraryChangesetService changesets,
         var baseCount = _rawOps.Count;
         var nextRefId = _refCounter;
         var batchRefs = new Dictionary<string, string>(StringComparer.Ordinal);
+        var batchKindRefs = new Dictionary<string, string>(StringComparer.Ordinal);
         var rawCandidate = new List<LibraryChangeOp>(_rawOps.Count + additions.Count);
         rawCandidate.AddRange(_rawOps);
 
@@ -116,9 +145,15 @@ public sealed class AssistantChangesetDraft(ILibraryChangesetService changesets,
                 batchRefs[create.Ref] = uniqueRef;
                 rawCandidate.Add(create with { Ref = uniqueRef, Parent = remappedParent });
             }
+            else if (op is CreateTopicKindOp createKind)
+            {
+                var uniqueRef = $"{createKind.Ref}#{++nextRefId}";
+                batchKindRefs[createKind.Ref] = uniqueRef;
+                rawCandidate.Add(createKind with { Ref = uniqueRef });
+            }
             else
             {
-                rawCandidate.Add(RemapBatchRefs(op, batchRefs));
+                rawCandidate.Add(RemapBatchRefs(op, batchRefs, batchKindRefs));
             }
         }
 
@@ -209,6 +244,7 @@ public sealed class AssistantChangesetDraft(ILibraryChangesetService changesets,
         _lastPreviewState = previewState;
 
         _liveNamedCollections.Clear();
+        _liveNamedKinds.Clear();
         if (previewState is null)
             return;
 
@@ -224,6 +260,21 @@ public sealed class AssistantChangesetDraft(ILibraryChangesetService changesets,
             var reference = LibraryCollectionRef.Created(create.Ref);
             _liveNamedCollections[live.Name] = reference;
             _liveNamedCollections[create.Ref] = reference;
+        }
+
+        _liveNamedKinds.Clear();
+        foreach (var op in _rawOps)
+        {
+            if (op is not CreateTopicKindOp createKind)
+                continue;
+            if (!previewState.CreatedRefs.TryGetValue(createKind.Ref, out var kindId))
+                continue;
+            if (!previewState.After.TopicKinds.TryGetValue(kindId, out var live))
+                continue;
+
+            var reference = TopicKindRef.Created(createKind.Ref);
+            _liveNamedKinds[live.Name] = reference;
+            _liveNamedKinds[createKind.Ref] = reference;
         }
     }
 
@@ -259,9 +310,12 @@ public sealed class AssistantChangesetDraft(ILibraryChangesetService changesets,
             ? LibraryCollectionRef.Created(mapped)
             : reference;
 
-    private static LibraryChangeOp RemapBatchRefs(LibraryChangeOp op, Dictionary<string, string> batchRefs)
+    private static LibraryChangeOp RemapBatchRefs(
+        LibraryChangeOp op,
+        Dictionary<string, string> batchRefs,
+        Dictionary<string, string> batchKindRefs)
     {
-        if (batchRefs.Count == 0)
+        if (batchRefs.Count == 0 && batchKindRefs.Count == 0)
             return op;
 
         return op switch
@@ -276,26 +330,48 @@ public sealed class AssistantChangesetDraft(ILibraryChangesetService changesets,
             SetBookCollectionsOp set => set with { Collections = set.Collections.Select(c => RemapBatchRef(c, batchRefs)).ToList() },
             AddBooksToCollectionOp add => add with { Collection = RemapBatchRef(add.Collection, batchRefs) },
             RemoveBooksFromCollectionOp remove => remove with { Collection = RemapBatchRef(remove.Collection, batchRefs) },
+            SetTopicKindOp setKind => setKind with
+            {
+                Kind = setKind.Kind is { } kind ? RemapBatchKindRef(kind, batchKindRefs) : null,
+            },
             _ => op,
         };
     }
 
+    private static TopicKindRef RemapBatchKindRef(
+        TopicKindRef reference,
+        Dictionary<string, string> batchKindRefs) =>
+        reference.Ref is { } name && batchKindRefs.TryGetValue(name, out var mapped)
+            ? TopicKindRef.Created(mapped)
+            : reference;
+
     private static List<IReadOnlyList<int>> ComputeSimpleDependsOn(IReadOnlyList<LibraryChangeOp> ops)
     {
         var createStepByRef = new Dictionary<string, int>(StringComparer.Ordinal);
+        var createKindStepByRef = new Dictionary<string, int>(StringComparer.Ordinal);
         for (var i = 0; i < ops.Count; i++)
         {
             if (ops[i] is CreateCollectionOp create)
                 createStepByRef[create.Ref] = i;
+            if (ops[i] is CreateTopicKindOp createKind)
+                createKindStepByRef[createKind.Ref] = i;
         }
 
-        return ops.Select((op, index) => (IReadOnlyList<int>)AssistantChangesetPlanBuilder.ReferencesUsedBy(op)
-            .Where(r => r.Ref is not null)
-            .Select(r => createStepByRef.TryGetValue(r.Ref!, out var stepIndex) && stepIndex < index ? stepIndex : -1)
-            .Where(stepIndex => stepIndex >= 0)
-            .Distinct()
-            .Order()
-            .ToList()).ToList();
+        return ops.Select((op, index) =>
+        {
+            var dependencies = AssistantChangesetPlanBuilder.ReferencesUsedBy(op)
+                .Where(r => r.Ref is not null)
+                .Select(r => createStepByRef.TryGetValue(r.Ref!, out var stepIndex) && stepIndex < index ? stepIndex : -1)
+                .Where(stepIndex => stepIndex >= 0)
+                .ToList();
+            if (op is SetTopicKindOp { Kind.Ref: { } kindRef }
+                && createKindStepByRef.TryGetValue(kindRef, out var kindStep)
+                && kindStep < index)
+            {
+                dependencies.Add(kindStep);
+            }
+            return (IReadOnlyList<int>)dependencies.Distinct().Order().ToList();
+        }).ToList();
     }
 
     // ------------------------------------------------------------------
@@ -317,10 +393,11 @@ public sealed class AssistantChangesetDraft(ILibraryChangesetService changesets,
         }
 
         var steps = new List<AssistantStagedStep>(ops.Count);
+        var kindNames = new Dictionary<string, string>(StringComparer.Ordinal);
         for (var i = 0; i < ops.Count; i++)
         {
             var op = ops[i];
-            var summary = await SummarizeAsync(op, displayNames, deletedDescendantCounts, previewState, ct);
+            var summary = await SummarizeAsync(op, displayNames, kindNames, deletedDescendantCounts, previewState, ct);
             steps.Add(new AssistantStagedStep(op, summary, dependsOn[i]));
         }
 
@@ -330,12 +407,31 @@ public sealed class AssistantChangesetDraft(ILibraryChangesetService changesets,
     private async Task<string> SummarizeAsync(
         LibraryChangeOp op,
         Dictionary<LibraryCollectionRef, string> displayNames,
+        Dictionary<string, string> kindNames,
         IReadOnlyDictionary<Guid, int> deletedDescendantCounts,
         LibraryChangesetPreviewState? previewState,
         CancellationToken ct)
     {
         switch (op)
         {
+            case CreateTopicKindOp createKind:
+            {
+                kindNames[createKind.Ref] = createKind.Name;
+                return $"Create the topic kind “{createKind.Name}”";
+            }
+            case SetTopicKindOp setKind:
+            {
+                var kind = setKind.Kind is { } reference
+                    ? KindName(reference, kindNames, previewState)
+                    : null;
+                var distinct = setKind.TopicIds.Distinct().ToList();
+                var topics = distinct.Count == 1
+                    ? $"“{TopicName(distinct[0], previewState)}”"
+                    : $"{distinct.Count} topics";
+                return kind is null
+                    ? $"Clear the kind of {topics}"
+                    : $"Set {topics} to “{kind}”";
+            }
             case CreateCollectionOp create:
             {
                 displayNames[LibraryCollectionRef.Created(create.Ref)] = create.Name;
@@ -412,6 +508,28 @@ public sealed class AssistantChangesetDraft(ILibraryChangesetService changesets,
         var collections = await CollectionsAsync(ct);
         return collections.TryGetValue(reference.Id!.Value, out var dto) ? dto.Name : "a collection";
     }
+
+    private static string KindName(
+        TopicKindRef reference,
+        Dictionary<string, string> kindNames,
+        LibraryChangesetPreviewState? previewState)
+    {
+        if (reference.Ref is { } created)
+            return kindNames.GetValueOrDefault(created) ?? created;
+
+        if (reference.Id is { } id && previewState is not null
+            && previewState.After.TopicKinds.TryGetValue(id, out var kind))
+        {
+            return kind.Name;
+        }
+
+        return "a kind";
+    }
+
+    private static string TopicName(Guid topicId, LibraryChangesetPreviewState? previewState) =>
+        previewState?.After.TopicKindAssignments.GetValueOrDefault(topicId)?.TopicName
+        ?? previewState?.Before.TopicKindAssignments.GetValueOrDefault(topicId)?.TopicName
+        ?? "a topic";
 
     private async Task<string> BooksPhraseAsync(
         IReadOnlyList<Guid> bookIds,

@@ -17,7 +17,7 @@ namespace Nostos.Backend.Tests.Assistant;
 public sealed class AssistantChangesetStoreTests
 {
     private static readonly LibraryChangesetDiffDto EmptyDiff =
-        new([], [], [], new LibraryChangesetCountsDto(0, 0, 0, 0, 0, 0, 0, 0));
+        new([], [], [], new LibraryChangesetCountsDto(0, 0, 0, 0, 0, 0, 0, 0), [], []);
 
     private readonly TestTimeProvider _clock = new();
 

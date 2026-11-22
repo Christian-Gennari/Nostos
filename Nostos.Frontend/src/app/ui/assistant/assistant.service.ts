@@ -215,6 +215,8 @@ export interface LibraryChangesetCountsDto {
   membershipsRemoved: number;
   booksLosingMembership: number;
   bookEdits: number;
+  topicKindsCreated?: number;
+  topicKindChanges?: number;
 }
 
 export interface LibraryCollectionChangeDto {
@@ -254,6 +256,34 @@ export interface LibraryChangesetDiffDto {
   memberships: LibraryMembershipChangeDto[];
   bookEdits: LibraryBookEditDto[];
   counts: LibraryChangesetCountsDto;
+  topicKinds?: LibraryTopicKindChangeDto[];
+  topicKindAssignments?: LibraryTopicKindAssignmentDto[];
+}
+
+/** One topic kind a changeset creates. */
+export interface LibraryTopicKindChangeDto {
+  id: string;
+  kind: 'created' | 'updated' | string;
+  name: string;
+  previousName: string | null;
+  colorKey: string;
+  topicCount: number;
+  stepIndex?: number | null;
+}
+
+/**
+ * One topic whose kind a changeset changes; a null kind clears it. `stepIndex`
+ * names the review step this topic belongs to, so the card can untick exactly
+ * this topic without the rest of the kind group.
+ */
+export interface LibraryTopicKindAssignmentDto {
+  topicId: string;
+  topicName: string;
+  kindId: string | null;
+  kindName: string | null;
+  previousKindName: string | null;
+  source: string | null;
+  stepIndex: number | null;
 }
 
 /** One step of a changeset, which the user can leave out while it is in review. */
@@ -958,11 +988,18 @@ export class AssistantService {
    * remaining steps would do.
    */
   setChangesetStepIncluded(changesetId: string, index: number, included: boolean): void {
+    this.setChangesetStepsIncluded(changesetId, [index], included);
+  }
+
+  /** Ticks or unticks several steps in one preview, for a whole kind group. */
+  setChangesetStepsIncluded(changesetId: string, indexes: readonly number[], included: boolean): void {
     const found = this.findChangeset(changesetId);
     if (!found || found.changeset.status !== 'review') return;
     const excluded = new Set(excludedSteps(found.changeset));
-    if (included) excluded.delete(index);
-    else excluded.add(index);
+    for (const index of indexes) {
+      if (included) excluded.delete(index);
+      else excluded.add(index);
+    }
     this.runChangesetAction(changesetId, 'preview', {
       actionToken: found.changeset.actionToken,
       excluded: [...excluded].sort((a, b) => a - b),

@@ -17,11 +17,45 @@ public class TopicRepository : ITopicRepository
         _db = db;
     }
 
-    public async Task<List<TopicDto>> GetAllWithUsageCountAsync(
+    public Task<List<TopicDto>> GetAllWithUsageCountAsync(
+        CancellationToken cancellationToken = default) =>
+        QueryTopics(_db.Topics).ToListAsync(cancellationToken);
+
+    public async Task<TopicPageDto> GetPageWithUsageAsync(
+        int page,
+        int pageSize,
+        bool unkindedOnly,
+        Guid? kindId,
         CancellationToken cancellationToken = default)
     {
-        return await _db
-            .Topics.OrderByDescending(c => c.NoteTopics.Count())
+        var safePage = Math.Max(1, page);
+        var safeSize = Math.Clamp(pageSize, 1, 200);
+        var query = _db.Topics.AsQueryable();
+
+        if (unkindedOnly)
+            query = query.Where(topic => topic.KindId == null);
+        else if (kindId is { } id)
+            query = query.Where(topic => topic.KindId == id);
+
+        var total = await query.CountAsync(cancellationToken);
+        var unkindedTotal = await _db.Topics.CountAsync(topic => topic.KindId == null, cancellationToken);
+        var items = await QueryTopics(query)
+            .Skip((safePage - 1) * safeSize)
+            .Take(safeSize)
+            .ToListAsync(cancellationToken);
+
+        return new TopicPageDto(
+            items,
+            safePage,
+            safeSize,
+            total,
+            total == 0 ? 0 : (int)Math.Ceiling(total / (double)safeSize),
+            unkindedTotal);
+    }
+
+    private static IQueryable<TopicDto> QueryTopics(IQueryable<TopicModel> topics) =>
+        topics
+            .OrderByDescending(c => c.NoteTopics.Count())
             .ThenBy(c => c.Topic)
             .Select(c => new TopicDto(
                 c.Id,
@@ -31,9 +65,7 @@ public class TopicRepository : ITopicRepository
                 null,
                 c.Description,
                 c.KindId,
-                c.KindSource))
-            .ToListAsync(cancellationToken);
-    }
+                c.KindSource));
 
     public Task<List<TopicDto>> SearchByNoteTextAsync(
         string term,
