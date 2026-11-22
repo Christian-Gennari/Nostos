@@ -129,6 +129,20 @@ describe('BrainKindsPage', () => {
     fixture.detectChanges();
   }
 
+  /**
+   * The list a real server would return after a kind write: the written topic
+   * carries its new kind, so a filtered view really drops its row on reload.
+   * Without this the mock `list` undid `replaceTopic` and the row stayed.
+   */
+  function serveKindWrites(): void {
+    setTopicsKind.mockImplementation((ids: string[], kindId: string | null) => {
+      topics = topics.map((item) =>
+        ids.includes(item.id) ? { ...item, kindId, kindSource: kindId ? 'reader' : null } : item,
+      );
+      return of({ updatedTopicIds: ids, kindId, kindSource: kindId ? 'reader' : null });
+    });
+  }
+
   function checkbox(index: number, desired: boolean, shift = false): void {
     const target = document.createElement('input');
     target.checked = desired;
@@ -773,6 +787,7 @@ describe('BrainKindsPage', () => {
   });
 
   it('finds the next row before the answered one leaves the No kind view', async () => {
+    serveKindWrites();
     setQuery({ filter: 'untyped' });
     const rowFor = (name: string): HTMLElement =>
       (Array.from(fixture.nativeElement.querySelectorAll('.topic-row')) as HTMLElement[])
@@ -788,6 +803,7 @@ describe('BrainKindsPage', () => {
   });
 
   it('goes to the previous row when the answered one was the last', async () => {
+    serveKindWrites();
     setQuery({ filter: 'untyped' });
     const rowFor = (name: string): HTMLElement =>
       (Array.from(fixture.nativeElement.querySelectorAll('.topic-row')) as HTMLElement[])
@@ -803,6 +819,7 @@ describe('BrainKindsPage', () => {
   });
 
   it('falls back to the sorter heading when the last Person answer empties the list', async () => {
+    serveKindWrites();
     topics = [topic('t3', 'Tolkien')];
     TestBed.inject(BrainStateService).refresh();
     setQuery({ filter: 'untyped' });
