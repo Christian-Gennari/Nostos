@@ -464,6 +464,8 @@ describe('BrainKindsPage', () => {
     expect(failed).not.toBeNull();
     expect(failed.textContent).toContain('Could not load the topics');
     expect(fixture.nativeElement.querySelector('.topic-rows')).toBeNull();
+    // A failure is not an empty library: no "0 topics".
+    expect(fixture.nativeElement.querySelector('.sorter-count')).toBeNull();
 
     const button = failed.querySelector('button') as HTMLButtonElement;
     expect(button.textContent).toContain('Try again');
@@ -472,6 +474,7 @@ describe('BrainKindsPage', () => {
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('.sorter-failed')).toBeNull();
     expect(fixture.nativeElement.querySelectorAll('.topic-row').length).toBe(4);
+    expect(fixture.nativeElement.querySelector('.sorter-count')?.textContent).toContain('4 topics');
   });
 
   it('does not carry the palette glyph on a kind swatch', () => {

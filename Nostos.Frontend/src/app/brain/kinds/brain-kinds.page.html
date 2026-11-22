@@ -190,11 +190,14 @@
       }
 
       <div class="sorter-tools">
-        <button appButton variant="ghost" size="sm" type="button" (click)="toggleAll()" [disabled]="!topics().length">
+        <button appButton variant="ghost" size="sm" type="button" (click)="toggleAll()"
+          [disabled]="!topicsLoaded() || !topics().length">
           <nostos-icon name="check-square" [size]="15" />
           {{ allVisibleSelected() ? 'Clear selection' : 'Select all' }}
         </button>
-        <span class="sorter-count" role="status">{{ plural(topics().length, 'topic') }}</span>
+        @if (topicsLoaded()) {
+          <span class="sorter-count" role="status">{{ plural(topics().length, 'topic') }}</span>
+        }
       </div>
 
       @if (topicsFailed()) {
