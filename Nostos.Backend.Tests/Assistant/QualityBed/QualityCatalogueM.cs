@@ -185,10 +185,10 @@ public sealed partial class QualityBedMcpScenarios(QualityMcpBed bed)
     private static readonly Guid DraftLighthouse = Guid.Parse("e2222222-2222-4222-8222-222222222222");
     private static readonly Guid FolderEssays = Guid.Parse("e1111111-1111-4111-8111-111111111111");
 
-    private static readonly string[] Writes = ["save_note", "save_passage", "create_draft", "add_to_reading_list", "add_book", "update_book", "set_topic_kinds", "create_topic_kind"];
+    private static readonly string[] Writes = ["save_note", "save_passage", "update_note", "update_passage", "delete_note", "delete_passage", "create_draft", "add_to_reading_list", "add_book", "update_book", "set_topic_kinds", "create_topic_kind"];
 
     /// <summary>Write tools that may change something already there, and say so in their hints.</summary>
-    private static readonly string[] Overwrites = ["update_book", "set_topic_kinds"];
+    private static readonly string[] Overwrites = ["update_book", "set_topic_kinds", "update_note", "update_passage", "delete_note", "delete_passage"];
 
     // ------------------------------------------------------------------
     // M1: the tool surface is what we wrote, and drift is a visible diff

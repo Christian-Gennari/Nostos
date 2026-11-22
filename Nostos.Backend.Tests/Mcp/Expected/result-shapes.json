@@ -461,6 +461,85 @@
       "markdown": "string"
     }
   },
+  "update_note": {
+    "id": "string",
+    "kind": "string",
+    "book": "string",
+    "url": "string",
+    "quote": "string",
+    "note": "string",
+    "topics": [
+      "string"
+    ],
+    "undo": {
+      "noteId": "string",
+      "thought": "string",
+      "topics": [
+        "string"
+      ]
+    },
+    "message": "string",
+    "citation": {
+      "book": "string",
+      "author": "string",
+      "year": "string",
+      "url": "string",
+      "link": "string",
+      "markdown": "string"
+    }
+  },
+  "delete_note": {
+    "id": "string",
+    "kind": "string",
+    "book": "string",
+    "quote": "string",
+    "note": "string",
+    "topics": [
+      "string"
+    ],
+    "message": "string"
+  },
+  "update_passage": {
+    "id": "string",
+    "kind": "string",
+    "book": "string",
+    "url": "string",
+    "quote": "string",
+    "note": "string",
+    "topics": [
+      "string"
+    ],
+    "undo": {
+      "passageId": "string",
+      "thought": "string",
+      "topics": [
+        "string"
+      ]
+    },
+    "message": "string",
+    "citation": {
+      "book": "string",
+      "author": "string",
+      "year": "string",
+      "location": "string",
+      "url": "string",
+      "link": "string",
+      "markdown": "string"
+    },
+    "passageTitle": "string"
+  },
+  "delete_passage": {
+    "id": "string",
+    "kind": "string",
+    "book": "string",
+    "quote": "string",
+    "note": "string",
+    "topics": [
+      "string"
+    ],
+    "passageTitle": "string",
+    "message": "string"
+  },
   "create_draft": {
     "id": "string",
     "name": "string",

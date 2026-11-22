@@ -268,13 +268,41 @@ public sealed class McpToolContractTests : IAsyncLifetime
         }));
         Add("reading_list", await CallAsync("reading_list", new()));
 
-        Add("save_note", await CallAsync("save_note", new()
+        var savedNote = await CallAsync("save_note", new()
         {
             ["bookId"] = _mobyId,
             ["thought"] = "Seeing is a kind of work.",
             ["quote"] = "Call me Ishmael.",
             ["topics"] = new[] { "Whiteness" },
+        });
+        Add("save_note", savedNote);
+        var savedNoteId = savedNote.GetProperty("id").GetString();
+        Add("update_note", await CallAsync("update_note", new()
+        {
+            ["noteId"] = savedNoteId,
+            ["thought"] = "Seeing is work, and it takes practice.",
+            ["topics"] = new[] { "Perception" },
         }));
+        Add("delete_note", await CallAsync("delete_note", new() { ["noteId"] = savedNoteId }));
+
+        // A passage is made through the app's own API (keeping one over MCP
+        // needs a real EPUB file), then edited and removed through the tools.
+        var passageId = await CreateNoteAsync(_mobyId, new CreateNoteDto(
+            Content: "A symbol of the sublime.",
+            SelectedText: "The whale is a symbol of the sublime.",
+            SourceAnchorKind: "pdf_page",
+            SourceAnchorValue: "10",
+            PassageEnd: "12",
+            Kind: "passage",
+            PassageTitle: "The whale",
+            Topics: ["Whiteness"]));
+        Add("update_passage", await CallAsync("update_passage", new()
+        {
+            ["passageId"] = $"note:{passageId:D}",
+            ["thought"] = "A symbol of what cannot be said.",
+            ["topics"] = new[] { "The sublime" },
+        }));
+        Add("delete_passage", await CallAsync("delete_passage", new() { ["passageId"] = $"note:{passageId:D}" }));
 
         // save_passage answers with the same McpSavedNote record as save_note
         // (its shape is covered above). It is not called here: keeping a

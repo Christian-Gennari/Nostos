@@ -166,7 +166,9 @@ server writes each pill as its own `[[Name]]` paragraph
 a pill topic left out is removed, and so is an older link the text never
 declared. The client's copy of the text rules (`ui/note-composer/topic-text.ts`)
 and the server's run the same cases,
-`Nostos.Shared/Fixtures/topic-references.json`.
+`Nostos.Shared/Fixtures/topic-references.json`. The server reads the same split
+back with `TopicReferences.Words`, so an edit from a connected app that changes
+only the pills keeps the note's words as the composer shows them.
 
 A note of only a topic is a note: a highlight tagged **Faith** with no words
 saves.

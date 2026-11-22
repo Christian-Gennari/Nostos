@@ -127,6 +127,39 @@ public sealed record McpTopicDetail(
 public sealed record McpSavedNote(string Id, string Book, string Url, McpCitation Citation);
 
 /// <summary>
+/// What <c>update_note</c> / <c>update_passage</c> wrote and the arguments that
+/// put it back. <see cref="Undo"/> holds the same tool's arguments with the
+/// note's previous words and topics; it is null when nothing changed.
+/// </summary>
+public sealed record McpUpdatedNote(
+    string Id,
+    string Kind,
+    string Book,
+    string Url,
+    string? Quote,
+    string? Note,
+    IReadOnlyList<string> Topics,
+    IReadOnlyDictionary<string, object?>? Undo,
+    string Message,
+    McpCitation Citation,
+    // APPENDED: a passage's title, unchanged by an edit.
+    string? PassageTitle = null);
+
+/// <summary>
+/// What <c>delete_note</c> / <c>delete_passage</c> removed: its quote, the
+/// user's words and its topics, so the user can keep it again.
+/// </summary>
+public sealed record McpDeletedNote(
+    string Id,
+    string Kind,
+    string Book,
+    string? Quote,
+    string? Note,
+    IReadOnlyList<string> Topics,
+    string? PassageTitle,
+    string Message);
+
+/// <summary>
 /// What <c>add_book</c> did: <c>created</c>, <c>matched</c> (already in the
 /// library, <c>duplicate</c> true) or <c>choose</c> (nothing added; the
 /// <c>candidates</c> may be the same book).
