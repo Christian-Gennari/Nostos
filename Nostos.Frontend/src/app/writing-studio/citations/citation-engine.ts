@@ -134,6 +134,27 @@ export class CitationEngine {
   }
 }
 
+const engines = new Map<string, Promise<CitationEngine>>();
+
+/**
+ * The style's engine, built once for the page and shared. Building one makes
+ * citeproc parse the whole CSL style: 1.1 s for Chicago notes' 243 KB and
+ * 0.5 s for APA on this machine, against milliseconds for each citation
+ * afterwards. What a citation says depends only on the item, its locator and
+ * the caller's `subsequent` flag, so there is nothing to keep per caller.
+ * A failed build is dropped, so the next citation tries again, as in
+ * `fetchText`.
+ */
+export function citationEngine(style: CitationStyle): Promise<CitationEngine> {
+  let engine = engines.get(style.id);
+  if (!engine) {
+    engine = CitationEngine.create(style);
+    engine.catch(() => engines.delete(style.id));
+    engines.set(style.id, engine);
+  }
+  return engine;
+}
+
 function escapeMarkdown(text: string): string {
   return text.replace(/([\\*_`[\]])/g, '\\$1');
 }

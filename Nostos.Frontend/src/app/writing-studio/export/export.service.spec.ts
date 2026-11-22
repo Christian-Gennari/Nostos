@@ -10,6 +10,8 @@ import type { Book } from '../../core/dtos/book.dtos';
 import type { WritingDto } from '../../core/dtos/writing.dtos';
 import { BooksService } from '../../core/services/books.service';
 import { WritingsService } from '../../core/services/writings.service';
+import { citationEngine } from '../citations/citation-engine';
+import { citationStyle } from '../citations/citation-styles';
 import type { ExportDocument, ExportInline, PageSetup } from './export-model';
 import { inlineText } from './export-model';
 import { ExportService, citedBookIds } from './export.service';
@@ -70,12 +72,19 @@ describe('ExportService (issue #1164): real writings, books and citation styles'
     savePageSetup: ReturnType<typeof vi.fn>;
   };
 
-  beforeAll(() => {
+  beforeAll(async () => {
     realFetch = globalThis.fetch;
     globalThis.fetch = (async (url: string) => {
       const text = files[String(url)];
       return { ok: text !== undefined, text: async () => text } as Response;
     }) as typeof fetch;
+
+    // citeproc parses a whole CSL style when it builds that style's engine:
+    // 1.1 s for Chicago notes' 243 KB and 0.5 s for APA on this machine,
+    // against milliseconds for each citation after. Building them here, once,
+    // keeps that parse out of the tests, where one test that used both styles
+    // paid two builds and a loaded runner took it past five seconds.
+    await Promise.all([citationEngine(citationStyle('chicago-notes')), citationEngine(citationStyle('apa'))]);
   });
 
   afterAll(() => {
