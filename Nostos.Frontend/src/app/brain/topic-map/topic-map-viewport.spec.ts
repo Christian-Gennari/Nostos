@@ -400,7 +400,7 @@ describe('TopicMapViewport', () => {
     vi.unstubAllGlobals();
   });
 
-  it('nudges selected node out from under .map-card during revealSelected and cancels on dispose', () => {
+  it('nudges selected node out from under the HUD (card and controls rail) and cancels on dispose', () => {
     const viewport = new TopicMapViewport();
     const graph = new Graph();
     graph.addNode('a', { x: 0, y: -200 }); // viewport y = 300 - (-200) = 500
@@ -409,6 +409,7 @@ describe('TopicMapViewport', () => {
     const container = document.createElement('div');
     container.getBoundingClientRect = () => rect(0, 0, 800, 600);
     const hud = document.createElement('div');
+    hud.getBoundingClientRect = () => rect(12, 400, 776, 200);
     const card = document.createElement('div');
     card.className = 'map-card';
     card.getBoundingClientRect = () => rect(200, 420, 400, 160);
@@ -461,6 +462,79 @@ describe('TopicMapViewport', () => {
     });
     viewport.dispose();
     expect(rafQueue.size).toBe(0);
+  });
+
+  it('reveals a node hidden by the controls rail even when it sits above the card', () => {
+    const viewport = new TopicMapViewport();
+    const graph = new Graph();
+    // viewport y = 450: below the rail's top edge (400) but above the card (420),
+    // which is where the phone's focused topic used to disappear.
+    graph.addNode('a', { x: 0, y: -150 });
+    const { sigma, camera } = createMockSigma();
+
+    const container = document.createElement('div');
+    container.getBoundingClientRect = () => rect(0, 0, 800, 600);
+    const hud = document.createElement('div');
+    hud.getBoundingClientRect = () => rect(12, 400, 776, 200);
+    const card = document.createElement('div');
+    card.className = 'map-card';
+    card.getBoundingClientRect = () => rect(12, 480, 776, 160);
+    hud.appendChild(card);
+
+    const frames: FrameRequestCallback[] = [];
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+      frames.push(cb);
+      return frames.length;
+    });
+
+    viewport.revealSelected({
+      getSigma: () => sigma,
+      getGraph: () => graph,
+      getSelectedId: () => 'a',
+      getContainerEl: () => container,
+      getHudEl: () => hud,
+    });
+    frames.shift()!(0);
+
+    // Measured against the HUD's top edge, not the card's: the call moves it.
+    expect(camera.animate).toHaveBeenCalledWith(expect.objectContaining({ y: expect.any(Number) }), {
+      duration: 300,
+    });
+  });
+
+  it('centres a focused topic in the visible band above the card on a phone', () => {
+    const viewport = new TopicMapViewport();
+    const graph = new Graph();
+    graph.addNode('a', { x: 0, y: 0 });
+    graph.addNode('b', { x: 100, y: 100 });
+    const { sigma, camera } = createMockSigma();
+
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: true }) as MediaQueryList)
+    );
+    // The legend takes 40px at the top; the card and rail leave 180px covered
+    // at the bottom. The visible band's centre is above the stage's centre.
+    viewport.frameFocused(sigma, graph, 'a', viewport.fitOccupancy(), { top: 40, bottom: 180 });
+
+    const [state] = camera.animate.mock.calls.at(-1) as unknown as [
+      { x: number; y: number; ratio: number },
+    ];
+    expect(state.y).toBeLessThan(-0.05);
+    expect(state.ratio).toBeGreaterThan(0);
+
+    // A wide screen keeps the stage centre, exactly as before.
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: false }) as MediaQueryList)
+    );
+    camera.animate.mockClear();
+    viewport.frameFocused(sigma, graph, 'a', viewport.fitOccupancy(), { top: 40, bottom: 180 });
+    const [wide] = camera.animate.mock.calls.at(-1) as unknown as [{ x: number; y: number }];
+    expect(wide.x).toBeCloseTo(0);
+    expect(wide.y).toBeCloseTo(0);
+
+    vi.unstubAllGlobals();
   });
 
   it('supports pseudo-fullscreen fallback and cancels pending refresh timeouts and listeners on dispose', async () => {

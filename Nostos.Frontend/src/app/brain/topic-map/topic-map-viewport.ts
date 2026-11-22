@@ -6,6 +6,7 @@ import {
   LABEL_EDGE_ALLOWANCE_FRACTION,
   type MapCamera,
 } from './topic-map.helpers';
+import { isPhoneViewport } from '../../ui/breakpoints';
 
 export interface GraphExtent {
   minX: number;
@@ -382,13 +383,20 @@ export class TopicMapViewport {
    * The camera state for a focused topic, derived from the graph's CURRENT
    * extent. At load that is the settled layout, so the zoom is the intended
    * fraction of a real fit rather than the Sigma default camera's ratio.
+   *
+   * On a phone the visible map is the band between the legend and the HUD
+   * (whose top edge is the real selection card, measured), not the whole
+   * canvas: centring on the middle of the stage put the focused topic under the
+   * controls rail, just above the card. The node is centred in that band
+   * instead. A wide screen keeps the stage centre.
    */
   focusedCameraState(
     sigma: Sigma | null,
     graph: Graph | null,
     selectedId: string | null,
     occupancy: { x: number; y: number } = this.fitOccupancy(),
-    insets: { top: number; bottom: number } = { top: 0, bottom: 0 }
+    insets: { top: number; bottom: number } = { top: 0, bottom: 0 },
+    phone = isPhoneViewport()
   ): { x: number; y: number; ratio: number } | null {
     if (!selectedId || !graph || !sigma || !graph.hasNode(selectedId)) return null;
 
@@ -404,7 +412,23 @@ export class TopicMapViewport {
     const ratio = fit
       ? Math.max(fit.ratio * 0.6, 0.3)
       : sigma.getCamera().ratio;
-    return { x: framed.x, y: framed.y, ratio };
+    if (!phone) return { x: framed.x, y: framed.y, ratio };
+
+    const { width, height } = sigma.getDimensions();
+    if (!width || !height) return { x: framed.x, y: framed.y, ratio };
+    const dy = (insets.top - insets.bottom) / 2;
+    if (dy === 0) return { x: framed.x, y: framed.y, ratio };
+    // Ask Sigma for the framed coordinate that sits at the band's centre under
+    // a camera already centred on the node; using that as the camera's centre
+    // moves the node there without hand-rolled maths.
+    const centred = sigma.viewportToFramedGraph(
+      { x: width / 2, y: height / 2 - dy },
+      { cameraState: { x: framed.x, y: framed.y, angle: 0, ratio } }
+    );
+    if (!Number.isFinite(centred.x) || !Number.isFinite(centred.y)) {
+      return { x: framed.x, y: framed.y, ratio };
+    }
+    return { x: centred.x, y: centred.y, ratio };
   }
 
   /**
@@ -425,15 +449,23 @@ export class TopicMapViewport {
     sigma.getCamera().animate(state, { duration: 350 });
   }
 
-  /** Bring the selected node to the centre of the stage. */
-  centerSelected(sigma: Sigma | null, graph: Graph | null, selectedId: string | null): void {
-    const target = this.focusedCameraState(sigma, graph, selectedId);
+  /**
+   * Bring the selected node to the centre of the stage (or, on a phone, of the
+   * band above the selection card and the controls rail).
+   */
+  centerSelected(
+    sigma: Sigma | null,
+    graph: Graph | null,
+    selectedId: string | null,
+    insets: { top: number; bottom: number } = { top: 0, bottom: 0 }
+  ): void {
+    const target = this.focusedCameraState(sigma, graph, selectedId, this.fitOccupancy(), insets);
     if (!target || !sigma) return;
     const camera = sigma.getCamera();
     camera.animate({ ...target, ratio: Math.min(camera.ratio, target.ratio) }, { duration: 350 });
   }
 
-  /** Keep the selected node out from under the selection card. */
+  /** Keep the selected node out from under the selection card and controls rail. */
   revealSelected(options: RevealSelectedOptions): void {
     if (this.revealFrameId !== null) {
       window.cancelAnimationFrame(this.revealFrameId);
@@ -444,15 +476,20 @@ export class TopicMapViewport {
       const sigma = options.getSigma();
       const graph = options.getGraph();
       const id = options.getSelectedId();
+      const hud = options.getHudEl()?.getBoundingClientRect();
       const card = options.getHudEl()?.querySelector('.map-card')?.getBoundingClientRect();
       const stage = options.getContainerEl()?.getBoundingClientRect();
-      if (!sigma || !id || !card || !stage || !graph?.hasNode(id) || !card.height) return;
+      if (!sigma || !id || !hud || !card || !stage || !graph?.hasNode(id) || !card.height || !hud.height) {
+        return;
+      }
       const attrs = graph.getNodeAttributes(id);
       const point = sigma.graphToViewport({ x: Number(attrs['x']) || 0, y: Number(attrs['y']) || 0 });
       const margin = 32;
       const left = card.left - stage.left - margin;
       const right = card.right - stage.left + margin;
-      const limit = card.top - stage.top - margin;
+      // The HUD's top edge is the top of the rail on a phone and of the card on
+      // a wide screen; either way it is measured, not a fixed inset.
+      const limit = hud.top - stage.top - margin;
       if (point.x < left || point.x > right || point.y <= limit) return;
       const camera = sigma.getCamera();
       const state = camera.getState();

@@ -702,12 +702,13 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
     return { legend: this.mapLegend?.nativeElement, hud: this.mapHud?.nativeElement };
   }
 
-  /** Bring the selected node to the centre of the stage. */
+  /** Bring the selected node to the centre of the visible map area. */
   centerSelected(): void {
     this.viewport.centerSelected(
       this.renderer.sigmaInstance,
       this.renderer.graphInstance,
-      this.selectedNodeId()
+      this.selectedNodeId(),
+      this.viewport.overlayInsets(this.sigmaContainer?.nativeElement, this.overlays())
     );
   }
 
@@ -731,7 +732,9 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
   /** Select a topic and bring it to the middle of the stage. */
   focusTopic(id: string): void {
     this.selectAccessibleNode(id);
-    this.centerSelected();
+    // The selection card that shrinks the visible band is painted on the next
+    // change-detection pass; measure the HUD only after it exists.
+    window.requestAnimationFrame(() => this.centerSelected());
   }
 
   onToggleKind(key: string): void {
