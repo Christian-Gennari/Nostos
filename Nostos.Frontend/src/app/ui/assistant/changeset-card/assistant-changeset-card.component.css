@@ -115,9 +115,7 @@
  * floor, so the state is carried by ink and decoration instead of opacity.
  */
 .changeset__kind-group--off .changeset__kind-head {
-  padding: 2px 6px;
-  border: 1px dashed var(--border-color);
-  border-radius: var(--radius-sm);
+  border-color: var(--border-color);
   background: var(--bg-hover);
   color: var(--color-text-muted);
 }
@@ -142,6 +140,11 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
+  /* The off state only recolours this border, so the checkbox does not shift
+     sideways when a whole group is unticked. */
+  padding: 2px 6px;
+  border: 1px dashed transparent;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   color: var(--color-text-main);
   font-size: 0.8rem;
@@ -175,6 +178,12 @@
   font-size: 0.62rem;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+
+/* The details panel is --bg-surface-alt too, so the pill needs its own
+   surface there or it disappears into the panel. */
+.changeset__details .changeset__kind-new {
+  background: var(--bg-surface);
 }
 
 .changeset__kind-topics {

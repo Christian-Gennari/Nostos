@@ -9,6 +9,7 @@ import { TopicsService, type TopicDto, type TopicGraphDto, type TopicKindDto } f
 import { type MapColorMode } from './brain.helpers';
 import { BrainMapPage } from './brain-map.page';
 import { BrainStateService, type BrainMapView } from './brain-state.service';
+import { AssistantService } from '../ui/assistant/assistant.service';
 import { MAX_MAP_TOPICS } from './topic-map/topic-map.helpers';
 
 vi.mock('sigma', () => {
@@ -116,6 +117,11 @@ describe('BrainMapPage', () => {
       savedView?: BrainMapView | null;
       colorMode?: MapColorMode;
       kindsLoaded?: boolean;
+      assistant?: {
+        surfaceAvailable: () => boolean;
+        appendToDraft: (value: string) => void;
+        requestSurfaceOpen: () => void;
+      };
     } = {}
   ): Promise<void> {
     query = new BehaviorSubject<ParamMap>(convertToParamMap(initialParams));
@@ -174,6 +180,9 @@ describe('BrainMapPage', () => {
               id ? topicsSignal().find((t) => t.id === id) ?? null : null,
           },
         },
+        ...(options.assistant
+          ? [{ provide: AssistantService, useValue: options.assistant }]
+          : []),
       ],
     }).compileComponents();
 
@@ -378,6 +387,26 @@ describe('BrainMapPage', () => {
     });
     fixture.detectChanges();
     expect(legend.querySelector('.map-legend-clear')?.textContent?.trim()).toBe('Show all kinds');
+  });
+
+  it('closes the phone Controls sheet when the legend asks Ask Nostos to sort', async () => {
+    const appendToDraft = vi.fn();
+    const requestSurfaceOpen = vi.fn();
+    await mountPage(
+      {},
+      {
+        colorMode: 'kind',
+        assistant: { surfaceAvailable: () => true, appendToDraft, requestSurfaceOpen },
+      }
+    );
+    fixture.componentInstance.controlsOpen.set(true);
+    fixture.detectChanges();
+
+    fixture.componentInstance.sortUnkindedWithAssistant();
+
+    expect(fixture.componentInstance.controlsOpen()).toBe(false);
+    expect(appendToDraft).toHaveBeenCalledWith(BrainMapPage.SORT_UNKINDED_REQUEST);
+    expect(requestSurfaceOpen).toHaveBeenCalled();
   });
 
   it('states one in-scope total and the hidden-by-kind count separately', async () => {

@@ -286,6 +286,7 @@ export class BrainMapPage {
    */
   sortUnkindedWithAssistant(): void {
     if (!this.assistant.surfaceAvailable()) return;
+    this.controlsOpen.set(false);
     this.assistant.appendToDraft(BrainMapPage.SORT_UNKINDED_REQUEST);
     this.assistant.requestSurfaceOpen();
   }

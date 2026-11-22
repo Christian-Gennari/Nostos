@@ -23,9 +23,13 @@ collections, file books into them or take them out, edit a book's own details
   colour, existing or new. Each group has one checkbox, and **Show every
   change** lists the topics in it so a wrong guess can be unticked on its own.
   A topic or group you untick keeps its place, unticked — it does not move
-  into the plain step list or disappear. A new kind's create step counts only
+  into the plain step list or disappear. A partly ticked group shows a dash in
+  its box, its count reads included/total, and its preview names only the
+  topics Apply would actually change. A new kind's create step counts only
   while at least one of its topics is ticked, so **Apply changes** is disabled
-  once nothing is left ticked.
+  once nothing is left ticked. Once the card is applied, undone or set aside,
+  **Show every change** lists only what was applied, as plain rows with no
+  checkboxes.
 - **Nothing is applied half way.** A review changes nothing until you apply it,
   and an apply is all or nothing.
 
@@ -60,12 +64,15 @@ clear) and creates a kind with `topics_create_kind`.
 
 - **A kind you set is yours.** Ask Nostos never replaces — or clears — a kind
   whose source is `reader` unless you named that topic in the same request.
-  "Named" is a whole-word match in your own words, folded like a topic name
-  (case and composed accents); a word inside a longer word, a name under three
-  letters, or the request's own vocabulary ("a kind", "my topics") does not
-  count. The model is asked to list the topics it believes you named, and each
-  one is checked against those words. The result tells the model "Kept N kinds
-  you set yourself", so it can report what it left alone.
+  "Named" means the model passed that topic's id in `namedTopicIds` and the
+  name occurs in your own words as a whole token, folded like a topic name
+  (case and composed accents). A word inside a longer word, or the request's
+  own vocabulary ("a kind", "my topics"), does not count. The model must pass
+  ids: an omitted `namedTopicIds` means you named no topic, so every reader
+  kind is protected — Nostos does not guess from the prose. When verifying an
+  id the model passed, the three-letter rule does not apply, so a topic called
+  "AI" or "1984" is recognised when it is in your text. The result tells the
+  model "Kept N kinds you set yourself", so it can report what it left alone.
 - **Creating a kind always waits for review**, even inside an otherwise small
   changeset.
 - Applied kinds carry the `assistant` source. They appear in the Brain's

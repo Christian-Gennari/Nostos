@@ -32,7 +32,8 @@
         <input
           type="checkbox"
           appCheckbox
-          [checked]="group.included"
+          [checked]="groupIncludedCount(group) === group.topics.length"
+          [indeterminate]="groupIncludedCount(group) > 0 && groupIncludedCount(group) < group.topics.length"
           [disabled]="disabled() || group.stepIndexes.length === 0"
           (change)="toggleKindGroup(group, $event)"
           data-testid="assistant-changeset-kind-toggle"
@@ -41,10 +42,12 @@
         <span class="changeset__kind-swatch" aria-hidden="true" [style.background]="group.color"></span>
         }
         <span class="changeset__kind-name">{{ group.name }}</span>
-        <span class="changeset__kind-count">({{ group.topics.length }})</span>
+        <span class="changeset__kind-count">({{ groupCountLabel(group) }})</span>
         @if (group.isNew) {<span class="changeset__kind-new">New</span>}
       </label>
-      <p class="changeset__kind-topics" [class.changeset__kind-topics--off]="!group.included">{{ groupPreview(group) }}</p>
+      @if (groupPreview(group); as preview) {
+      <p class="changeset__kind-topics" [class.changeset__kind-topics--off]="!group.included">{{ preview }}</p>
+      }
     </li>
     }
   </ul>
@@ -90,21 +93,22 @@
 
   @if (detailsOpen()) {
   <div class="changeset__details" data-testid="assistant-changeset-details">
-    @if (kindGroups().length) {
+    @if (detailKindGroups().length) {
     <section class="changeset__group">
       <h4>Topics</h4>
-      @for (group of kindGroups(); track group.key) {
+      @for (group of detailKindGroups(); track group.key) {
       <div class="changeset__kind-detail">
         <p class="changeset__kind-detail-head">
           @if (group.color) {
           <span class="changeset__kind-swatch" aria-hidden="true" [style.background]="group.color"></span>
           }
           <span>{{ group.name }}</span>
-          <span class="changeset__kind-count">({{ group.topics.length }})</span>
+          <span class="changeset__kind-count">({{ groupCountLabel(group) }})</span>
           @if (group.isNew) {<span class="changeset__kind-new">New</span>}
         </p>
         <ul>
-          @for (topic of group.topics; track topic.stepIndex) {
+          @for (topic of group.topics; track topic.stepIndex ?? topic.topicId) {
+          @if (inReview()) {
           <li [class.changeset__step--off]="!topic.included">
             <label class="changeset__topic-control">
               <input
@@ -121,6 +125,16 @@
               }
             </label>
           </li>
+          } @else {
+          <!-- Applied, undone or set aside: only what happened, with no
+               checkbox offering a change the card can no longer make. -->
+          <li>
+            <span class="changeset__topic-name">{{ topic.topicName }}</span>
+            @if (topic.previousKindName) {
+            <span class="changeset__note"> · was {{ topic.previousKindName }}</span>
+            }
+          </li>
+          }
           }
         </ul>
       </div>

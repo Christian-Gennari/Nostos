@@ -290,6 +290,8 @@ export interface LibraryTopicKindAssignmentDto {
   stepIndex: number | null;
   /** The target kind's palette key, so an existing kind shows its colour too. */
   kindColorKey?: string | null;
+  /** Who set the kind before this changeset (issue #1770 review, round 2). */
+  previousSource?: string | null;
 }
 
 /**

@@ -206,7 +206,22 @@ export class AssistantChangesetCardComponent {
   readonly hiddenBooks = computed(() => Math.max(0, this.changeset().diff.memberships.length - BOOK_LIST_LIMIT));
   readonly edits = computed(() => this.changeset().diff.bookEdits);
   readonly hasDetails = computed(() =>
-    this.kindGroups().length + this.collectionLines().length + this.bookLines().length + this.edits().length > 0);
+    this.detailKindGroups().length + this.collectionLines().length + this.bookLines().length + this.edits().length > 0);
+
+  /**
+   * The kind groups "Show every change" lists: while in review every stored
+   * topic keeps its place (ticked or not), so a wrong guess can still be
+   * unticked. Once the card is applied, undone or set aside, only the topics
+   * that were actually applied are shown, as plain rows — a checkbox there
+   * would offer a change the card can no longer make.
+   */
+  readonly detailKindGroups = computed<KindGroup[]>(() => {
+    const groups = this.kindGroups();
+    if (this.inReview()) return groups;
+    return groups
+      .map((group) => ({ ...group, topics: group.topics.filter((topic) => topic.included) }))
+      .filter((group) => group.topics.length > 0);
+  });
 
   toggleDetails(): void {
     this.detailsOpen.update((open) => !open);
@@ -231,22 +246,28 @@ export class AssistantChangesetCardComponent {
 
   private effectiveIncluded(): number[] {
     const steps = this.changeset().steps;
-    const includedTopicKinds = new Set<string>();
+    const included = new Set(steps.filter((step) => step.included).map((step) => step.index));
+
+    // A kind's create step is only applied while one of the steps that needs
+    // it is applied. Using the stored dependsOn edges (rather than guessing
+    // from kind keys) keeps the client's canApply in step with the server's
+    // Included(), even when a fallback plan carries a multi-topic kind op.
+    const dependants = new Map<number, number[]>();
     for (const step of steps) {
-      if (step.included && step.topicKind && !step.topicKind.createsKind) {
-        includedTopicKinds.add(step.topicKind.kindKey);
+      for (const dependency of step.dependsOn) {
+        const list = dependants.get(dependency) ?? [];
+        list.push(step.index);
+        dependants.set(dependency, list);
       }
     }
 
     return steps
       .filter((step) => {
         if (!step.included) return false;
-        const info = step.topicKind;
-        if (!info?.createsKind) return true;
-        const hasTopicSteps = steps.some((candidate) =>
-          candidate.topicKind && !candidate.topicKind.createsKind
-            && candidate.topicKind.kindKey === info.kindKey);
-        return !hasTopicSteps || includedTopicKinds.has(info.kindKey);
+        if (!step.topicKind?.createsKind) return true;
+        const users = dependants.get(step.index) ?? [];
+        // A kind created on its own has no dependants and stays.
+        return users.length === 0 || users.some((index) => included.has(index));
       })
       .map((step) => step.index);
   }
@@ -256,9 +277,23 @@ export class AssistantChangesetCardComponent {
     this.toggleStep(stepIndex, event);
   }
 
+  /** How many of a group's topics are still ticked. */
+  groupIncludedCount(group: KindGroup): number {
+    return group.topics.filter((topic) => topic.included).length;
+  }
+
+  /** "2" when the whole group is ticked, "1/2" while part of it is left out. */
+  groupCountLabel(group: KindGroup): string {
+    const included = this.groupIncludedCount(group);
+    return included === group.topics.length ? `${group.topics.length}` : `${included}/${group.topics.length}`;
+  }
+
   /** "Dewey, Freire, Montessori, and 11 more" under a group's checkbox. */
   groupPreview(group: KindGroup): string {
-    const names = group.topics.map((topic) => topic.topicName);
+    // The preview is what Apply would do: an unticked name is not in it.
+    const names = group.topics
+      .filter((topic) => topic.included)
+      .map((topic) => topic.topicName);
     if (names.length <= KIND_PREVIEW_LIMIT) return names.join(', ');
     return `${names.slice(0, KIND_PREVIEW_LIMIT).join(', ')}, and ${names.length - KIND_PREVIEW_LIMIT} more`;
   }

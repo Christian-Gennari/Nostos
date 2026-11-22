@@ -219,10 +219,47 @@ describe('AssistantChangesetCardComponent topic kinds', () => {
     expect(topics).toEqual([false, true, true]);
 
     const groupNames = [...element.querySelectorAll('.changeset__kind-group')].map((group) => group.textContent);
-    expect(groupNames[0]).toContain('(2)');
-    expect(groupNames[0]).toContain('Freire');
+    expect(groupNames[0]).toContain('(1/2)');
+    // The active preview only names what Apply would do.
+    expect(groupNames[0]).toContain('Montessori');
+    expect(groupNames[0]).not.toContain('Freire');
     // The topic did not become one more plain step line.
     expect(element.querySelectorAll('[data-testid="assistant-changeset-steps"] li')).toHaveLength(0);
+  });
+
+  it('shows an indeterminate group box when only part of the group is ticked', () => {
+    const fixture = setup(withSteps(reviewWithKinds(), { 1: false }));
+    const element = fixture.nativeElement as HTMLElement;
+    const group = element.querySelector('.changeset__kind-group') as HTMLElement;
+    const box = group.querySelector('input') as HTMLInputElement;
+
+    expect(box.indeterminate).toBe(true);
+    expect(box.checked).toBe(false);
+    expect(group.textContent).toContain('(1/2)');
+  });
+
+  it('lists only the applied topics, as plain rows, once the card is applied', () => {
+    const changeset = withSteps(reviewWithKinds(), { 1: false });
+    const applied: AssistantChangesetDto = {
+      ...changeset,
+      status: 'applied',
+      canUndo: true,
+    };
+    const fixture = setup(applied);
+    const element = fixture.nativeElement as HTMLElement;
+    (element.querySelector('[data-testid="assistant-changeset-details-toggle"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    const details = element.querySelector('[data-testid="assistant-changeset-details"]') as HTMLElement;
+    // No checkbox can offer a change the applied card can no longer make.
+    expect(details.querySelectorAll('input')).toHaveLength(0);
+
+    const topics = [...details.querySelectorAll('.changeset__topic-name')]
+      .map((topic) => topic.textContent?.trim());
+    expect(topics).toContain('Montessori');
+    expect(topics).toContain('Paulo Freire');
+    expect(topics).not.toContain('Freire');
+    expect(details.querySelectorAll('li.changeset__step--off')).toHaveLength(0);
   });
 
   it('an unticked group stays in place, unticked, and keeps Apply available for the rest', () => {
