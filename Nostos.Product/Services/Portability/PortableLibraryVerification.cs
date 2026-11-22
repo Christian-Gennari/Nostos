@@ -120,6 +120,32 @@ public sealed class PortablePreparedImportVerification
     internal IReadOnlyList<PortableArchiveMediaEntry> Descriptors { get; }
 
     internal PortableLibraryData? Data { get; }
+
+    /// <summary>
+    /// Returns an updated expected verification handle reflecting the effective
+    /// relational state produced when the prepared payload was materialized into
+    /// a destination library (for example normalized topic kind names or remapped
+    /// topic kind assignments), preserving the binding to the prepared import.
+    /// </summary>
+    public PortablePreparedImportVerification WithAppliedRestore(PortableRelationalRestoreResult restoreResult)
+    {
+        ArgumentNullException.ThrowIfNull(restoreResult);
+        if (!Passed || Data is null)
+        {
+            throw new PortableLibraryVerificationException(
+                PortableLibraryVerificationErrorCodes.ExpectedStateInvalid,
+                "Candidate verification requires a prepared import that passed full verification.");
+        }
+
+        var effectiveCounts = PortableLibraryCounts.ComputeCounts(restoreResult.EffectiveData, Descriptors.Count);
+        return new PortablePreparedImportVerification(
+            Passed,
+            Failures,
+            Metadata with { Counts = effectiveCounts },
+            StagedMedia,
+            Descriptors,
+            restoreResult.EffectiveData);
+    }
 }
 
 /// <summary>

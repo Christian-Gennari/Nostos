@@ -471,6 +471,11 @@ internal static class PortableLibraryDatabaseMaterializer
                     SortOrder = source.SortOrder,
                     CreatedAt = source.CreatedAt,
                 };
+                if (!string.Equals(model.Name, source.Name, StringComparison.Ordinal))
+                {
+                    remapped = true;
+                }
+
                 db.TopicKinds.Add(model);
                 kindMap[source.Id] = model.Id;
                 keptPortableKinds.Add(source with { Name = model.Name, ColorKey = colorKey });
@@ -501,7 +506,11 @@ internal static class PortableLibraryDatabaseMaterializer
                 if (byNormalizedName.TryGetValue(normalizedName, out var matched))
                 {
                     kindMap[source.Id] = matched.Id;
-                    if (matched.Id != source.Id)
+                    if (matched.Id != source.Id
+                        || !string.Equals(matched.Name, source.Name, StringComparison.Ordinal)
+                        || !string.Equals(matched.ColorKey, source.ColorKey, StringComparison.Ordinal)
+                        || matched.SortOrder != source.SortOrder
+                        || matched.CreatedAt != source.CreatedAt)
                     {
                         remapped = true;
                     }
@@ -599,6 +608,27 @@ internal static class PortableLibraryDatabaseMaterializer
 }
 
 /// <summary>
+/// Opaque result of <see cref="PortableLibraryRelationalRestore.ApplyVerifiedPayloadAsync"/>
+/// carrying any skipped topic kind names plus the effective relational state
+/// actually materialized into the candidate database so verification compares
+/// against the exact projection produced by restore.
+/// </summary>
+public sealed class PortableRelationalRestoreResult
+{
+    internal PortableRelationalRestoreResult(
+        IReadOnlyList<string> skippedTopicKinds,
+        PortableLibraryData effectiveData)
+    {
+        SkippedTopicKinds = skippedTopicKinds;
+        EffectiveData = effectiveData;
+    }
+
+    public IReadOnlyList<string> SkippedTopicKinds { get; }
+
+    internal PortableLibraryData EffectiveData { get; }
+}
+
+/// <summary>
 /// Narrow public seam for hosts that must materialize a hash-verified portable
 /// relational payload through the exact same restore as the compatibility import
 /// endpoint. The SelfHosted activation candidate builder uses this instead of a
@@ -611,7 +641,7 @@ public static class PortableLibraryRelationalRestore
     /// stream. The caller owns the transaction and the <c>SaveChangesAsync</c>
     /// call, exactly like the compatibility import path.
     /// </summary>
-    public static async Task ApplyVerifiedPayloadAsync(
+    public static async Task<PortableRelationalRestoreResult> ApplyVerifiedPayloadAsync(
         NostosDbContext db,
         Stream verifiedRelationalPayload,
         IReadOnlyList<PortablePreparedMedia> stagedMedia,
@@ -623,7 +653,10 @@ public static class PortableLibraryRelationalRestore
 
         var data = await PortableLibraryDatabaseMaterializer
             .ReadRelationalDataAsync(verifiedRelationalPayload, stagedMedia, cancellationToken);
-        _ = await PortableLibraryDatabaseMaterializer
+        var result = await PortableLibraryDatabaseMaterializer
             .ApplyRelationalDataAsync(db, data, stagedMedia, cancellationToken);
+        return new PortableRelationalRestoreResult(
+            result.SkippedTopicKinds,
+            result.EffectiveData);
     }
 }

@@ -707,12 +707,18 @@ internal static class PortableArchiveValidation
         HashSet<Guid>? topicKindIds = null;
         if (data.TopicKinds is not null)
         {
+            if (data.TopicKinds.Count > TopicKindModel.MaxKinds)
+            {
+                throw new PortableArchiveException(
+                    "too_many_topic_kinds",
+                    $"Portable archive contains {data.TopicKinds.Count} topic kinds; at most {TopicKindModel.MaxKinds} are allowed.");
+            }
+
             RequireUniqueGuids(data.TopicKinds.Select(x => x.Id), "topic kind");
             topicKindIds = data.TopicKinds.Select(x => x.Id).ToHashSet();
 
             var kindNames = new HashSet<string>(StringComparer.Ordinal);
             var kindColors = new HashSet<string>(StringComparer.Ordinal);
-            var enforceUniqueColors = data.TopicKinds.Count <= TopicKindModel.MaxKinds;
 
             foreach (var kind in data.TopicKinds)
             {
@@ -738,7 +744,7 @@ internal static class PortableArchiveValidation
                         $"Topic kind {kind.Id} has an invalid color key '{kind.ColorKey}'.");
                 }
 
-                if (enforceUniqueColors && !kindColors.Add(kind.ColorKey))
+                if (!kindColors.Add(kind.ColorKey))
                 {
                     throw new PortableArchiveException(
                         "duplicate_topic_kind_color",

@@ -50,6 +50,24 @@ public sealed class PortableRecoveryPayload
 
     /// <summary>Canonical book/cover descriptors in the archive layout.</summary>
     public IReadOnlyList<PortableArchiveMediaEntry> PrimaryMedia { get; }
+
+    /// <summary>
+    /// Returns an updated recovery payload reflecting the effective relational
+    /// state materialized into the restore candidate database.
+    /// </summary>
+    public PortableRecoveryPayload WithAppliedRestore(PortableRelationalRestoreResult restoreResult)
+    {
+        ArgumentNullException.ThrowIfNull(restoreResult);
+        var effectiveCounts = PortableLibraryCounts.ComputeCounts(
+            restoreResult.EffectiveData,
+            PrimaryMedia.Count);
+        return new PortableRecoveryPayload(
+            restoreResult.EffectiveData,
+            DataBytes,
+            DataSha256,
+            effectiveCounts,
+            PrimaryMedia);
+    }
 }
 
 /// <summary>

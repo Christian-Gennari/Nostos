@@ -69,9 +69,17 @@ internal sealed class ActivationCoordinatorTemplate : IDisposable
     internal DateTimeOffset BaseTime { get; } = new(2026, 10, 4, 12, 0, 0, TimeSpan.Zero);
     internal TestTimeProvider Clock { get; } = new(new DateTimeOffset(2026, 10, 4, 12, 0, 0, TimeSpan.Zero));
 
-    private ActivationCoordinatorTemplate(bool populated)
+    private readonly Func<LocalPortableTestLibrary, PortableFixtureIds, Task>? _configureSource;
+    private readonly Func<byte[], Task<byte[]>>? _transformArchive;
+
+    private ActivationCoordinatorTemplate(
+        bool populated,
+        Func<LocalPortableTestLibrary, PortableFixtureIds, Task>? configureSource = null,
+        Func<byte[], Task<byte[]>>? transformArchive = null)
     {
         Populated = populated;
+        _configureSource = configureSource;
+        _transformArchive = transformArchive;
         Root = Path.Combine(Path.GetTempPath(), $"nostos-681-template-{Guid.NewGuid():N}");
         ArchivePath = Path.Combine(Root, "source.nostos");
         TemplateDatabase = Path.Combine(Root, "template.db");
@@ -85,6 +93,16 @@ internal sealed class ActivationCoordinatorTemplate : IDisposable
     private static ActivationCoordinatorTemplate Create(bool populated)
     {
         var template = new ActivationCoordinatorTemplate(populated);
+        template.Initialize();
+        return template;
+    }
+
+    internal static ActivationCoordinatorTemplate CreateCustom(
+        bool populated,
+        Func<LocalPortableTestLibrary, PortableFixtureIds, Task>? configureSource = null,
+        Func<byte[], Task<byte[]>>? transformArchive = null)
+    {
+        var template = new ActivationCoordinatorTemplate(populated, configureSource, transformArchive);
         template.Initialize();
         return template;
     }
@@ -103,7 +121,17 @@ internal sealed class ActivationCoordinatorTemplate : IDisposable
         {
             SourceIds = PortableArchiveTestSupport.PopulateRepresentativeAsync(source.Db, source.Storage)
                 .GetAwaiter().GetResult();
+            if (_configureSource is not null)
+            {
+                _configureSource(source, SourceIds).GetAwaiter().GetResult();
+            }
+
             var archive = SelfHostedActivationTestSupport.ExportArchiveAsync(source).GetAwaiter().GetResult();
+            if (_transformArchive is not null)
+            {
+                archive = _transformArchive(archive).GetAwaiter().GetResult();
+            }
+
             File.WriteAllBytes(ArchivePath, archive);
             var archiveSource = new FilePortableArchiveSource(ArchivePath);
             try
@@ -387,6 +415,7 @@ internal sealed class ActivationCoordinatorTemplate : IDisposable
 internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
 {
     private readonly ActivationCoordinatorTemplate _template;
+    private readonly bool _ownsTemplate;
     private readonly TimeSpan _drainTimeout;
     private readonly List<ServiceProvider> _providers = [];
 
@@ -446,9 +475,13 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
     internal SelfHostedRecoveryManifestStore Manifests { get; private set; } = null!;
     internal ServiceProvider Host { get; private set; } = null!;
 
-    private ActivationCoordinatorTestBed(ActivationCoordinatorTemplate template, TimeSpan drainTimeout)
+    private ActivationCoordinatorTestBed(
+        ActivationCoordinatorTemplate template,
+        TimeSpan drainTimeout,
+        bool ownsTemplate = false)
     {
         _template = template;
+        _ownsTemplate = ownsTemplate;
         _drainTimeout = drainTimeout;
         Clock = new TestTimeProvider(template.BaseTime);
         Root = Path.Combine(Path.GetTempPath(), $"nostos-681-activation-{Guid.NewGuid():N}");
@@ -471,6 +504,29 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
             drainTimeout ?? TimeSpan.FromSeconds(5));
         await bed.InitializeAsync(freshStaging);
         return bed;
+    }
+
+    internal static async Task<ActivationCoordinatorTestBed> CreateCustomAsync(
+        bool populated,
+        Func<LocalPortableTestLibrary, PortableFixtureIds, Task>? configureSource = null,
+        Func<byte[], Task<byte[]>>? transformArchive = null,
+        TimeSpan? drainTimeout = null)
+    {
+        var template = ActivationCoordinatorTemplate.CreateCustom(populated, configureSource, transformArchive);
+        var bed = new ActivationCoordinatorTestBed(
+            template,
+            drainTimeout ?? TimeSpan.FromSeconds(5),
+            ownsTemplate: true);
+        try
+        {
+            await bed.InitializeAsync(freshStaging: false);
+            return bed;
+        }
+        catch
+        {
+            await bed.DisposeAsync();
+            throw;
+        }
     }
 
     private async Task InitializeAsync(bool freshStaging)
@@ -1254,6 +1310,11 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
         }
         catch (UnauthorizedAccessException)
         {
+        }
+
+        if (_ownsTemplate)
+        {
+            _template.Dispose();
         }
     }
 

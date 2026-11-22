@@ -310,33 +310,64 @@ public sealed class PortableArchiveServiceTests
     }
 
     [Fact]
+    public async Task Portable_import_rejects_archive_with_13_topic_kinds()
+    {
+        using var baseArchive = await ExportFixtureAsync();
+        var entries = await ReadEntriesAsync(baseArchive);
+
+        var kindObjects = new JsonArray();
+        for (var i = 1; i <= TopicKindModel.MaxKinds + 1; i++)
+        {
+            kindObjects.Add(new JsonObject
+            {
+                ["id"] = Guid.NewGuid(),
+                ["name"] = $"Kind {i:D2}",
+                ["colorKey"] = $"kind-{((i - 1) % TopicKindModel.MaxKinds) + 1}",
+                ["sortOrder"] = i,
+                ["createdAt"] = DateTime.UnixEpoch,
+            });
+        }
+
+        MutateJsonEntry(entries, "data/library.json", root => root["topicKinds"] = kindObjects);
+        RehashDataDescriptor(entries);
+
+        using var archive = await BuildArchiveAsync(entries);
+        await using var destination = await LocalPortableTestLibrary.CreateAsync();
+
+        var ex = await FluentActions
+            .Awaiting(() => destination.Portability().ImportAsync(archive))
+            .Should().ThrowAsync<PortableArchiveException>();
+        ex.Which.Code.Should().Be("too_many_topic_kinds");
+    }
+
+    [Fact]
     public async Task Portable_import_enforces_12_kind_limit_and_leaves_extra_kind_topics_untyped()
     {
         using var baseArchive = await ExportFixtureAsync();
         var entries = await ReadEntriesAsync(baseArchive);
 
         var keptKindId = Guid.NewGuid();
-        var extraKind13Id = Guid.NewGuid();
-        var extraKind14Id = Guid.NewGuid();
+        var extraKind11Id = Guid.NewGuid();
+        var extraKind12Id = Guid.NewGuid();
         var keptTopicId = Guid.NewGuid();
-        var extraTopic13Id = Guid.NewGuid();
-        var extraTopic14Id = Guid.NewGuid();
+        var extraTopic11Id = Guid.NewGuid();
+        var extraTopic12Id = Guid.NewGuid();
 
         var kindObjects = new JsonArray();
-        for (var i = 1; i <= 14; i++)
+        for (var i = 1; i <= TopicKindModel.MaxKinds; i++)
         {
             var id = i switch
             {
                 1 => keptKindId,
-                13 => extraKind13Id,
-                14 => extraKind14Id,
+                11 => extraKind11Id,
+                12 => extraKind12Id,
                 _ => Guid.NewGuid(),
             };
             kindObjects.Add(new JsonObject
             {
                 ["id"] = id,
-                ["name"] = $"Kind {i:D2}",
-                ["colorKey"] = $"kind-{((i - 1) % 12) + 1}",
+                ["name"] = $"Imported Kind {i:D2}",
+                ["colorKey"] = $"kind-{i}",
                 ["sortOrder"] = i,
                 ["createdAt"] = DateTime.UnixEpoch,
             });
@@ -355,16 +386,16 @@ public sealed class PortableArchiveServiceTests
             });
             topics.Add(new JsonObject
             {
-                ["id"] = extraTopic13Id,
-                ["concept"] = "Skipped Kind Topic 13",
-                ["kindId"] = extraKind13Id,
+                ["id"] = extraTopic11Id,
+                ["concept"] = "Skipped Kind Topic 11",
+                ["kindId"] = extraKind11Id,
                 ["kindSource"] = TopicKindSources.Assistant,
             });
             topics.Add(new JsonObject
             {
-                ["id"] = extraTopic14Id,
-                ["concept"] = "Skipped Kind Topic 14",
-                ["kindId"] = extraKind14Id,
+                ["id"] = extraTopic12Id,
+                ["concept"] = "Skipped Kind Topic 12",
+                ["kindId"] = extraKind12Id,
                 ["kindSource"] = TopicKindSources.ConnectedApp,
             });
         });
@@ -378,10 +409,51 @@ public sealed class PortableArchiveServiceTests
         using var archive = await BuildArchiveAsync(entries);
         await using var destination = await LocalPortableTestLibrary.CreateAsync();
 
-        var imported = await destination.Portability().ImportAsync(archive);
+        // Customize destination so built-in defaults are not replaced verbatim;
+        // destination retains its 6 existing kinds, leaving room for 6 of the 12 imported kinds.
+        var existingPerson = await destination.Db.TopicKinds.SingleAsync(k => k.Id == TopicKindModel.PersonId);
+        existingPerson.Name = "Reader Person";
+        await destination.Db.SaveChangesAsync();
 
-        imported.IntegrityVerified.Should().BeTrue();
-        imported.SkippedTopicKinds.Should().Equal("Kind 13", "Kind 14");
+        var archivePath = Path.Combine(destination.Root, "test.nostos");
+        await using (var fs = File.Create(archivePath))
+        {
+            archive.Position = 0;
+            await archive.CopyToAsync(fs);
+        }
+
+        var staging = new LocalPortableImportStaging(Path.Combine(destination.Root, "staging"));
+        IPreparedPortableImport prepared;
+        await using (var archiveSource = new FilePortableArchiveSource(archivePath))
+        {
+            prepared = await new PortableArchiveReader().PrepareImportAsync(archiveSource, staging);
+        }
+        var verifier = new PortableLibraryVerifier();
+        var expected = await verifier.VerifyPreparedImportAsync(staging, prepared);
+        expected.Passed.Should().BeTrue();
+
+        await using var dataStream = await staging.OpenDataReadAsync(prepared.Metadata.StagingId);
+        var restoreResult = await PortableLibraryRelationalRestore.ApplyVerifiedPayloadAsync(
+            destination.Db,
+            dataStream,
+            prepared.Media,
+            CancellationToken.None);
+        await destination.Db.SaveChangesAsync();
+
+        var verification = await verifier.VerifyCandidateDatabaseAsync(
+            destination.Db,
+            prepared,
+            expected.WithAppliedRestore(restoreResult));
+        verification.Passed.Should().BeTrue(
+            string.Join("; ", verification.Failures.Select(f => $"{f.Code}:{f.Entity}:{f.Field}")));
+
+        restoreResult.SkippedTopicKinds.Should().Equal(
+            "Imported Kind 07",
+            "Imported Kind 08",
+            "Imported Kind 09",
+            "Imported Kind 10",
+            "Imported Kind 11",
+            "Imported Kind 12");
 
         destination.Db.ChangeTracker.Clear();
         (await destination.Db.TopicKinds.CountAsync()).Should().Be(TopicKindModel.MaxKinds);
@@ -390,13 +462,67 @@ public sealed class PortableArchiveServiceTests
         keptTopic.KindId.Should().Be(keptKindId);
         keptTopic.KindSource.Should().Be(TopicKindSources.Reader);
 
-        var untyped13 = await destination.Db.Topics.AsNoTracking().SingleAsync(t => t.Id == extraTopic13Id);
-        untyped13.KindId.Should().BeNull();
-        untyped13.KindSource.Should().BeNull();
+        var untyped11 = await destination.Db.Topics.AsNoTracking().SingleAsync(t => t.Id == extraTopic11Id);
+        untyped11.KindId.Should().BeNull();
+        untyped11.KindSource.Should().BeNull();
 
-        var untyped14 = await destination.Db.Topics.AsNoTracking().SingleAsync(t => t.Id == extraTopic14Id);
-        untyped14.KindId.Should().BeNull();
-        untyped14.KindSource.Should().BeNull();
+        var untyped12 = await destination.Db.Topics.AsNoTracking().SingleAsync(t => t.Id == extraTopic12Id);
+        untyped12.KindId.Should().BeNull();
+        untyped12.KindSource.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Portable_import_trims_topic_kind_name_and_passes_verification()
+    {
+        using var baseArchive = await ExportFixtureAsync();
+        var entries = await ReadEntriesAsync(baseArchive);
+
+        var untrimmedKindId = Guid.NewGuid();
+        var assignedTopicId = Guid.NewGuid();
+        MutateJsonEntry(entries, "data/library.json", root =>
+        {
+            root["topicKinds"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["id"] = untrimmedKindId,
+                    ["name"] = " Person ",
+                    ["colorKey"] = "kind-1",
+                    ["sortOrder"] = 1,
+                    ["createdAt"] = DateTime.UnixEpoch,
+                },
+            };
+            root["concepts"]!.AsArray().Add(new JsonObject
+            {
+                ["id"] = assignedTopicId,
+                ["concept"] = "Aristotle",
+                ["kindId"] = untrimmedKindId,
+                ["kindSource"] = TopicKindSources.Reader,
+            });
+        });
+        MutateJsonEntry(entries, "manifest.json", root =>
+        {
+            var counts = root["counts"]!.AsObject();
+            counts["topics"] = counts["topics"]!.GetValue<int>() + 1;
+        });
+        RehashDataDescriptor(entries);
+
+        using var archive = await BuildArchiveAsync(entries);
+        await using var destination = await LocalPortableTestLibrary.CreateAsync();
+
+        var imported = await destination.Portability().ImportAsync(archive);
+
+        imported.IntegrityVerified.Should().BeTrue();
+        imported.SkippedTopicKinds.Should().BeNull();
+
+        destination.Db.ChangeTracker.Clear();
+        var kind = await destination.Db.TopicKinds.AsNoTracking().SingleAsync();
+        kind.Id.Should().Be(untrimmedKindId);
+        kind.Name.Should().Be("Person");
+
+        var topic = await destination.Db.Topics.AsNoTracking().SingleAsync(t => t.Id == assignedTopicId);
+        topic.KindId.Should().Be(untrimmedKindId);
+        topic.KindSource.Should().Be(TopicKindSources.Reader);
     }
 
     [Fact]

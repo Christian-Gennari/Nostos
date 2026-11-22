@@ -805,6 +805,35 @@ public sealed class PortableArchiveValidationTests
         RejectData(
             EmptyData() with { TopicKinds = [kindA], Topics = [topic with { KindId = null, KindSource = TopicKindSources.Reader }] },
             "malformed_data");
+
+        var thirteenKinds = Enumerable.Range(1, TopicKindModel.MaxKinds + 1)
+            .Select(i => new PortableTopicKind(
+                Guid.NewGuid(),
+                $"Kind {i:D2}",
+                $"kind-{((i - 1) % TopicKindModel.MaxKinds) + 1}",
+                i,
+                DateTime.UnixEpoch))
+            .ToList();
+        RejectData(
+            EmptyData() with { TopicKinds = thirteenKinds },
+            "too_many_topic_kinds");
+    }
+
+    [Fact]
+    public void ValidatePortableData_rejects_archive_with_13_topic_kinds()
+    {
+        var thirteenKinds = Enumerable.Range(1, TopicKindModel.MaxKinds + 1)
+            .Select(i => new PortableTopicKind(
+                Guid.NewGuid(),
+                $"Custom Kind {i:D2}",
+                $"kind-{((i - 1) % TopicKindModel.MaxKinds) + 1}",
+                i,
+                DateTime.UnixEpoch))
+            .ToList();
+
+        RejectData(
+            EmptyData() with { TopicKinds = thirteenKinds },
+            "too_many_topic_kinds");
     }
 
     private static void RejectData(PortableLibraryData data, string code) =>
