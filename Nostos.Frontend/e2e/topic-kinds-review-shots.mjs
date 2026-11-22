@@ -62,7 +62,11 @@ async function put(urlPath, body) {
   return res.status === 204 ? null : res.json();
 }
 
-/** Two kinds, a small connected map, and more untyped topics than the bulk cap. */
+/**
+ * Two kinds, a small connected neighbourhood, and more topics than the bulk cap.
+ * The bulk topics are Idea-typed, so hiding Person leaves a map that is drawn —
+ * which is what the dimming defect hid.
+ */
 async function ensureSeed() {
   let topics = await get('/api/topics');
   if (topics.some((topic) => topic.name === MARKER)) return readSeed(topics);
@@ -74,9 +78,13 @@ async function ensureSeed() {
     categories: 'visual-qa',
   });
   const linked = ['Ursula K. Le Guin', 'Tolkien', 'Le Guin', 'Story', 'Memory', 'Attention', 'Irony'];
-  await post(`/api/books/${book.id}/notes`, {
-    content: `${linked.map((name) => `[[${name}]]`).join(' ')} share one thought.`,
-  });
+  // Several notes, so these topics outrank the bulk ones and the whole map (top
+  // 150 by references) actually draws them.
+  for (let i = 0; i < 4; i += 1) {
+    await post(`/api/books/${book.id}/notes`, {
+      content: `${linked.map((name) => `[[${name}]]`).join(' ')} share thought ${i + 1}.`,
+    });
+  }
 
   let kinds = await get('/api/topic-kinds');
   if (!kinds.some((kind) => kind.name === 'Person')) {
@@ -84,10 +92,10 @@ async function ensureSeed() {
     await post('/api/topic-kinds', { name: 'Idea', colorKey: 'kind-2' });
     kinds = await get('/api/topic-kinds');
   }
-  topics = await get('/api/topics');
-  const id = (name) => topics.find((topic) => topic.name === name)?.id;
   const person = kinds.find((kind) => kind.name === 'Person');
   const idea = kinds.find((kind) => kind.name === 'Idea');
+  topics = await get('/api/topics');
+  const id = (name) => topics.find((topic) => topic.name === name)?.id;
   await put('/api/topics/kind', {
     topicIds: [id('Ursula K. Le Guin'), id('Tolkien'), id('Le Guin')].filter(Boolean),
     kindId: person.id,
@@ -108,7 +116,12 @@ async function ensureSeed() {
     extra += names.length;
     topics = await get('/api/topics');
   }
-  return readSeed(topics);
+  // Typed in chunks: the bulk endpoint takes 500 ids at a time.
+  const bulk = topics.filter((topic) => topic.name.startsWith('Bulk topic')).map((topic) => topic.id);
+  for (let i = 0; i < bulk.length; i += 400) {
+    await put('/api/topics/kind', { topicIds: bulk.slice(i, i + 400), kindId: idea.id });
+  }
+  return readSeed(await get('/api/topics'));
 }
 
 function readSeed(topics) {
@@ -158,6 +171,7 @@ async function measureCentre(page) {
     const sigma = globalThis.__nostosSigma;
     const graph = globalThis.__nostosGraph;
     const focus = new URLSearchParams(location.search).get('focus');
+    if (!graph.hasNode(focus)) return null;
     const attrs = graph.getNodeAttributes(focus);
     const point = sigma.graphToViewport({ x: Number(attrs.x), y: Number(attrs.y) });
     const stage = document.querySelector('.map-stage').getBoundingClientRect();
@@ -199,11 +213,18 @@ async function capture(browser, base, cloud, width, theme, seed) {
     await page.locator('.map-action[aria-label="Center on selection"]').click();
     await page.waitForTimeout(900);
     const measured = await measureCentre(page);
-    console.log(
-      `${side} ${slug} phone-centred: nodeY=${measured.nodeY} bandCentreY=${measured.bandCentreY} ` +
-        `ratio=${measured.ratio}`,
-    );
-    await page.locator('.map-stage').screenshot({ path: path.join(out, `${side}-${slug}-map-phone-centred.png`) });
+    if (!measured) {
+      console.log(`${side} ${slug} phone-centred: the focused topic is not drawn`);
+      failures.push('focus not drawn');
+    } else {
+      console.log(
+        `${side} ${slug} phone-centred: nodeY=${measured.nodeY} bandCentreY=${measured.bandCentreY} ` +
+          `ratio=${measured.ratio}`,
+      );
+      await page.locator('.map-stage').screenshot({
+        path: path.join(out, `${side}-${slug}-map-phone-centred.png`),
+      });
+    }
   }
 
   // 2. The selected topic's kind hidden: the map must keep its colours.
@@ -236,7 +257,8 @@ async function capture(browser, base, cloud, width, theme, seed) {
     return { checked: checked?.textContent?.trim() ?? null, cardPill: !!document.querySelector('.map-card-kind-pill') };
   });
   console.log(`${side} ${slug} failed-kinds map: colour="${colourMode.checked}" cardPill=${colourMode.cardPill}`);
-  await page.locator('.map-stage').screenshot({ path: path.join(out, `${side}-${slug}-map-failed-kinds.png`) });
+  // The whole place, so the Colour control and the card are in the same frame.
+  await page.locator('.brain-map').screenshot({ path: path.join(out, `${side}-${slug}-map-failed-kinds.png`) });
 
   await page.goto(`${base}/brain/kinds`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(800);
