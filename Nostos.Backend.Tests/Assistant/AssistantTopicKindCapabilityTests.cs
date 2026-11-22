@@ -248,7 +248,12 @@ public sealed class AssistantTopicKindCapabilityTests : IClassFixture<SqliteTest
 
         var staged = await h.Registry.InvokeAsync(
             "topics_set_kind",
-            Args(JsonSerializer.Serialize(new { topicIds = new[] { freire.Id }, kind = "Idea" })),
+            Args(JsonSerializer.Serialize(new
+            {
+                topicIds = new[] { freire.Id },
+                kind = "Idea",
+                namedTopicIds = new[] { freire.Id },
+            })),
             new AssistantToolContext("client", "name-reader", draft, "Freire is an Idea, not a Person."));
 
         staged.Success.Should().BeTrue(staged.ErrorMessage);
@@ -358,7 +363,12 @@ public sealed class AssistantTopicKindCapabilityTests : IClassFixture<SqliteTest
 
         var staged = await h.Registry.InvokeAsync(
             "topics_set_kind",
-            Args(JsonSerializer.Serialize(new { topicIds = new[] { freire.Id }, clear = true })),
+            Args(JsonSerializer.Serialize(new
+            {
+                topicIds = new[] { freire.Id },
+                clear = true,
+                namedTopicIds = new[] { freire.Id },
+            })),
             new AssistantToolContext("client", "clear-named", draft, "Freire has no kind, actually."));
 
         staged.Success.Should().BeTrue(staged.ErrorMessage);
@@ -375,6 +385,96 @@ public sealed class AssistantTopicKindCapabilityTests : IClassFixture<SqliteTest
         var topic = await db.Topics.AsNoTracking().SingleAsync(t => t.Id == freire.Id);
         topic.KindId.Should().BeNull();
         topic.KindSource.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task The_prefilled_sort_request_keeps_reader_kinds_of_topics_called_Need_None_and_Give()
+    {
+        using var h = CreateHarness();
+        // These are ordinary words in the prefilled request, not names. The
+        // model omits namedTopicIds because the reader named no topic, and an
+        // omitted list must protect every reader kind rather than fall back to
+        // matching the request's prose against a stoplist.
+        var need = await SeedTopicAsync(h, "Need", TopicKindModel.IdeaId, TopicKindSources.Reader);
+        var none = await SeedTopicAsync(h, "None", TopicKindModel.PlaceId, TopicKindSources.Reader);
+        var give = await SeedTopicAsync(h, "Give", TopicKindModel.WorkId, TopicKindSources.Reader);
+        var draft = new AssistantChangesetDraft(h.Library, h.Library);
+
+        var staged = await h.Registry.InvokeAsync(
+            "topics_set_kind",
+            Args(JsonSerializer.Serialize(new
+            {
+                topicIds = new[] { need.Id, none.Id, give.Id },
+                kind = "Event",
+            })),
+            new AssistantToolContext("client", "prefilled-scaffolding", draft, SortRequest));
+
+        staged.Success.Should().BeTrue(staged.ErrorMessage);
+        staged.Data!.Value.GetProperty("kept").GetInt32().Should().Be(3);
+        draft.IsEmpty.Should().BeTrue("the prefilled request names none of these topics");
+    }
+
+    [Fact]
+    public async Task A_named_topic_with_two_letters_is_verified_when_the_model_passes_its_id()
+    {
+        using var h = CreateHarness();
+        var ai = await SeedTopicAsync(h, "AI", TopicKindModel.IdeaId, TopicKindSources.Reader);
+        var draft = new AssistantChangesetDraft(h.Library, h.Library);
+
+        var staged = await h.Registry.InvokeAsync(
+            "topics_set_kind",
+            Args(JsonSerializer.Serialize(new
+            {
+                topicIds = new[] { ai.Id },
+                kind = "Person",
+                namedTopicIds = new[] { ai.Id },
+            })),
+            new AssistantToolContext("client", "short-name", draft, "AI should be a Person."));
+
+        staged.Success.Should().BeTrue(staged.ErrorMessage);
+        draft.Diff!.TopicKindAssignments.Should().ContainSingle()
+            .Which.TopicName.Should().Be("AI");
+    }
+
+    [Fact]
+    public async Task A_model_passed_id_whose_name_is_not_in_the_request_is_refused()
+    {
+        using var h = CreateHarness();
+        var freire = await SeedTopicAsync(h, "Freire", TopicKindModel.PersonId, TopicKindSources.Reader);
+        var draft = new AssistantChangesetDraft(h.Library, h.Library);
+
+        var staged = await h.Registry.InvokeAsync(
+            "topics_set_kind",
+            Args(JsonSerializer.Serialize(new
+            {
+                topicIds = new[] { freire.Id },
+                kind = "Idea",
+                namedTopicIds = new[] { freire.Id },
+            })),
+            new AssistantToolContext("client", "not-in-text", draft, "Give the unkinded topics a kind."));
+
+        staged.Success.Should().BeTrue(staged.ErrorMessage);
+        staged.Data!.Value.GetProperty("kept").GetInt32().Should().Be(1);
+        draft.IsEmpty.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task An_omitted_named_list_does_not_fall_back_to_matching_the_prose()
+    {
+        using var h = CreateHarness();
+        var freire = await SeedTopicAsync(h, "Freire", TopicKindModel.PersonId, TopicKindSources.Reader);
+        var draft = new AssistantChangesetDraft(h.Library, h.Library);
+
+        // The text contains "Freire", but the model did not say the reader
+        // named it. An omitted list means no topic was named.
+        var staged = await h.Registry.InvokeAsync(
+            "topics_set_kind",
+            Args(JsonSerializer.Serialize(new { topicIds = new[] { freire.Id }, kind = "Idea" })),
+            new AssistantToolContext("client", "prose-only", draft, "Freire is an Idea."));
+
+        staged.Success.Should().BeTrue(staged.ErrorMessage);
+        staged.Data!.Value.GetProperty("kept").GetInt32().Should().Be(1);
+        draft.IsEmpty.Should().BeTrue();
     }
 
     [Fact]
@@ -415,6 +515,38 @@ public sealed class AssistantTopicKindCapabilityTests : IClassFixture<SqliteTest
         staged.Success.Should().BeTrue(staged.ErrorMessage);
         draft.Diff!.TopicKindAssignments.Should().ContainSingle()
             .Which.KindId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task A_collection_name_swap_still_stages_one_kind_step_per_topic()
+    {
+        using var h = CreateHarness();
+        var freire = await SeedTopicAsync(h, "Freire");
+        var montessori = await SeedTopicAsync(h, "Montessori");
+        var alpha = new CollectionModel { Name = "Alpha" };
+        var beta = new CollectionModel { Name = "Beta" };
+        h.Db.Collections.AddRange(alpha, beta);
+        await h.Db.SaveChangesAsync();
+
+        var draft = new AssistantChangesetDraft(h.Library, h.Library);
+        var staged = await draft.StageAsync(
+        [
+            // A genuine name swap takes the non-canonical collection path...
+            (new RenameCollectionOp(LibraryCollectionRef.Existing(alpha.Id), "Temp"), (IReadOnlyList<int>)[]),
+            (new RenameCollectionOp(LibraryCollectionRef.Existing(beta.Id), "Alpha"), (IReadOnlyList<int>)[]),
+            (new RenameCollectionOp(LibraryCollectionRef.Existing(alpha.Id), "Beta"), (IReadOnlyList<int>)[]),
+            // ...but the kind operations must stay canonical: one per topic, so
+            // the card can tick each topic and canApply matches the server.
+            (new SetTopicKindOp(
+                [freire.Id, montessori.Id],
+                TopicKindRef.Existing(TopicKindModel.IdeaId),
+                NamedTopicIds: []), (IReadOnlyList<int>)[]),
+        ], default);
+
+        staged.Success.Should().BeTrue(staged.ErrorMessage);
+        var kindSteps = draft.Steps.Select(step => step.Op).OfType<SetTopicKindOp>().ToList();
+        kindSteps.Should().HaveCount(2);
+        kindSteps.Should().OnlyContain(step => step.TopicIds.Count == 1);
     }
 
     // ------------------------------------------------------------------

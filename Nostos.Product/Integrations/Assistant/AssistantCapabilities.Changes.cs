@@ -310,7 +310,7 @@ public static partial class AssistantCapabilities
 
         StageWithContext(
             "topics_set_kind",
-            "Gives one topic kind to many topics, or clears their kind. A kind the reader set is kept unless the user named that topic in this request; the result says how many were kept. Name the topics the user named in namedTopicIds; leave a topic out when you are unsure.",
+            "Gives one topic kind to many topics, or clears their kind. A kind the reader set is kept unless the user named that topic in this request; the result says how many were kept. Pass the topics the user named in namedTopicIds; omit it when the user named no topic, because an omitted list protects every reader kind. The server checks each id against the user's words.",
             $$"""
             {
               "type": "object",
@@ -318,7 +318,7 @@ public static partial class AssistantCapabilities
                 "topicIds": { "type": "array", "items": { "type": "string", "format": "uuid" }, "description": "The topics to classify, up to 250 (one page of topics_list). Required." },
                 "kind": { "type": "string", "description": "{{TopicKindArgument}} Omit it with clear true to remove the kind." },
                 "clear": { "type": "boolean", "description": "True to remove the topics' kind instead of setting one." },
-                "namedTopicIds": { "type": "array", "items": { "type": "string", "format": "uuid" }, "description": "Only the topicIds whose topic the user named in this request. A kind the reader set is replaced or cleared only for these. Omit when the user named no topic." }
+                "namedTopicIds": { "type": "array", "items": { "type": "string", "format": "uuid" }, "description": "Only the topicIds whose topic name the user wrote in this request. A kind the reader set is replaced or cleared only for these ids, and each one is checked against the user's words. Omit it when the user named no topic: an omitted list protects every reader kind." }
               },
               "required": ["topicIds"],
               "additionalProperties": true
@@ -364,16 +364,16 @@ public static partial class AssistantCapabilities
 
                 // The reader's own kinds are theirs. Only a topic the user named
                 // in their request may have one replaced or cleared. The model
-                // may say which topics it believes the user named; each one is
-                // checked against the reader's own words before it is trusted,
-                // and without that list the words alone decide.
+                // says which topics it believes the user named, and each id is
+                // checked against the reader's own words. An omitted list means
+                // no topic was named: the prose is never guessed at here, so
+                // every reader kind stays protected.
                 var distinct = topicIds.Distinct().ToList();
                 var states = await topics.GetByIdsAsync(distinct, ct);
                 var byId = states.ToDictionary(topic => topic.Id);
                 var userText = context.UserText ?? string.Empty;
-                var named = namedTopicIds is null
-                    ? null
-                    : namedTopicIds.ToHashSet();
+                var verifiedNames = AssistantNamedTopics.Verified(
+                    namedTopicIds, byId, topic => topic.Name, userText);
                 var allowedToReplace = new List<Guid>();
                 var overwrite = new List<Guid>();
                 var keptReaderKinds = 0;
@@ -389,10 +389,7 @@ public static partial class AssistantCapabilities
                     var readerKind = topic.KindSource == TopicKindSources.Reader;
                     if (readerKind)
                     {
-                        var isNamed = named is not null
-                            ? named.Contains(topicId) && AssistantNamedTopics.Names(userText, topic.Name)
-                            : AssistantNamedTopics.Names(userText, topic.Name);
-                        if (!isNamed)
+                        if (!verifiedNames.Contains(topicId))
                         {
                             keptReaderKinds++;
                             continue;

@@ -54,7 +54,7 @@ internal static class AssistantChangesetPlanBuilder
                 out var moveStepByCollection,
                 out var deletedDescendantCounts))
         {
-            return FallbackToRaw(rawOps, before.Collections);
+            return FallbackToRaw(rawOps, before, after);
         }
 
         LibraryCollectionRef RefOf(Guid id) =>
@@ -117,7 +117,7 @@ internal static class AssistantChangesetPlanBuilder
                 ops.Add(update);
         }
 
-        ops.AddRange(BuildTopicKindOps(before, after));
+        ops.AddRange(BuildTopicKindOps(before, after, rawOps));
 
         var dependsOn = ComputeDependencies(ops, before.Collections, moveStepByCollection);
         return new CanonicalPlan(ops, dependsOn, deletedDescendantCounts);
@@ -284,17 +284,28 @@ internal static class AssistantChangesetPlanBuilder
 
     private static CanonicalPlan FallbackToRaw(
         IReadOnlyList<LibraryChangeOp> rawOps,
-        IReadOnlyDictionary<Guid, CollectionState> beforeCollections)
+        LibraryChangesetDiff.LibrarySnapshot before,
+        LibraryChangesetDiff.LibrarySnapshot after)
     {
-        var dependsOn = ComputeDependencies(rawOps, beforeCollections, moveStepByCollection: null);
+        // The collection sequence is the model's raw one because a name swap or
+        // a parent cycle has no canonical order. Topic-kind operations have no
+        // such cycles, so keep them canonical even here: one op per topic is
+        // what lets the review card tick a topic on its own and makes the
+        // client's included set agree with the server's.
+        var ops = rawOps
+            .Where(op => op is not SetTopicKindOp and not CreateTopicKindOp)
+            .ToList();
+        ops.AddRange(BuildTopicKindOps(before, after, rawOps));
+
+        var dependsOn = ComputeDependencies(ops, before.Collections, moveStepByCollection: null);
         var deletedDescendantCounts = new Dictionary<Guid, int>();
-        foreach (var op in rawOps)
+        foreach (var op in ops)
         {
-            if (op is DeleteCollectionOp { Collection.Id: { } id } && beforeCollections.ContainsKey(id))
-                deletedDescendantCounts[id] = DescendantsOf(beforeCollections, id).Count;
+            if (op is DeleteCollectionOp { Collection.Id: { } id } && before.Collections.ContainsKey(id))
+                deletedDescendantCounts[id] = DescendantsOf(before.Collections, id).Count;
         }
 
-        return new CanonicalPlan(rawOps, dependsOn, deletedDescendantCounts);
+        return new CanonicalPlan(ops, dependsOn, deletedDescendantCounts);
     }
 
     private static List<IReadOnlyList<int>> ComputeDependencies(
@@ -361,13 +372,23 @@ internal static class AssistantChangesetPlanBuilder
         _ => [],
     };
 
-    private static List<LibraryChangeOp> BuildTopicKindOps(
+    /// <summary>
+    /// The canonical topic-kind operations for a before/after pair. A topic is
+    /// named only when a raw operation allowed it — either its
+    /// <see cref="SetTopicKindOp.NamedTopicIds"/> contains it or, when that set
+    /// is absent, the op overwrites reader kinds. Every other topic gets a
+    /// non-null, empty named set, which is what tells the apply to protect a
+    /// reader kind even if the reader sets one after staging.
+    /// </summary>
+    internal static List<LibraryChangeOp> BuildTopicKindOps(
         LibraryChangesetDiff.LibrarySnapshot before,
-        LibraryChangesetDiff.LibrarySnapshot after)
+        LibraryChangesetDiff.LibrarySnapshot after,
+        IReadOnlyList<LibraryChangeOp> rawOps)
     {
         var ops = new List<LibraryChangeOp>();
         var createdRefById = new Dictionary<Guid, string>();
         var usedRefs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var namedByRaw = NamedTopicIds(rawOps);
 
         var createdKinds = after.TopicKinds
             .Where(pair => !before.TopicKinds.ContainsKey(pair.Key))
@@ -406,13 +427,36 @@ internal static class AssistantChangesetPlanBuilder
                     : TopicKindRef.Existing(kindId);
             }
 
-            // The plan reproduces the net effect that was already validated, so
-            // this topic is one the changeset may change on purpose: name it as
-            // such rather than switching the whole batch's protection off.
-            ops.Add(new SetTopicKindOp([topicId], kind, NamedTopicIds: [topicId]));
+            // Only a topic a raw operation allowed may have a reader kind
+            // replaced. Every other topic carries a non-null, empty named set,
+            // which is how the apply always protects it, even if the reader
+            // sets a kind after this plan was staged.
+            IReadOnlyList<Guid> named = namedByRaw.Contains(topicId) ? [topicId] : [];
+            ops.Add(new SetTopicKindOp([topicId], kind, NamedTopicIds: named));
         }
 
         return ops;
+    }
+
+    /// <summary>
+    /// The topics a raw operation allowed to have a reader kind replaced. A set
+    /// on the op wins: the model's verified ids are exactly what may change. A
+    /// whole-batch <see cref="SetTopicKindOp.OverwriteReaderKinds"/> counts only
+    /// when the op carries no set (an older caller), never as a way to widen a
+    /// set the model did pass.
+    /// </summary>
+    private static HashSet<Guid> NamedTopicIds(IReadOnlyList<LibraryChangeOp> rawOps)
+    {
+        var named = new HashSet<Guid>();
+        foreach (var op in rawOps.OfType<SetTopicKindOp>())
+        {
+            if (op.NamedTopicIds is { } ids)
+                named.UnionWith(ids);
+            else if (op.OverwriteReaderKinds)
+                named.UnionWith(op.TopicIds);
+        }
+
+        return named;
     }
 
     private static string? KindName(LibraryChangesetDiff.LibrarySnapshot snapshot, Guid? kindId) =>

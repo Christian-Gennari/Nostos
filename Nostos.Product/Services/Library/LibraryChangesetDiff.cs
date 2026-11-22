@@ -294,7 +294,8 @@ internal static class LibraryChangesetDiff
                 KindName(afterKindId),
                 PreviousKindName(was?.KindId),
                 now?.Source,
-                KindColorKey: KindColorKey(afterKindId)));
+                KindColorKey: KindColorKey(afterKindId),
+                PreviousSource: was?.Source));
         }
 
         changed.Sort((a, b) =>
@@ -370,6 +371,10 @@ internal static class LibraryChangesetDiff
                 a.KindName,
                 a.PreviousKindName,
                 a.Source,
+                // Who set it before is part of what the changeset does: a
+                // reader claiming a staged topic changes only this, and an
+                // apply must not overwrite the claim as if nothing moved.
+                a.PreviousSource,
             }),
         };
 

@@ -290,8 +290,12 @@ internal sealed class AssistantTurnFinalizer(
         var remaining = unkindedTopicCount is { } total ? Math.Max(0, total - given) : (int?)null;
         return remaining switch
         {
-            > 0 => $"{head}; {remaining} still have no kind. Apply these, then ask again.",
-            _ => $"{head}. Apply these, then ask again.",
+            // The count is unknown: keep the generic sentence.
+            null => $"{head}. Apply these, then ask again.",
+            // Nothing is left to sort: there is no second run to ask for.
+            0 => $"{head}. Apply these.",
+            1 => $"{head}; 1 still has no kind. Apply these, then ask again.",
+            _ => $"{head}; {remaining} still have no kind. Apply these, then ask again.",
         };
     }
 }

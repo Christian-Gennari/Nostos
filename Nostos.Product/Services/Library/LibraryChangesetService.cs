@@ -494,7 +494,7 @@ public sealed class LibraryChangesetService(
                     if (topic.KindId != snapshot.After.KindId
                         || !string.Equals(topic.KindSource, snapshot.After.Source, StringComparison.Ordinal))
                     {
-                        conflicts.Add($"Kept the kind of \"{snapshot.TopicName}\": it was changed after this was applied.");
+                        conflicts.Add($"Kept the kind of “{snapshot.TopicName}”: it was changed after this was applied.");
                         continue;
                     }
 
@@ -527,12 +527,15 @@ public sealed class LibraryChangesetService(
                     || kind.ColorKey != snapshot.After.ColorKey
                     || kind.SortOrder != snapshot.After.SortOrder)
                 {
-                    conflicts.Add($"Kept the kind \"{kind.Name}\": it was changed after this was applied.");
+                    conflicts.Add($"Kept the kind “{kind.Name}”: it was changed after this was applied.");
                     continue;
                 }
 
                 if (await db.Topics.AnyAsync(t => t.KindId == snapshot.Id, token))
+                {
+                    conflicts.Add($"Kept the kind “{kind.Name}”: another topic still uses it.");
                     continue;
+                }
 
                 db.TopicKinds.Remove(kind);
                 restored++;

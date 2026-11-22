@@ -26,6 +26,9 @@ public interface ITopicRepository
         // library is one list, sliced here. The product repository overrides
         // this with a real query page.
         var all = await GetAllWithUsageCountAsync(cancellationToken);
+        // Count the untyped topics before any kind filter: a page filtered to
+        // one kind would otherwise report that no topic is untyped.
+        var unkindedTotal = all.Count(topic => topic.KindId is null);
         if (unkindedOnly)
             all = all.Where(topic => topic.KindId is null).ToList();
         else if (kindId is { } only)
@@ -41,7 +44,7 @@ public interface ITopicRepository
             safeSize,
             total,
             totalPages,
-            unkindedOnly ? total : all.Count(topic => topic.KindId is null),
+            unkindedTotal,
             safePage < totalPages ? safePage + 1 : null);
     }
 

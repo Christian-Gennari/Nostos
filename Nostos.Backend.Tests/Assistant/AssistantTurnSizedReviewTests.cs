@@ -124,6 +124,86 @@ public sealed class AssistantTurnSizedReviewTests : IClassFixture<SqliteTestFixt
             "I sorted 1 topic before this turn's limit. Apply these, then ask again.");
     }
 
+    [Fact]
+    public async Task One_topic_still_unkinded_reads_in_the_singular()
+    {
+        var h = CreateHarness();
+        var freire = await SeedTopicAsync(h, "Freire");
+        var montessori = await SeedTopicAsync(h, "Montessori");
+        var draft = new AssistantChangesetDraft(h.Library, h.Library);
+        await h.Registry.InvokeAsync(
+            "topics_create_kind",
+            Args("""{"name":"School of thought"}"""),
+            new AssistantToolContext("client", "sized-one", draft, "Give my unkinded topics a kind."));
+        await h.Registry.InvokeAsync(
+            "topics_set_kind",
+            Args($$"""{"topicIds":["{{freire.Id}}","{{montessori.Id}}"],"kind":"School of thought"}"""),
+            new AssistantToolContext("client", "sized-one", draft, "Give my unkinded topics a kind."));
+
+        var final = await FinishAsync(h, draft, "conversation-one", "turn-one", unkindedTopicCount: 3);
+
+        final.Reply.Should().StartWith(
+            "I sorted 2 topics before this turn's limit; 1 still has no kind. Apply these, then ask again.");
+    }
+
+    [Fact]
+    public async Task Nothing_left_to_sort_does_not_ask_again()
+    {
+        var h = CreateHarness();
+        var freire = await SeedTopicAsync(h, "Freire");
+        var montessori = await SeedTopicAsync(h, "Montessori");
+        var draft = new AssistantChangesetDraft(h.Library, h.Library);
+        await h.Registry.InvokeAsync(
+            "topics_create_kind",
+            Args("""{"name":"School of thought"}"""),
+            new AssistantToolContext("client", "sized-none", draft, "Give my unkinded topics a kind."));
+        await h.Registry.InvokeAsync(
+            "topics_set_kind",
+            Args($$"""{"topicIds":["{{freire.Id}}","{{montessori.Id}}"],"kind":"School of thought"}"""),
+            new AssistantToolContext("client", "sized-none", draft, "Give my unkinded topics a kind."));
+
+        var final = await FinishAsync(h, draft, "conversation-none", "turn-none", unkindedTopicCount: 2);
+
+        final.Reply.Should().StartWith("I sorted 2 topics before this turn's limit. Apply these.");
+        final.Reply.Should().NotContain("ask again");
+    }
+
+    private static async Task<AssistantTurnFinal> FinishAsync(
+        Harness h,
+        AssistantChangesetDraft draft,
+        string conversation,
+        string turn,
+        int? unkindedTopicCount)
+    {
+        var finalizer = new AssistantTurnFinalizer(
+            new AssistantChangesetCoordinator(new AssistantChangesetStore(), h.Library, new AssistantOptions()),
+            NullLogger.Instance);
+
+        return await finalizer.CompleteAsync(
+            new AssistantTurnFinalInput(
+                ConversationKey: conversation,
+                TurnId: turn,
+                UserMessage: "Give my unkinded topics a kind.",
+                Draft: draft,
+                Retrieval: new AssistantRetrievalTurnState(new AssistantContextDto("ask", "/brain")),
+                StopReason: AssistantTurnStopReason.SafetyCeiling,
+                ReadUntrustedContent: false,
+                MutationCompleted: false,
+                MutationFailed: false,
+                LastRoundOnlySucceededMutations: false,
+                Acknowledgement: null,
+                CapturedNoteId: null,
+                LastAssistantContent: null,
+                ReplyCutShort: false,
+                AnchorPrompt: null,
+                TerminalError: null,
+                SuccessfulCapabilities: new HashSet<string>(StringComparer.Ordinal),
+                EvidenceCount: 0,
+                Execution: null,
+                UnkindedTopicCount: unkindedTopicCount),
+            default);
+    }
+
     private Harness CreateHarness()
     {
         var options = new DbContextOptionsBuilder<NostosDbContext>()

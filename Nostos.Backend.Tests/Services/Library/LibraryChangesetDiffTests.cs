@@ -66,6 +66,40 @@ public sealed class LibraryChangesetDiffTests
         LibraryChangesetDiff.Hash(Diff()).Should().NotBe(LibraryChangesetDiff.Hash(other));
     }
 
+    [Fact]
+    public void A_reader_claiming_a_staged_topic_changes_the_hash()
+    {
+        var kindId = Guid.Parse("22222222-2222-2222-2222-222222222222");
+        var assignment = new LibraryTopicKindAssignmentDto(
+            Guid.Parse("33333333-3333-3333-3333-333333333333"),
+            "Freire",
+            kindId,
+            "Idea",
+            "Idea",
+            "assistant",
+            StepIndex: 0,
+            KindColorKey: "kind-1",
+            PreviousSource: "assistant");
+
+        var beforeClaim = Diff() with { TopicKindAssignments = [assignment] };
+        var afterClaim = Diff() with
+        {
+            TopicKindAssignments = [assignment with { PreviousSource = "reader" }],
+        };
+
+        // The kind and its after-source are identical; only who set it before
+        // moved. An apply must notice, or it overwrites the reader's claim.
+        LibraryChangesetDiff.Hash(beforeClaim).Should().NotBe(LibraryChangesetDiff.Hash(afterClaim));
+    }
+
+    [Fact]
+    public void A_diff_from_a_host_without_the_appended_fields_is_empty_and_does_not_throw()
+    {
+        var diff = new LibraryChangesetDiffDto([], [], [], Counts, null!, null!);
+
+        diff.IsEmpty.Should().BeTrue();
+    }
+
     private static LibraryChangesetDiffDto Diff(Guid? createdCollectionId = null) =>
         new(
             [

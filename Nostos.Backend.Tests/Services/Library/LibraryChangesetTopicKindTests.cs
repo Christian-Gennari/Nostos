@@ -198,6 +198,8 @@ public sealed class LibraryChangesetTopicKindTests : IClassFixture<SqliteTestFix
         var reverted = await h.Service.RevertAsync(applied.Undo!);
 
         reverted.Success.Should().BeTrue();
+        reverted.Conflicts.Should().ContainSingle()
+            .Which.Should().Be("Kept the kind “School of thought”: another topic still uses it.");
         await using var check = await h.Factory.CreateDbContextAsync();
         (await check.TopicKinds.AsNoTracking().AnyAsync(k => k.Id == kindId))
             .Should().BeTrue("another topic still uses it");
@@ -285,7 +287,7 @@ public sealed class LibraryChangesetTopicKindTests : IClassFixture<SqliteTestFix
 
         reverted.Success.Should().BeTrue("the created kind is already gone, so there is nothing to remove");
         reverted.Conflicts.Should().ContainSingle()
-            .Which.Should().Contain("Kept the kind of \"Freire\"");
+            .Which.Should().Contain("Kept the kind of “Freire”");
 
         await using var check = await h.Factory.CreateDbContextAsync();
         (await check.Topics.AsNoTracking().SingleAsync(t => t.Id == h.Freire)).KindId.Should().BeNull();

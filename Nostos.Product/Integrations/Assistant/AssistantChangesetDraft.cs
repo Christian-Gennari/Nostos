@@ -208,8 +208,17 @@ public sealed class AssistantChangesetDraft(ILibraryChangesetService changesets,
                     "This change is too large to stage in one go. Split it into a few requests and stage each one.");
             }
 
-            var fallbackDepends = ComputeSimpleDependsOn(rawCandidate);
-            return await CommitAsync(rawCandidate, nextRefId, previewState, rawCandidate, fallbackDepends, new Dictionary<Guid, int>(), rawPreview, ct);
+            // Keep the topic-kind operations canonical even in this fallback:
+            // one op per topic is what lets the review card tick a topic on its
+            // own, and what makes the client's included set agree with the
+            // server's. Only the collection sequence is irregular here.
+            var fallbackOps = rawCandidate
+                .Where(op => op is not SetTopicKindOp and not CreateTopicKindOp)
+                .ToList();
+            fallbackOps.AddRange(AssistantChangesetPlanBuilder.BuildTopicKindOps(
+                previewState.Before, previewState.After, rawCandidate));
+            var fallbackDepends = ComputeSimpleDependsOn(fallbackOps);
+            return await CommitAsync(rawCandidate, nextRefId, previewState, fallbackOps, fallbackDepends, new Dictionary<Guid, int>(), rawPreview, ct);
         }
 
         return await CommitAsync(rawCandidate, nextRefId, previewState, plan.Ops, plan.DependsOn, plan.DeletedDescendantCounts, canonicalPreview, ct);

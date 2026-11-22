@@ -13,12 +13,13 @@ public sealed record LibraryChangesetDiffDto(
     IReadOnlyList<LibraryBookEditDto> BookEdits,
     LibraryChangesetCountsDto Counts,
     // APPENDED (issue #1770): topic kinds the changeset creates and the topics
-    // whose kind it gives, changes or clears.
-    IReadOnlyList<LibraryTopicKindChangeDto> TopicKinds,
-    IReadOnlyList<LibraryTopicKindAssignmentDto> TopicKindAssignments)
+    // whose kind it gives, changes or clears. They default to null so JSON from
+    // a host that predates them still deserialises; IsEmpty reads them safely.
+    IReadOnlyList<LibraryTopicKindChangeDto> TopicKinds = null!,
+    IReadOnlyList<LibraryTopicKindAssignmentDto> TopicKindAssignments = null!)
 {
     public bool IsEmpty => Collections.Count == 0 && Memberships.Count == 0 && BookEdits.Count == 0
-        && TopicKinds.Count == 0 && TopicKindAssignments.Count == 0;
+        && (TopicKinds?.Count ?? 0) == 0 && (TopicKindAssignments?.Count ?? 0) == 0;
 }
 
 /// <summary>
@@ -87,7 +88,11 @@ public sealed record LibraryTopicKindAssignmentDto(
     int? StepIndex = null,
     // APPENDED (issue #1770 review): the target kind's palette key, so the
     // review card shows an existing kind's colour as well as a new one's.
-    string? KindColorKey = null);
+    string? KindColorKey = null,
+    // APPENDED (issue #1770 review, round 2): who set the kind before this
+    // changeset. A reader claiming a staged topic changes only this, and the
+    // pinned diff hash must notice it or an apply could overwrite the claim.
+    string? PreviousSource = null);
 
 /// <summary>One field of a book, before and after, as display text.</summary>
 public sealed record LibraryFieldChangeDto(string Field, string? Before, string? After);

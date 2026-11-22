@@ -109,4 +109,52 @@ public sealed class AssistantNamedTopicsTests
 
         verified.Should().Equal(freire);
     }
+
+    [Fact]
+    public void A_model_passed_id_verifies_a_short_or_numeric_name_the_words_contain()
+    {
+        var ai = Guid.NewGuid();
+        var nineteenEightyFour = Guid.NewGuid();
+        var topics = new Dictionary<Guid, Nostos.Backend.Data.Models.TopicModel>
+        {
+            [ai] = new() { Id = ai, Topic = "AI" },
+            [nineteenEightyFour] = new() { Id = nineteenEightyFour, Topic = "1984" },
+        };
+
+        // The three-letter minimum is a guessing rule. Once the model has named
+        // the id, the whole token in the reader's text is enough.
+        AssistantNamedTopics.Names("Sort AI and 1984 into kinds.", "AI").Should().BeFalse();
+        AssistantNamedTopics.Verified([ai, nineteenEightyFour], topics, "Sort AI and 1984 into kinds.")
+            .Should().BeEquivalentTo([ai, nineteenEightyFour]);
+
+        // Still a whole token, not a substring of a longer one.
+        AssistantNamedTopics.Verified([ai], topics, "AIs are models.").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void A_model_passed_id_whose_name_is_not_in_the_text_is_refused()
+    {
+        var freire = Guid.NewGuid();
+        var topics = new Dictionary<Guid, Nostos.Backend.Data.Models.TopicModel>
+        {
+            [freire] = new() { Id = freire, Topic = "Freire" },
+        };
+
+        AssistantNamedTopics.Verified([freire], topics, "Give the unkinded topics a kind.").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void An_omitted_named_list_never_guesses_from_the_prose()
+    {
+        var freire = Guid.NewGuid();
+        var topics = new Dictionary<Guid, Nostos.Backend.Data.Models.TopicModel>
+        {
+            [freire] = new() { Id = freire, Topic = "Freire" },
+        };
+
+        // The prose contains the name, but the model did not say the reader
+        // named it: an omitted list means no topic was named, so the reader
+        // kind is protected.
+        AssistantNamedTopics.Verified(null, topics, "Freire is an Idea.").Should().BeEmpty();
+    }
 }
