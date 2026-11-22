@@ -36,6 +36,7 @@ import { EmptyStateComponent } from '../ui/empty-state/empty-state.component';
 import { LoadingIndicatorComponent } from '../ui/loading-indicator/loading-indicator.component';
 import { ModalShell } from '../ui/modal-shell/modal-shell.component';
 import { BookCoverComponent } from '../ui/book-cover/book-cover.component';
+import { coverImageUrl } from '../core/cover-url';
 
 /** Muted cloth hues for the typeset covers: rust, ochre, olive, green, teal, blue, violet, plum. */
 /** Digits (and a trailing X) only, 10 or 13 long: what an ISBN looks like once its dashes are gone. */
@@ -234,6 +235,13 @@ export class ReadingList implements OnInit {
   }
 
   // ---------------------------------------------------------------- shelf
+
+  coverUrl(entry: ReadingListEntry, width: number): string | null {
+    return coverImageUrl(
+      { coverUrl: entry.ownedCoverUrl ?? null, coverVersion: entry.ownedCoverVersion ?? null },
+      width,
+    );
+  }
 
   isBusy(entry: ReadingListEntry): boolean {
     return this.busyIds().has(entry.id);

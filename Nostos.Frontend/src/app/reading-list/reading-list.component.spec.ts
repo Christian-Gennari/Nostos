@@ -345,6 +345,49 @@ describe('ReadingList', () => {
     expect(cover.querySelector('.nostos-book-cover__placeholder')!.getAttribute('aria-hidden')).toBe('true');
   });
 
+  it('shows the owned library book cover on Next up and Someday, and falls back when the owned book has no cover', async () => {
+    await create([
+      entry({
+        id: 'next-owned',
+        title: 'Time and Free Will',
+        nextPosition: 0,
+        ownedBookId: 'book-1',
+        ownedCoverUrl: '/api/books/book-1/cover',
+        ownedCoverVersion: 'v1',
+      }),
+      entry({
+        id: 'someday-owned',
+        title: 'Matter and Memory',
+        ownedBookId: 'book-2',
+        ownedCoverUrl: '/api/books/book-2/cover',
+        ownedCoverVersion: 'v2',
+      }),
+      entry({
+        id: 'someday-owned-no-cover',
+        title: 'Creative Evolution',
+        ownedBookId: 'book-3',
+        ownedCoverUrl: null,
+        ownedCoverVersion: null,
+      }),
+    ]);
+
+    const nextImg = host().querySelector(
+      '.shelf-card nostos-book-cover.cover img.nostos-book-cover__img',
+    ) as HTMLImageElement | null;
+    expect(nextImg).toBeTruthy();
+    expect(nextImg?.getAttribute('src')).toBe('/api/books/book-1/cover/thumbnail?width=320&v=v1');
+
+    const somedayRows = host().querySelectorAll('.someday-row');
+    const somedayImg = somedayRows[0].querySelector(
+      'nostos-book-cover.cover img.nostos-book-cover__img',
+    ) as HTMLImageElement | null;
+    expect(somedayImg).toBeTruthy();
+    expect(somedayImg?.getAttribute('src')).toBe('/api/books/book-2/cover/thumbnail?width=120&v=v2');
+
+    expect(somedayRows[1].querySelector('img.nostos-book-cover__img')).toBeNull();
+    expect(somedayRows[1].querySelector('.nostos-book-cover__placeholder')).toBeTruthy();
+  });
+
   it('asks before removing, and removes only on confirm', async () => {
     await create([entry({ id: 'a', title: 'Pedro Páramo' })]);
 
