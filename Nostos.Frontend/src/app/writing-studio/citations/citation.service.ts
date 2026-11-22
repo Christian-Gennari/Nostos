@@ -7,7 +7,7 @@ import { NotesService } from '../../core/services/notes.service';
 import { citationMarkdown, type CitationRef } from '../../ui/markdown-editor/citation.extension';
 import type { CitationRenderer } from '../../ui/markdown-editor/live-citations';
 import { SourceInsertionSource } from '../source-insertion.helpers';
-import { CitationEngine, CitationLocator } from './citation-engine';
+import { CitationEngine, CitationLocator, citationEngine } from './citation-engine';
 import { CitationStyle, bibliographyHeading } from './citation-styles';
 import { CslItem, bookToCslItem } from './csl-item';
 import { StyledInsertion, styledNote, styledQuote, styledReference } from './styled-insertion';
@@ -91,20 +91,13 @@ export class CitationService {
   private readonly books = inject(BooksService);
   private readonly injector = inject(Injector);
   private readonly sectionTitles = new Map<string, Promise<readonly (string | null)[]>>();
-  private readonly engines = new Map<string, Promise<CitationEngine>>();
   private readonly loaded = new Map<string, Promise<Book | null>>();
 
   /** Bumped whenever a book's details change here. */
   readonly revision = signal(0);
 
   engine(style: CitationStyle): Promise<CitationEngine> {
-    let engine = this.engines.get(style.id);
-    if (!engine) {
-      engine = CitationEngine.create(style);
-      engine.catch(() => this.engines.delete(style.id));
-      this.engines.set(style.id, engine);
-    }
-    return engine;
+    return citationEngine(style);
   }
 
   /** The book, or null when it cannot be read. */
