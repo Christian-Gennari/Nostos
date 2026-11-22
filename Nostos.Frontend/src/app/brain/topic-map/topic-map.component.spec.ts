@@ -304,6 +304,7 @@ vi.mock('d3-force', () => {
     forceSimulation: vi.fn((nodes: unknown) => new MockSimulation(nodes as Array<Record<string, unknown>>)),
     forceX: vi.fn(() => chainable()),
     forceY: vi.fn(() => chainable()),
+    forceRadial: vi.fn(() => chainable()),
     forceLink: vi.fn(() => chainable()),
     forceManyBody: vi.fn(() => chainable()),
     forceCollide: vi.fn(() => chainable()),
@@ -1409,6 +1410,176 @@ describe('TopicMapComponent', () => {
 
       fixture.destroy();
       expect(req.cancelled).toBe(true);
+    });
+  });
+
+  describe('local map & link strength', () => {
+    it('scopes to rootId including low-usage topics outside global top 150 and shows "Showing 150 of N" when capped', () => {
+      const bulkTopics = [
+        ...Array.from({ length: MAX_MAP_TOPICS + 10 }, (_, i) => ({
+          id: `bulk-${i}`,
+          name: `Bulk ${i}`,
+          usageCount: 1000 + i,
+        })),
+        { id: 'tiny-root', name: 'Tiny Root', usageCount: 1 },
+        { id: 'tiny-neighbour', name: 'Tiny Neighbour', usageCount: 1 },
+      ];
+      const bulkEdges = [
+        ...Array.from({ length: MAX_MAP_TOPICS + 10 }, (_, i) => ({
+          sourceId: 'tiny-root',
+          targetId: `bulk-${i}`,
+          sharedNotes: 2,
+        })),
+        { sourceId: 'tiny-root', targetId: 'tiny-neighbour', sharedNotes: 3 },
+      ];
+
+      fixture.componentRef.setInput('rootId', 'tiny-root');
+      fixture.componentRef.setInput('depth', 1);
+      setTopics(bulkTopics);
+      flushGraph({
+        nodes: bulkTopics.map((t) => ({ id: t.id, name: t.name, usageCount: t.usageCount })),
+        edges: bulkEdges,
+      });
+
+      const nodeIds = component.accessibleNodes().map((n) => n.id);
+      expect(nodeIds).toContain('tiny-root');
+      expect(nodeIds).not.toContain('tiny-neighbour'); // usage 1 at hop 1 is capped after higher-usage hop-1 nodes
+      expect(component.isCapped()).toBe(true);
+      expect(fixture.nativeElement.querySelector('.map-limit-note')?.textContent?.trim()).toBe(
+        `Showing 150 of ${MAX_MAP_TOPICS + 12} topics.`
+      );
+    });
+
+    it('includes small connected topics on a local map when global whole map would leave them out', () => {
+      const bulkTopics = [
+        ...Array.from({ length: MAX_MAP_TOPICS }, (_, i) => ({
+          id: `top-${i}`,
+          name: `Top ${i}`,
+          usageCount: 500 + i,
+        })),
+        { id: 'niche-root', name: 'Niche Root', usageCount: 2 },
+        { id: 'niche-leaf', name: 'Niche Leaf', usageCount: 1 },
+      ];
+      fixture.componentRef.setInput('rootId', 'niche-root');
+      fixture.componentRef.setInput('depth', 1);
+      setTopics(bulkTopics);
+      flushGraph({
+        nodes: bulkTopics.map((t) => ({ id: t.id, name: t.name, usageCount: t.usageCount })),
+        edges: [{ sourceId: 'niche-root', targetId: 'niche-leaf', sharedNotes: 2 }],
+      });
+
+      expect(component.accessibleNodes().map((n) => n.id).sort()).toEqual(['niche-leaf', 'niche-root']);
+    });
+
+    it('keeps a zero-link local root visible without showing no-connections empty state', () => {
+      fixture.componentRef.setInput('rootId', 'alpha');
+      fixture.componentRef.setInput('depth', 1);
+      setTopics(topics);
+      flushGraph({ nodes: graphResponse.nodes, edges: [] });
+
+      expect(component.accessibleNodes().map((n) => n.id)).toEqual(['alpha']);
+      expect(component.noConnections()).toBe(false);
+    });
+
+    it('filters edges by minShared on both whole map and local map', () => {
+      fixture.componentRef.setInput('minShared', 2);
+      setTopics(topics);
+      flushGraph();
+
+      const alphaWhole = component.accessibleNodes().find((n) => n.id === 'alpha')!;
+      expect(alphaWhole.connectionCount).toBe(1); // gamma (sharedNotes: 1) dropped
+
+      fixture.componentRef.setInput('rootId', 'alpha');
+      fixture.detectChanges();
+      expect(component.accessibleNodes().map((n) => n.id).sort()).toEqual(['alpha', 'beta']);
+    });
+
+    it('auto-defaults minShared to 2 when depth >= 2 reaches > 60% of graph and exceeds MAX_MAP_TOPICS', () => {
+      const nCount = MAX_MAP_TOPICS + 20;
+      const denseTopics = Array.from({ length: nCount }, (_, i) => ({
+        id: `d-${i}`,
+        name: `Dense ${i}`,
+        usageCount: i + 1,
+      }));
+      // Root connects to 10 hubs weakly (1) and strongly (2) to one chain covering > 60%
+      const edges = [
+        ...Array.from({ length: nCount - 1 }, (_, i) => ({
+          sourceId: 'd-0',
+          targetId: `d-${i + 1}`,
+          sharedNotes: i < 5 ? 2 : 1,
+        })),
+      ];
+      const infos: unknown[] = [];
+      component.scopeInfo.subscribe((info) => infos.push(info));
+
+      fixture.componentRef.setInput('rootId', 'd-0');
+      fixture.componentRef.setInput('depth', 2);
+      setTopics(denseTopics);
+      flushGraph({
+        nodes: denseTopics.map((t) => ({ id: t.id, name: t.name, usageCount: t.usageCount })),
+        edges,
+      });
+
+      expect((infos.at(-1) as { effectiveMin: number }).effectiveMin).toBe(2);
+      // With min=2 only d-0 and d-1..d-5 remain
+      expect(component.accessibleNodes()).toHaveLength(6);
+    });
+
+    it('preserves surviving node coordinates when depth increases on the same root', () => {
+      const deepTopics = [
+        { id: 'r', name: 'Root', usageCount: 10 },
+        { id: 'a', name: 'Hop1', usageCount: 5 },
+        { id: 'b', name: 'Hop2', usageCount: 3 },
+      ];
+      fixture.componentRef.setInput('rootId', 'r');
+      fixture.componentRef.setInput('depth', 1);
+      setTopics(deepTopics);
+      flushGraph({
+        nodes: deepTopics,
+        edges: [
+          { sourceId: 'r', targetId: 'a', sharedNotes: 2 },
+          { sourceId: 'a', targetId: 'b', sharedNotes: 2 },
+        ],
+      });
+
+      const graph1 = (globalThis as {
+        __nostosGraph?: { setNodeAttribute: (n: string, a: string, v: unknown) => void; getNodeAttributes: (n: string) => Record<string, unknown> };
+      }).__nostosGraph!;
+      graph1.setNodeAttribute('a', 'x', 240);
+      graph1.setNodeAttribute('a', 'y', -120);
+
+      fixture.componentRef.setInput('depth', 2);
+      fixture.detectChanges();
+
+      const graph2 = (globalThis as {
+        __nostosGraph?: { getNodeAttributes: (n: string) => Record<string, unknown> };
+      }).__nostosGraph!;
+      expect(graph2.getNodeAttributes('r')['x']).toBe(0);
+      expect(graph2.getNodeAttributes('r')['y']).toBe(0);
+      // Since MockSimulation ticks only decay alpha without altering coords, preserved coordinate stays exact.
+      expect(graph2.getNodeAttributes('a')['x']).toBe(240);
+      expect(graph2.getNodeAttributes('a')['y']).toBe(-120);
+    });
+
+    it('renders "Map around this" next to Open/Read notes on the card and emits mapAround', () => {
+      setTopics(topics);
+      flushGraph();
+      component.selectAccessibleNode('beta');
+      fixture.detectChanges();
+
+      const emitted = vi.fn();
+      component.mapAround.subscribe(emitted);
+      const aroundBtn = fixture.nativeElement.querySelector('.map-card-around') as HTMLButtonElement;
+      expect(aroundBtn).toBeTruthy();
+      expect(aroundBtn.textContent).toContain('Map around this');
+
+      aroundBtn.click();
+      expect(emitted).toHaveBeenCalledWith('beta');
+
+      // Hides "Map around this" when the selected node is already the local-map root
+      fixture.componentRef.setInput('rootId', 'beta');
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.map-card-around')).toBeNull();
     });
   });
 });

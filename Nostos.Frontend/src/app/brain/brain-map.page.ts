@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject, signal, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, computed, inject, signal, viewChild } from '@angular/core';
 import { QuoteBlockComponent } from '../ui/quote-block/quote-block.component';
 import { TopicOptionComponent } from '../ui/topic-option/topic-option.component';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
@@ -9,26 +9,57 @@ import { NotesService } from '../core/services/notes.service';
 import { ButtonComponent } from '../ui/button/button.component';
 import { InputDirective } from '../ui/form-control/form-control.directive';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
+import { RangeDirective } from '../ui/range/range.directive';
+import { SettingsPopoverComponent } from '../ui/settings-popover/settings-popover.component';
+import { TopicChipComponent } from '../ui/topic-chip/topic-chip.component';
 import { rankTopicChoices, thoughtForDisplay, topicChoices } from '../ui/note-item/note-item.helpers';
 import { noteWikilinksToText } from '../ui/pipes/note-format.pipe';
-import { TopicMapComponent, type MapCamera } from './topic-map/topic-map.component';
-import { drawnTopics } from './topic-map/topic-map.helpers';
+import { TopicMapComponent, type MapCamera, type MapScopeInfo } from './topic-map/topic-map.component';
+import {
+  LOCAL_MAP_DEPTH_MAX,
+  LOCAL_MAP_DEPTH_MIN,
+  drawnTopics,
+} from './topic-map/topic-map.helpers';
 import { BrainStateService } from './brain-state.service';
 import { plural } from './brain.helpers';
 import { SearchFieldComponent } from '../ui/search-field/search-field.component';
 
 const FINDER_LIMIT = 6;
 
+function parseDepth(raw: string | null, fallback = LOCAL_MAP_DEPTH_MIN): number {
+  const parsed = raw !== null ? Number.parseInt(raw, 10) : NaN;
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(LOCAL_MAP_DEPTH_MIN, Math.min(LOCAL_MAP_DEPTH_MAX, parsed));
+}
+
+function parseMin(raw: string | null, fallback: number | null = null): number | null {
+  const parsed = raw !== null ? Number.parseInt(raw, 10) : NaN;
+  if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+  return parsed;
+}
+
 /**
  * The map as a place: the topic graph at full size, a finder that centres a
- * topic, and a card whose Open topic goes to the topic's page. The camera and
- * the selected topic are kept, so Back from a topic returns to the same view;
- * `?focus=<id>` (Show on map) opens centred on a topic.
+ * topic, local scoping (`?around=<topicId>&depth=<1-3>&min=<n>`), and a card
+ * whose Open topic goes to the topic's page. Camera, depth and strength are
+ * kept, so Back from a topic returns to the same view; `?focus=<id>` centres
+ * and selects a topic.
  */
 @Component({
   selector: 'app-brain-map-page',
   standalone: true,
-  imports: [QuoteBlockComponent, TopicOptionComponent, SearchFieldComponent, ButtonComponent, InputDirective, NostosIconComponent, TopicMapComponent],
+  imports: [
+    QuoteBlockComponent,
+    TopicOptionComponent,
+    SearchFieldComponent,
+    ButtonComponent,
+    InputDirective,
+    NostosIconComponent,
+    RangeDirective,
+    SettingsPopoverComponent,
+    TopicChipComponent,
+    TopicMapComponent,
+  ],
   templateUrl: './brain-map.page.html',
   styleUrls: ['./brain-map.page.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -40,32 +71,79 @@ export class BrainMapPage {
   readonly state = inject(BrainStateService);
 
   private readonly map = viewChild(TopicMapComponent);
+  private readonly controlsTrigger = viewChild<ElementRef<HTMLElement>>('mapControlsTrigger');
 
-  readonly focus = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('focus'))), {
-    initialValue: this.route.snapshot.queryParamMap.get('focus'),
+  private readonly queryParams = toSignal(this.route.queryParamMap, {
+    initialValue: this.route.snapshot.queryParamMap,
   });
 
+  readonly focus = computed(() => this.queryParams().get('focus'));
+  readonly around = computed(() => this.queryParams().get('around'));
+
+  private restoredDepth = LOCAL_MAP_DEPTH_MIN;
+  private restoredMin: number | null = null;
+
   /**
-   * The view to open at, read once: Back to the map restores the camera left
-   * behind; any other arrival (Show on map, the sidebar) centres on the focus,
-   * or frames the whole graph.
+   * The view to open at, read once: Back to the map restores the camera, depth
+   * and link strength left behind; any other arrival centres on the focus, or
+   * frames the graph.
    */
   readonly startCamera: MapCamera | null = (() => {
     const kept = this.state.mapView();
     const back = this.router.currentNavigation()?.trigger === 'popstate';
-    return back && kept && kept.focus === this.route.snapshot.queryParamMap.get('focus') ? kept.camera : null;
+    const params = this.route.snapshot.queryParamMap;
+    if (back && kept && kept.focus === params.get('focus') && kept.around === params.get('around')) {
+      this.restoredDepth = Math.max(LOCAL_MAP_DEPTH_MIN, Math.min(LOCAL_MAP_DEPTH_MAX, kept.depth || LOCAL_MAP_DEPTH_MIN));
+      this.restoredMin = kept.min;
+      return kept.camera;
+    }
+    return null;
   })();
 
+  readonly depth = computed(() => parseDepth(this.queryParams().get('depth'), this.restoredDepth));
+  readonly min = computed(() => parseMin(this.queryParams().get('min'), this.restoredMin));
+
   readonly topics = this.state.topics;
+  readonly aroundTopic = computed(() => this.state.topicById(this.around()));
   /** The selected topic's own words, which the card shows before a line from its notes. */
   readonly focusedWords = computed(() => this.state.topicById(this.focus())?.description?.trim() || null);
   readonly countText = computed(() => plural(this.state.sidebarTopics().length, 'topic'));
 
+  readonly scope = signal<MapScopeInfo>({
+    totalInScope: 0,
+    shownCount: 0,
+    maxShared: 1,
+    effectiveMin: 1,
+    capped: false,
+  });
+  readonly effectiveMin = computed(() => this.min() ?? this.scope().effectiveMin);
+  readonly maxShared = computed(() => Math.max(1, this.scope().maxShared));
+  readonly sliderMaxShared = computed(() => Math.max(this.maxShared(), this.effectiveMin(), 1));
+  readonly scopeCountText = computed(() => {
+    if (!this.state.topicsLoaded()) return '';
+    const info = this.scope();
+    if (info.capped) {
+      const total = this.around() ? info.totalInScope : this.state.sidebarTopics().length;
+      return `Showing ${info.shownCount} of ${total} topics`;
+    }
+    return plural(info.shownCount, 'topic');
+  });
+
+  readonly controlsOpen = signal(false);
+
   readonly finder = signal('');
   readonly finderOpen = signal(false);
   readonly finderActive = signal(0);
-  /** Only topics the map draws can be found on it. */
-  private readonly choices = computed(() => topicChoices(drawnTopics(this.state.sidebarTopics())));
+  /** Only topics the current map draws can be found on it. */
+  private readonly choices = computed(() => {
+    const drawn = this.map()?.accessibleNodes() ?? [];
+    if (drawn.length > 0) {
+      return topicChoices(drawn.map((n) => ({ id: n.id, name: n.name, usageCount: n.usageCount })));
+    }
+    return this.around()
+      ? topicChoices(this.state.sidebarTopics())
+      : topicChoices(drawnTopics(this.state.sidebarTopics()));
+  });
   readonly finds = computed(() => {
     const typed = this.finder().trim();
     return typed && this.finderOpen() ? rankTopicChoices(this.choices(), typed, [], FINDER_LIMIT) : [];
@@ -99,12 +177,81 @@ export class BrainMapPage {
     this.state.ensureLoaded();
   }
 
+  get controlsOrigin(): HTMLElement | null {
+    return this.controlsTrigger()?.nativeElement ?? null;
+  }
+
   keepCamera(camera: MapCamera): void {
-    this.state.mapView.set({ camera, focus: this.focus() });
+    this.state.mapView.set({
+      camera,
+      focus: this.focus(),
+      around: this.around(),
+      depth: this.depth(),
+      min: this.min(),
+    });
+  }
+
+  onScopeInfo(info: MapScopeInfo): void {
+    this.scope.set(info);
   }
 
   openTopic(topicId: string | null = this.focus()): void {
     if (topicId) void this.router.navigate(['/brain/topics', topicId]);
+  }
+
+  mapAroundTopic(topicId: string): void {
+    this.restoredDepth = LOCAL_MAP_DEPTH_MIN;
+    this.restoredMin = null;
+    this.controlsOpen.set(false);
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { around: topicId, depth: null, min: null, focus: null },
+      queryParamsHandling: 'merge',
+    });
+  }
+
+  clearAround(): void {
+    this.restoredDepth = LOCAL_MAP_DEPTH_MIN;
+    this.restoredMin = null;
+    this.controlsOpen.set(false);
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { around: null, depth: null, min: null, focus: null },
+      queryParamsHandling: 'merge',
+    });
+  }
+
+  onDepthInput(value: string): void {
+    this.setDepth(parseDepth(value, this.depth()));
+  }
+
+  setDepth(depth: number): void {
+    const clamped = Math.max(LOCAL_MAP_DEPTH_MIN, Math.min(LOCAL_MAP_DEPTH_MAX, Math.floor(depth)));
+    this.restoredDepth = LOCAL_MAP_DEPTH_MIN;
+    if (clamped === this.depth() && this.queryParams().get('depth') === String(clamped)) return;
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { depth: String(clamped) },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+  }
+
+  onMinInput(value: string): void {
+    const parsed = parseMin(value, 1) ?? 1;
+    this.setMin(parsed);
+  }
+
+  setMin(min: number): void {
+    const clamped = Math.max(1, Math.floor(min));
+    this.restoredMin = null;
+    if (clamped === this.min() && this.queryParams().get('min') === String(clamped)) return;
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { min: String(clamped) },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
   }
 
   // --- The finder -----------------------------------------------------------
@@ -151,6 +298,7 @@ export class BrainMapPage {
     void this.router.navigate([], {
       relativeTo: this.route,
       queryParams: { focus: topicId },
+      queryParamsHandling: 'merge',
       replaceUrl: true,
     });
   }

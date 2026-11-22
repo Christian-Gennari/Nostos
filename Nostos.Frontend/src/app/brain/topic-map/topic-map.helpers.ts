@@ -1,7 +1,14 @@
 import type { SimulationNodeDatum } from 'd3-force';
-import type { TopicDto } from '../../core/services/topics.service';
+import type {
+  TopicDto,
+  TopicGraphDto,
+  TopicGraphEdgeDto,
+  TopicGraphNodeDto,
+} from '../../core/services/topics.service';
 
 export const MAX_MAP_TOPICS = 150;
+export const LOCAL_MAP_DEPTH_MIN = 1;
+export const LOCAL_MAP_DEPTH_MAX = 3;
 
 /** Where the map's camera stands, as Sigma reports it. */
 export interface MapCamera {
@@ -14,6 +21,96 @@ export interface MapCamera {
 /** The topics the map draws: the most referenced, up to the cap. */
 export function drawnTopics<T extends TopicDto>(topics: readonly T[]): T[] {
   return [...topics].sort(compareTopics).slice(0, MAX_MAP_TOPICS);
+}
+
+/** Result of scoping the topic graph around one root topic. */
+export interface ScopedGraph {
+  nodes: TopicGraphNodeDto[];
+  edges: TopicGraphEdgeDto[];
+  /** Shortest hop distance from `rootId` (0 for root, 1..depth for neighbours). */
+  hops: Map<string, number>;
+  /** Reachable topics within `depth` using edges `>= minShared`, before capping. */
+  totalInScope: number;
+}
+
+/**
+ * Scope a topic graph to `rootId` within `depth` steps along edges with at
+ * least `minShared` shared notes. Drops edges below `minShared` before BFS so
+ * topics reachable only via dropped edges are omitted, and caps at `limit`
+ * keeping closest hops first, then highest usage.
+ */
+export function scopeGraph(
+  graph: TopicGraphDto,
+  rootId: string,
+  depth: number,
+  minShared: number,
+  limit: number = MAX_MAP_TOPICS
+): ScopedGraph {
+  const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
+  if (!rootId || !nodeById.has(rootId)) {
+    return { nodes: [], edges: [], hops: new Map(), totalInScope: 0 };
+  }
+
+  const maxDepth = Math.max(0, Math.min(LOCAL_MAP_DEPTH_MAX, Math.floor(depth)));
+  const minStrength = Math.max(1, Math.floor(minShared));
+  const effectiveLimit = Math.max(1, Math.floor(limit));
+
+  const validEdges = graph.edges.filter(
+    (edge) =>
+      edge.sharedNotes >= minStrength &&
+      edge.sourceId !== edge.targetId &&
+      nodeById.has(edge.sourceId) &&
+      nodeById.has(edge.targetId)
+  );
+
+  const adjacency = new Map<string, string[]>();
+  for (const edge of validEdges) {
+    let from = adjacency.get(edge.sourceId);
+    if (!from) {
+      from = [];
+      adjacency.set(edge.sourceId, from);
+    }
+    from.push(edge.targetId);
+
+    let to = adjacency.get(edge.targetId);
+    if (!to) {
+      to = [];
+      adjacency.set(edge.targetId, to);
+    }
+    to.push(edge.sourceId);
+  }
+
+  const allHops = new Map<string, number>([[rootId, 0]]);
+  const queue: string[] = [rootId];
+  let head = 0;
+  while (head < queue.length) {
+    const current = queue[head++];
+    const hop = allHops.get(current)!;
+    if (hop >= maxDepth) continue;
+    for (const neighbour of adjacency.get(current) ?? []) {
+      if (allHops.has(neighbour)) continue;
+      allHops.set(neighbour, hop + 1);
+      queue.push(neighbour);
+    }
+  }
+
+  const totalInScope = allHops.size;
+  const reachable = [...allHops.keys()].map((id) => nodeById.get(id)!);
+  reachable.sort(
+    (a, b) => (allHops.get(a.id)! - allHops.get(b.id)!) || compareTopics(a, b)
+  );
+
+  const nodes = reachable.slice(0, effectiveLimit);
+  const keptIds = new Set(nodes.map((node) => node.id));
+  const hops = new Map<string, number>();
+  for (const node of nodes) {
+    hops.set(node.id, allHops.get(node.id)!);
+  }
+  const edges = validEdges.filter(
+    (edge) => keptIds.has(edge.sourceId) && keptIds.has(edge.targetId)
+  );
+
+  return { nodes, edges, hops, totalInScope };
 }
 
 /* ── Visual constants ── */
@@ -211,6 +308,7 @@ export function seedPositions(
 export interface LayoutNode extends SimulationNodeDatum {
   id: string;
   size: number;
+  hop?: number;
 }
 
 /**
@@ -260,6 +358,11 @@ export const OBSIDIAN_FORCES = {
   /** Below this alpha the simulation halts entirely. */
   alphaMin: 0.001,
 } as const;
+
+/** Radial distance added per hop from the pinned root in local-map layout. */
+export const LOCAL_RING_STEP = OBSIDIAN_FORCES.linkDistance;
+/** Weak radial pull per hop, layered on top of Obsidian's forces without replacing them. */
+export const LOCAL_RADIAL_STRENGTH = 0.15;
 
 /**
  * Obsidian's `linkStrength` slider default, applied as a MULTIPLIER on d3's own

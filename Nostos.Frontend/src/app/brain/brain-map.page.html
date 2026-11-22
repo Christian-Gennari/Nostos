@@ -44,10 +44,63 @@
   </header>
 
   @if (state.topicsLoaded()) {
+  <div class="map-controls" role="region" aria-label="Map scope and filters">
+    @if (aroundTopic(); as root) {
+    <app-topic-chip
+      class="map-scope-chip"
+      [name]="'Around ' + root.name"
+      [removable]="true"
+      [removeLabel]="'Show whole map (exit local map around ' + root.name + ')'"
+      (removed)="clearAround()"
+    />
+    <label class="map-control">
+      <span class="map-control-label">
+        Depth <span class="map-control-value">{{ depth() }}</span>
+      </span>
+      <input
+        type="range"
+        appRange
+        min="1"
+        max="3"
+        step="1"
+        class="map-control-slider"
+        [value]="depth()"
+        [attr.aria-label]="'Steps from ' + root.name + ': ' + depth()"
+        [attr.aria-valuetext]="depth() === 1 ? '1 step' : depth() + ' steps'"
+        (input)="onDepthInput($any($event.target).value)"
+      />
+    </label>
+    }
+
+    <label class="map-control">
+      <span class="map-control-label">
+        Strength <span class="map-control-value">{{ effectiveMin() }}</span>
+      </span>
+      <input
+        type="range"
+        appRange
+        min="1"
+        [max]="sliderMaxShared()"
+        step="1"
+        class="map-control-slider"
+        [disabled]="maxShared() <= 1"
+        [value]="effectiveMin()"
+        [attr.aria-label]="'Minimum shared notes: ' + effectiveMin()"
+        [attr.aria-valuetext]="effectiveMin() === 1 ? '1 shared note' : effectiveMin() + ' shared notes'"
+        (input)="onMinInput($any($event.target).value)"
+      />
+    </label>
+
+    <span class="map-controls-count" role="status">{{ scopeCountText() }}</span>
+  </div>
+
   <app-topic-map
     class="map-place"
     [topics]="topics()"
     [selectedId]="focus()"
+    [rootId]="around()"
+    [depth]="depth()"
+    [minShared]="min()"
     [camera]="startCamera"
     [centerOnLoad]="!startCamera"
     notesLabel="Open topic"
@@ -55,8 +108,36 @@
     (selectionCleared)="setFocus(null)"
     (openNotes)="openTopic()"
     (openTopic)="openTopic($event)"
+    (mapAround)="mapAroundTopic($event)"
+    (scopeInfo)="onScopeInfo($event)"
     (cameraKept)="keepCamera($event)"
   >
+    <div mapHudControls class="map-hud-controls">
+      @if (aroundTopic(); as root) {
+      <app-topic-chip
+        class="map-scope-chip"
+        [name]="'Around ' + root.name"
+        [removable]="true"
+        [removeLabel]="'Show whole map (exit local map around ' + root.name + ')'"
+        (removed)="clearAround()"
+      />
+      }
+      <button
+        #mapControlsTrigger
+        type="button"
+        appButton
+        variant="secondary"
+        size="sm"
+        class="map-controls-trigger"
+        aria-haspopup="dialog"
+        [attr.aria-expanded]="controlsOpen()"
+        (click)="controlsOpen.set(!controlsOpen())"
+      >
+        <nostos-icon name="sliders-horizontal" [size]="16" />
+        Controls
+      </button>
+    </div>
+
     @if (focusedWords(); as words) {
     <p mapCardDetail class="map-sample map-words">{{ words }}</p>
     } @else if (sample(); as line) {
@@ -67,5 +148,58 @@
     }
     }
   </app-topic-map>
+
+  @if (controlsOpen()) {
+  <nostos-settings-popover
+    [origin]="controlsOrigin"
+    heading="Map controls"
+    (dismissed)="controlsOpen.set(false)"
+  >
+    <div class="map-controls-sheet">
+      @if (aroundTopic(); as root) {
+      <div class="map-sheet-row">
+        <div class="map-sheet-head">
+          <span class="map-control-label">Depth</span>
+          <span class="map-control-value">{{ depth() }}</span>
+        </div>
+        <input
+          type="range"
+          appRange
+          min="1"
+          max="3"
+          step="1"
+          class="map-sheet-slider"
+          [value]="depth()"
+          [attr.aria-label]="'Steps from ' + root.name + ': ' + depth()"
+          [attr.aria-valuetext]="depth() === 1 ? '1 step' : depth() + ' steps'"
+          (input)="onDepthInput($any($event.target).value)"
+        />
+      </div>
+      }
+
+      <div class="map-sheet-row">
+        <div class="map-sheet-head">
+          <span class="map-control-label">Strength (shared notes)</span>
+          <span class="map-control-value">{{ effectiveMin() }}</span>
+        </div>
+        <input
+          type="range"
+          appRange
+          min="1"
+          [max]="sliderMaxShared()"
+          step="1"
+          class="map-sheet-slider"
+          [disabled]="maxShared() <= 1"
+          [value]="effectiveMin()"
+          [attr.aria-label]="'Minimum shared notes: ' + effectiveMin()"
+          [attr.aria-valuetext]="effectiveMin() === 1 ? '1 shared note' : effectiveMin() + ' shared notes'"
+          (input)="onMinInput($any($event.target).value)"
+        />
+      </div>
+
+      <p class="map-controls-count map-sheet-count" role="status">{{ scopeCountText() }}</p>
+    </div>
+  </nostos-settings-popover>
+  }
   }
 </div>

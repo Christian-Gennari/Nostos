@@ -18,7 +18,7 @@ books (`docs/brain-library-parity.md`). How topics live in a note's text is in
 | All notes | `/brain` | Every note and passage, newest first |
 | Passages | `/brain/passages` | Passages only (kind `passage`) |
 | Unsorted | `/brain/unsorted` | Notes that declare no `[[Topic]]` |
-| Map | `/brain/map` | The topic graph. `?focus=<topicId>` centres a topic |
+| Map | `/brain/map` | The topic graph. `?around=<topicId>&depth=<1-3>&min=<n>` scopes to a local map around a topic; `?focus=<topicId>` centres a topic |
 | A topic | `/brain/topics/:id` | The topic's notes. `?with=<topicId>` narrows to notes shared with another topic |
 | A note | `/brain/notes/:id` | One note on its own, for links from elsewhere |
 | Sort one by one | `/brain/unsorted/sort` | Full screen, one unsorted note at a time |
@@ -116,9 +116,18 @@ returns to the same note.
 The map is the topic graph: a node's size is how many notes it has, a line
 means two topics share notes. **Find a topic…** centres one. Selecting a topic
 shows a card with its counts, your words (or a line from its newest note), the
-topics it shares most with, and **Open topic**. Back returns to the map with
-the same view and selection; **Show on map** on a topic page opens the map
-centred on it.
+topics it shares most with, **Open topic**, and **Map around this**. Back
+returns to the map with the same view, depth, strength and selection; **Show on
+map** on a topic page opens the local map around that topic.
+
+When scoped around a topic (`?around=<topicId>&depth=<1-3>&min=<n>`), the root
+sits pinned at the centre as the active node with neighbouring topics arranged
+by hop distance (`depth` 1–3). **Strength** filters out weaker links below the
+minimum shared-note count on both local and whole-brain maps, and keeping the
+root's existing neighbours in place when changing depth or strength lets the
+graph grow outward without re-shuffling. The scope chip's × returns to the
+whole map; on a phone the scope chip and **Controls** sheet trigger sit in the
+bottom HUD so the graph keeps the screen.
 
 ## On a phone and on touch
 
@@ -136,3 +145,4 @@ centred on it.
 | What | Where |
 | --- | --- |
 | Screenshots | `Nostos.Frontend/e2e/visual-evidence/brain-rebuild/` (`part7-*`: every place, the sorter, selection and the map at 1280 and 390, light and dark, SelfHosted and Cloud) |
+| Local map | `Nostos.Frontend/e2e/visual-evidence/brain-local-map/` (whole map with Strength filter, `?around=<id>&depth=2&min=1`, and phone `Controls` sheet at 1280 and 390, light and dark, SelfHosted and Cloud) |

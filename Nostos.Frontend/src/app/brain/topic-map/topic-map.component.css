@@ -277,8 +277,15 @@
   white-space: nowrap;
 }
 
-.map-card-notes {
-  justify-self: start;
+.map-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.map-hud-bar {
+  display: contents;
 }
 
 /* ── Camera rail ── */
@@ -363,7 +370,8 @@
   }
 
   .map-card-related .nostos-chip,
-  .map-card-notes {
+  .map-card-notes,
+  .map-card-around {
     min-height: 44px;
   }
 }
@@ -372,8 +380,8 @@
  * Phone, portrait: the map is the screen.
  *
  * Full-bleed stage (no frame to spend pixels on), and the HUD becomes a stack:
- * the rail at the thumb's corner, the selection card across the full width
- * beneath it, like a sheet peeking up from the dock.
+ * the rail and phone controls at the thumb's edge, the selection card across
+ * the full width beneath them, like a sheet peeking up from the dock.
  */
 @media (max-width: 768px) {
   .map-stage {
@@ -397,9 +405,25 @@
     gap: 0.5rem;
   }
 
-  .map-actions {
+  .map-hud-bar {
     order: -1;
-    align-self: flex-end;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    width: 100%;
+    pointer-events: none;
+  }
+
+  .map-hud-bar > * {
+    pointer-events: auto;
+  }
+
+  .map-actions {
+    order: 0;
+    align-self: auto;
+    margin-left: auto;
   }
 
   .map-card {
@@ -440,6 +464,10 @@
     left: 0.5rem;
     flex-direction: row;
     align-items: flex-end;
+  }
+
+  .map-hud-bar {
+    display: contents;
   }
 
   .map-actions {

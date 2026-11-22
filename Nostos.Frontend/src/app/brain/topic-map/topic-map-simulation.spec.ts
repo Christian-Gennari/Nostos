@@ -240,4 +240,101 @@ describe('TopicMapSimulation', () => {
 
     sim.dispose();
   });
+
+  it('pins the local-map root at (0, 0), adds forceRadial, and blocks dragging the root', () => {
+    const sim = new TopicMapSimulation();
+    const { graph, nodes, edges } = buildSampleGraph();
+    const hops = new Map([
+      ['a', 0],
+      ['b', 1],
+      ['c', 2],
+    ]);
+
+    sim.initLayout({
+      graph,
+      visibleNodes: nodes.slice(0, 3),
+      visibleEdges: edges,
+      stageWidth: 1000,
+      stageHeight: 700,
+      rootId: 'a',
+      hops,
+    });
+
+    const rootNode = sim.simulation!.nodes().find((n) => n.id === 'a')!;
+    expect(rootNode.fx).toBe(0);
+    expect(rootNode.fy).toBe(0);
+    expect(rootNode.hop).toBe(0);
+    expect(graph.getNodeAttributes('a')['x']).toBe(0);
+    expect(graph.getNodeAttributes('a')['y']).toBe(0);
+    expect(sim.simulation!.force('radial')).toBeTruthy();
+
+    const { sigma, sigmaHandlers, mouseHandlers } = createDragSigma();
+    const container = document.createElement('div');
+    sim.attachDrag({ sigma, graph, container, onRefresh: vi.fn() });
+
+    sigmaHandlers['downNode']({ node: 'a', event: { x: 0, y: 0 } });
+    mouseHandlers['mousemovebody']?.({ x: 120, y: 90, preventSigmaDefault: vi.fn() });
+    expect(graph.getNodeAttributes('a')['x']).toBe(0);
+    expect(graph.getNodeAttributes('a')['y']).toBe(0);
+    expect(rootNode.fx).toBe(0);
+    expect(rootNode.fy).toBe(0);
+
+    sim.resetToHome();
+    expect(rootNode.fx).toBe(0);
+    expect(rootNode.fy).toBe(0);
+
+    sim.dispose();
+  });
+
+  it('keeps an isolated local-map root at (0, 0) instead of moving it to a shelf', () => {
+    const sim = new TopicMapSimulation();
+    const graph = new Graph();
+    graph.addNode('root', { x: 40, y: -30, size: 10 });
+
+    sim.initLayout({
+      graph,
+      visibleNodes: [{ id: 'root', name: 'Root', usageCount: 4 }],
+      visibleEdges: [],
+      stageWidth: 800,
+      stageHeight: 600,
+      rootId: 'root',
+      hops: new Map([['root', 0]]),
+    });
+
+    expect(graph.getNodeAttributes('root')['x']).toBe(0);
+    expect(graph.getNodeAttributes('root')['y']).toBe(0);
+    expect(sim.simulation!.nodes().map((n) => n.id)).toEqual(['root']);
+
+    sim.dispose();
+  });
+
+  it('skips axis alignment rotation when keepPositions is true so surviving nodes keep orientation', () => {
+    const sim = new TopicMapSimulation();
+    const graph = new Graph();
+    graph.addNode('a', { x: 0, y: 0, size: 12 });
+    graph.addNode('b', { x: 250, y: 5, size: 8 });
+    graph.addEdge('a', 'b', { size: 1 });
+
+    // Alpha decay ticks will nudge b slightly, but keepPositions prevents a 90-degree alignment flip on portrait stage.
+    sim.initLayout({
+      graph,
+      visibleNodes: [
+        { id: 'a', name: 'Alpha', usageCount: 10 },
+        { id: 'b', name: 'Beta', usageCount: 5 },
+      ],
+      visibleEdges: [{ sourceId: 'a', targetId: 'b', sharedNotes: 1 }],
+      stageWidth: 390,
+      stageHeight: 720,
+      rootId: 'a',
+      hops: new Map([['a', 0], ['b', 1]]),
+      keepPositions: true,
+    });
+
+    const bx = Number(graph.getNodeAttributes('b')['x']);
+    const by = Number(graph.getNodeAttributes('b')['y']);
+    expect(bx).toBeGreaterThan(0);
+    expect(Math.abs(bx)).toBeGreaterThan(Math.abs(by));
+
+    sim.dispose();
+  });
 });

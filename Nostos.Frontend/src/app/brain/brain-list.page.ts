@@ -869,6 +869,6 @@ export class BrainListPage {
   }
 
   showOnMap(topicId: string): void {
-    void this.router.navigate(['/brain/map'], { queryParams: { focus: topicId } });
+    void this.router.navigate(['/brain/map'], { queryParams: { around: topicId } });
   }
 }
