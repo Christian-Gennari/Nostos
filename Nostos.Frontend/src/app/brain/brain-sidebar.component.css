@@ -326,6 +326,17 @@ app-dropdown.topic-sort {
     --brand-lockup-word-opacity: 1;
   }
 
+  /* The drawer is not the rail, so the tint is the full row it labels — icon,
+     name and count. The Brain's drawer opens from its own state
+     (`drawerOpen`), not from the preference, so a drawer opened while
+     `sidebarExpanded` is false still carries `.collapsed`: without this the
+     selected place kept the rail's 40px square behind the icon alone and left
+     the label and count on the panel ground (#1784). The desktop rail is
+     untouched above 768px. */
+  .sidebar.collapsed .nav-item::before {
+    width: 100%;
+  }
+
   .sidebar.collapsed .collapsible {
     grid-template-rows: minmax(0, 1fr);
   }
