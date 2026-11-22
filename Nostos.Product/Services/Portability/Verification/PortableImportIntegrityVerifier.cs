@@ -55,7 +55,8 @@ internal static class PortableImportIntegrityVerifier
             PortableLibraryCounts.ComputeCounts(data, media.Count),
             comparison.Counts,
             media.Count,
-            failures);
+            failures,
+            allowUntouchedDefaultTopicKinds: data.TopicKinds is null);
         await PortableMediaVerifier.VerifyStorageIntoAsync(
             assets,
             tracks,

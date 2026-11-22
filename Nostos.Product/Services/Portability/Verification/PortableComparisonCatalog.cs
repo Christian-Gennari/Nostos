@@ -32,6 +32,7 @@ internal static class PortableComparisonCatalog
             [nameof(PortableLibraryData.WritingNotes)] = "Container; every PortableWritingNote element is compared by the PortableWritingNote comparison table.",
             [nameof(PortableLibraryData.NoteImportBookLinks)] = "Container; every PortableNoteImportBookLink element is compared by the PortableNoteImportBookLink comparison table.",
             [nameof(PortableLibraryData.ReadingListEntries)] = "Container; every PortableReadingListEntry element is compared by the PortableReadingListEntry comparison table.",
+            [nameof(PortableLibraryData.TopicKinds)] = "Container; every PortableTopicKind element is compared by the PortableTopicKind comparison table.",
         };
 
     internal static readonly IReadOnlyDictionary<string, string> ManifestExclusions =
@@ -75,6 +76,7 @@ internal static class PortableComparisonCatalog
             [nameof(PortableCollection)] = Spec(CollectionComparisons),
             [nameof(PortableBookCollection)] = Spec(BookCollectionComparisons),
             [nameof(PortableNote)] = Spec(NoteComparisons),
+            [nameof(PortableTopicKind)] = Spec(TopicKindComparisons),
             [nameof(PortableTopic)] = Spec(TopicComparisons),
             [nameof(PortableNoteTopic)] = Spec(NoteTopicComparisons),
             [nameof(PortableWriting)] = Spec(WritingComparisons),

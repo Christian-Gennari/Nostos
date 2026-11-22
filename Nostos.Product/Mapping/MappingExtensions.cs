@@ -297,7 +297,13 @@ public static class MappingExtensions
         new CollectionDto(model.Id, model.Name, model.ParentId);
 
     public static TopicDto ToDto(this TopicModel model) =>
-        new TopicDto(model.Id, model.Topic, model.NoteTopics?.Count ?? 0, Description: model.Description);
+        new TopicDto(
+            model.Id,
+            model.Topic,
+            model.NoteTopics?.Count ?? 0,
+            Description: model.Description,
+            KindId: model.KindId,
+            KindSource: model.KindSource);
 
     public static WritingDto ToDto(this WritingModel model)
     {

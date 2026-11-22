@@ -22,6 +22,29 @@ internal sealed class NoteModelConfiguration : IEntityTypeConfiguration<NoteMode
     }
 }
 
+internal sealed class TopicKindModelConfiguration : IEntityTypeConfiguration<TopicKindModel>
+{
+    public void Configure(EntityTypeBuilder<TopicKindModel> builder)
+    {
+        builder.Property(k => k.Name)
+            .IsRequired()
+            .HasMaxLength(TopicKindModel.MaxNameLength);
+
+        builder.Property(k => k.NormalizedName)
+            .IsRequired()
+            .HasMaxLength(TopicKindModel.MaxNameLength);
+
+        builder.Property(k => k.ColorKey)
+            .IsRequired()
+            .HasMaxLength(16);
+
+        builder.HasIndex(k => k.NormalizedName).IsUnique();
+        builder.HasIndex(k => k.ColorKey).IsUnique();
+
+        builder.HasData(TopicKindModel.CreateBuiltInSeeds());
+    }
+}
+
 internal sealed class TopicModelConfiguration : IEntityTypeConfiguration<TopicModel>
 {
     public void Configure(EntityTypeBuilder<TopicModel> builder)
@@ -29,8 +52,17 @@ internal sealed class TopicModelConfiguration : IEntityTypeConfiguration<TopicMo
         builder.Property(t => t.Description)
             .HasMaxLength(TopicModel.MaxDescriptionLength);
 
+        builder.Property(t => t.KindSource)
+            .HasMaxLength(32);
+
         // A topic is one per name in any case: the folded key is what is unique.
         builder.HasIndex(c => c.NormalizedName).IsUnique();
+        builder.HasIndex(c => c.KindId);
+
+        builder.HasOne(t => t.Kind)
+            .WithMany(k => k.Topics)
+            .HasForeignKey(t => t.KindId)
+            .OnDelete(DeleteBehavior.SetNull);
     }
 }
 

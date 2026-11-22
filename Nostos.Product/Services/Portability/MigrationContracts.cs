@@ -272,7 +272,8 @@ public sealed record MigrationArchiveCounts(
     long NoteImportBookLinks = 0,
     long MediaEntries = 0,
     // APPENDED after MediaEntries so no positional caller is renumbered.
-    long ReadingListEntries = 0)
+    long ReadingListEntries = 0,
+    long TopicKinds = 0)
 {
     public static MigrationArchiveCounts Empty { get; } = new();
 
@@ -289,7 +290,8 @@ public sealed record MigrationArchiveCounts(
         Acquisitions +
         AssistantSettings +
         NoteImportBookLinks +
-        ReadingListEntries;
+        ReadingListEntries +
+        TopicKinds;
 }
 
 public sealed record MigrationExistingCounts(
@@ -305,7 +307,8 @@ public sealed record MigrationExistingCounts(
     long Acquisitions = 0,
     long NoteImportBookLinks = 0,
     long AssistantSettings = 0,
-    long ReadingListEntries = 0)
+    long ReadingListEntries = 0,
+    long TopicKinds = 0)
 {
     public long TotalRows =>
         Works +
@@ -320,7 +323,8 @@ public sealed record MigrationExistingCounts(
         Acquisitions +
         NoteImportBookLinks +
         AssistantSettings +
-        ReadingListEntries;
+        ReadingListEntries +
+        TopicKinds;
 }
 
 public sealed record MigrationPreflightRequest(

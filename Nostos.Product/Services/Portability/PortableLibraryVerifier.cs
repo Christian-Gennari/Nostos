@@ -46,6 +46,7 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
         nameof(PortableCollection),
         nameof(PortableBookCollection),
         nameof(PortableNote),
+        nameof(PortableTopicKind),
         nameof(PortableTopic),
         nameof(PortableNoteTopic),
         nameof(PortableWriting),
@@ -116,7 +117,8 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
             expected.Metadata.Counts,
             comparison.Counts,
             mediaFiles: null,
-            comparison.Failures);
+            comparison.Failures,
+            allowUntouchedDefaultTopicKinds: expected.Data!.TopicKinds is null);
 
         return new PortableLibraryVerificationReport(
             comparison.Failures.TotalCount == 0,
@@ -161,7 +163,8 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
             expected.Metadata.Counts,
             comparison.Counts,
             mediaFiles,
-            comparison.Failures);
+            comparison.Failures,
+            allowUntouchedDefaultTopicKinds: expected.Data!.TopicKinds is null);
 
         return new PortableLibraryVerificationReport(
             comparison.Failures.TotalCount == 0,
@@ -197,7 +200,8 @@ public sealed class PortableLibraryVerifier : IPortableLibraryVerifier
             expected.Counts,
             comparison.Counts,
             expected.PrimaryMedia.Count,
-            comparison.Failures);
+            comparison.Failures,
+            allowUntouchedDefaultTopicKinds: expected.Data.TopicKinds is null);
 
         return new PortableLibraryVerificationReport(
             comparison.Failures.TotalCount == 0,

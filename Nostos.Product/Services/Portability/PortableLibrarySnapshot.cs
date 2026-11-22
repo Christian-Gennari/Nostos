@@ -114,6 +114,19 @@ internal static class PortableLibrarySnapshot
                 x.PassageHtml))
             .ToList();
 
+        var topicKinds = (await db.TopicKinds
+            .AsNoTracking()
+            .OrderBy(x => x.SortOrder)
+            .ThenBy(x => x.Id)
+            .ToListAsync(cancellationToken).ConfigureAwait(false))
+            .Select(x => new PortableTopicKind(
+                x.Id,
+                x.Name,
+                x.ColorKey,
+                x.SortOrder,
+                x.CreatedAt))
+            .ToList();
+
         var topics = (await db.Topics
             .AsNoTracking()
             .OrderBy(x => x.Id)
@@ -121,7 +134,9 @@ internal static class PortableLibrarySnapshot
             .Select(x => new PortableTopic(
                 x.Id,
                 x.Topic,
-                x.Description))
+                x.Description,
+                x.KindId,
+                x.KindSource))
             .ToList();
 
         var noteTopics = (await db.NoteTopics
@@ -229,7 +244,8 @@ internal static class PortableLibrarySnapshot
                     assistant.UpdatedAtUtc),
             writingNotes,
             noteImportBookLinks,
-            readingListEntries);
+            readingListEntries,
+            topicKinds);
     }
 
     /// <summary>

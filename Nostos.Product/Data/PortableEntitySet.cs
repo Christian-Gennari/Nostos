@@ -36,6 +36,7 @@ public static class PortableEntitySet
         typeof(BookCollectionModel),
         typeof(NoteModel),
         typeof(TopicModel),
+        typeof(TopicKindModel),
         typeof(NoteTopicModel),
         typeof(WritingModel),
         typeof(WritingNoteModel),

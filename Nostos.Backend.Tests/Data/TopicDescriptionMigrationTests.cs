@@ -89,6 +89,7 @@ public sealed class TopicDescriptionMigrationTests : IDisposable
         {
             // A later migration's column the current model reads (LaterBookColumns).
             await LaterBookColumns.RestoreTopicNormalizedNameAsync(db);
+            await LaterBookColumns.RestoreTopicKindColumnsAsync(db);
             (await db.Topics.AsNoTracking().ToListAsync()).Should().OnlyContain(t => t.Description == null);
             var virtue = await db.Topics.SingleAsync(t => t.Topic == "Virtue");
             virtue.Description = "Living well.";

@@ -142,6 +142,7 @@ public sealed class SelfHostedMigrationPreflightService(
             || OutOfEntryRange(counts.AssistantSettings)
             || OutOfEntryRange(counts.NoteImportBookLinks)
             || OutOfEntryRange(counts.ReadingListEntries)
+            || OutOfEntryRange(counts.TopicKinds)
             || OutOfEntryRange(counts.MediaEntries)
             || request.DeclaredArchiveBytes is < 0 or > MigrationContractLimits.MaxArchiveBytes
             || request.DeclaredMediaBytes is < 0 or > MigrationContractLimits.MaxMediaBytes
@@ -183,6 +184,7 @@ public static class MigrationDestinationRevision
             counts.NoteImportBookLinks,
             counts.AssistantSettings,
             counts.ReadingListEntries,
+            counts.TopicKinds,
         });
         return Convert.ToHexStringLower(SHA256.HashData(payload));
     }

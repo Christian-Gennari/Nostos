@@ -1,4 +1,5 @@
 using System.Reflection;
+using Nostos.Backend.Data.Models;
 using static Nostos.Backend.Services.Portability.Verification.PortableVerificationPrimitives;
 
 namespace Nostos.Backend.Services.Portability.Verification;
@@ -16,7 +17,8 @@ internal sealed record CandidateRowCounts(
     long Acquisitions,
     long ImportLinks,
     long AssistantSettings,
-    long ReadingListEntries);
+    long ReadingListEntries,
+    long TopicKinds = 0);
 
 internal sealed record CandidateDatabaseComparison(
     FailureList Failures,
@@ -145,7 +147,8 @@ internal static class PortableVerificationCounts
         MigrationArchiveCounts expectedCounts,
         CandidateRowCounts counts,
         long? mediaFiles,
-        FailureList failures)
+        FailureList failures,
+        bool allowUntouchedDefaultTopicKinds = false)
     {
         var actual = new Dictionary<string, long>(StringComparer.Ordinal)
         {
@@ -153,6 +156,7 @@ internal static class PortableVerificationCounts
             [nameof(MigrationArchiveCounts.Books)] = counts.Books,
             [nameof(MigrationArchiveCounts.Notes)] = counts.Notes,
             [nameof(MigrationArchiveCounts.Topics)] = counts.Topics,
+            [nameof(MigrationArchiveCounts.TopicKinds)] = counts.TopicKinds,
             [nameof(MigrationArchiveCounts.NoteTopics)] = counts.NoteTopics,
             [nameof(MigrationArchiveCounts.Writings)] = counts.Writings,
             [nameof(MigrationArchiveCounts.WritingNotes)] = counts.WritingNotes,
@@ -194,6 +198,14 @@ internal static class PortableVerificationCounts
             }
 
             var expected = (long)property.GetValue(expectedCounts)!;
+            if (property.Name == nameof(MigrationArchiveCounts.TopicKinds)
+                && allowUntouchedDefaultTopicKinds
+                && expected == 0
+                && value == TopicKindModel.BuiltInSeedCount)
+            {
+                continue;
+            }
+
             if (value != expected)
             {
                 failures.Add(Failure(

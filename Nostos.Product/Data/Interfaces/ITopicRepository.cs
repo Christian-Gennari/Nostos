@@ -125,4 +125,56 @@ public interface ITopicRepository
     /// were merged away.
     /// </summary>
     Task<int> MergeCaseVariantsAsync(CancellationToken ct = default);
+
+    // --- Topic kinds (issue #1767) ---
+
+    Task<List<TopicKindDto>> GetAllKindsAsync(CancellationToken cancellationToken = default);
+
+    Task<TopicKindMutationResult> CreateKindAsync(
+        string name,
+        string colorKey,
+        CancellationToken cancellationToken = default);
+
+    Task<TopicKindMutationResult> UpdateKindAsync(
+        Guid id,
+        string? name,
+        string? colorKey,
+        int? sortOrder,
+        bool swapColor,
+        CancellationToken cancellationToken = default);
+
+    Task<bool> DeleteKindAsync(Guid id, CancellationToken cancellationToken = default);
+
+    Task<SetTopicsKindOutcome> SetTopicsKindAsync(
+        IReadOnlyList<Guid> topicIds,
+        Guid? kindId,
+        string source = TopicKindSources.Reader,
+        CancellationToken cancellationToken = default);
 }
+
+public enum TopicKindMutationStatus
+{
+    Success,
+    NotFound,
+    InvalidInput,
+    Conflict,
+    LimitReached,
+}
+
+public sealed record TopicKindMutationResult(
+    TopicKindMutationStatus Status,
+    TopicKindDto? Kind = null,
+    string? ErrorMessage = null);
+
+public enum SetTopicsKindStatus
+{
+    Success,
+    InvalidInput,
+    KindNotFound,
+    TopicNotFound,
+}
+
+public sealed record SetTopicsKindOutcome(
+    SetTopicsKindStatus Status,
+    SetTopicsKindResultDto? Result = null,
+    string? ErrorMessage = null);

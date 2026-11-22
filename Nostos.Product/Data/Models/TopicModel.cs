@@ -52,6 +52,14 @@ public class TopicModel
   public static string? NormalizeDescription(string? description) =>
     string.IsNullOrWhiteSpace(description) ? null : description.Trim();
 
+  /// <summary>Optional kind classification for this topic (nullable; deleted kinds leave topics untyped).</summary>
+  public Guid? KindId { get; set; }
+
+  public TopicKindModel? Kind { get; set; }
+
+  /// <summary>Who assigned <see cref="KindId"/>: reader, assistant, or connected-app; null when no kind is assigned.</summary>
+  public string? KindSource { get; set; }
+
   // NEW: Allow us to check if this topic is used anywhere
   public ICollection<NoteTopicModel> NoteTopics { get; set; } = [];
 }

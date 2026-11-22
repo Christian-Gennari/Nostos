@@ -1671,6 +1671,100 @@ namespace Nostos.Backend.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Nostos.Backend.Data.Models.TopicKindModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ColorKey")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("NormalizedName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ColorKey")
+                        .IsUnique();
+
+                    b.HasIndex("NormalizedName")
+                        .IsUnique();
+
+                    b.ToTable("TopicKinds");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = new Guid("11111111-0000-0000-0000-000000000001"),
+                            ColorKey = "kind-1",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Name = "Person",
+                            NormalizedName = "PERSON",
+                            SortOrder = 1
+                        },
+                        new
+                        {
+                            Id = new Guid("11111111-0000-0000-0000-000000000002"),
+                            ColorKey = "kind-2",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Name = "Idea",
+                            NormalizedName = "IDEA",
+                            SortOrder = 2
+                        },
+                        new
+                        {
+                            Id = new Guid("11111111-0000-0000-0000-000000000003"),
+                            ColorKey = "kind-3",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Name = "Place",
+                            NormalizedName = "PLACE",
+                            SortOrder = 3
+                        },
+                        new
+                        {
+                            Id = new Guid("11111111-0000-0000-0000-000000000004"),
+                            ColorKey = "kind-4",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Name = "Work",
+                            NormalizedName = "WORK",
+                            SortOrder = 4
+                        },
+                        new
+                        {
+                            Id = new Guid("11111111-0000-0000-0000-000000000005"),
+                            ColorKey = "kind-5",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Name = "Event",
+                            NormalizedName = "EVENT",
+                            SortOrder = 5
+                        },
+                        new
+                        {
+                            Id = new Guid("11111111-0000-0000-0000-000000000006"),
+                            ColorKey = "kind-6",
+                            CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Utc),
+                            Name = "Field",
+                            NormalizedName = "FIELD",
+                            SortOrder = 6
+                        });
+                });
+
             modelBuilder.Entity("Nostos.Backend.Data.Models.TopicModel", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1679,6 +1773,13 @@ namespace Nostos.Backend.Migrations
 
                     b.Property<string>("Description")
                         .HasMaxLength(4000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid?>("KindId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("KindSource")
+                        .HasMaxLength(32)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("NormalizedName")
@@ -1690,6 +1791,8 @@ namespace Nostos.Backend.Migrations
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("KindId");
 
                     b.HasIndex("NormalizedName")
                         .IsUnique();
@@ -2199,6 +2302,16 @@ namespace Nostos.Backend.Migrations
                     b.Navigation("Topic");
                 });
 
+            modelBuilder.Entity("Nostos.Backend.Data.Models.TopicModel", b =>
+                {
+                    b.HasOne("Nostos.Backend.Data.Models.TopicKindModel", "Kind")
+                        .WithMany("Topics")
+                        .HasForeignKey("KindId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Kind");
+                });
+
             modelBuilder.Entity("Nostos.Backend.Data.Models.WritingCitationModel", b =>
                 {
                     b.HasOne("Nostos.Backend.Data.Models.NoteModel", "Note")
@@ -2277,6 +2390,11 @@ namespace Nostos.Backend.Migrations
             modelBuilder.Entity("Nostos.Backend.Data.Models.NoteModel", b =>
                 {
                     b.Navigation("NoteTopics");
+                });
+
+            modelBuilder.Entity("Nostos.Backend.Data.Models.TopicKindModel", b =>
+                {
+                    b.Navigation("Topics");
                 });
 
             modelBuilder.Entity("Nostos.Backend.Data.Models.TopicModel", b =>

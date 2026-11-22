@@ -79,6 +79,30 @@ internal static class PortableNoteComparisons
             (context, failures) => CompareField(failures, "note", context.Row.Id, nameof(PortableNote.PassageHtml), context.Row.PassageHtml, context.Expected.PassageHtml)),
     ];
 
+    internal static readonly IReadOnlyList<ComparisonEntry<TopicKindContext>> TopicKindComparisons =
+    [
+        Entry<TopicKindContext>(
+            nameof(PortableTopicKind.Id),
+            Ef(("TopicKindModel", nameof(TopicKindModel.Id))),
+            (context, failures) => CompareField(failures, "topicKind", context.Row.Id, nameof(PortableTopicKind.Id), context.Row.Id, context.Expected.Id)),
+        Entry<TopicKindContext>(
+            nameof(PortableTopicKind.Name),
+            Ef(("TopicKindModel", nameof(TopicKindModel.Name))),
+            (context, failures) => CompareField(failures, "topicKind", context.Row.Id, nameof(PortableTopicKind.Name), context.Row.Name, context.Expected.Name)),
+        Entry<TopicKindContext>(
+            nameof(PortableTopicKind.ColorKey),
+            Ef(("TopicKindModel", nameof(TopicKindModel.ColorKey))),
+            (context, failures) => CompareField(failures, "topicKind", context.Row.Id, nameof(PortableTopicKind.ColorKey), context.Row.ColorKey, context.Expected.ColorKey)),
+        Entry<TopicKindContext>(
+            nameof(PortableTopicKind.SortOrder),
+            Ef(("TopicKindModel", nameof(TopicKindModel.SortOrder))),
+            (context, failures) => CompareField(failures, "topicKind", context.Row.Id, nameof(PortableTopicKind.SortOrder), context.Row.SortOrder, context.Expected.SortOrder)),
+        Entry<TopicKindContext>(
+            nameof(PortableTopicKind.CreatedAt),
+            Ef(("TopicKindModel", nameof(TopicKindModel.CreatedAt))),
+            (context, failures) => CompareField(failures, "topicKind", context.Row.Id, nameof(PortableTopicKind.CreatedAt), context.Row.CreatedAt, context.Expected.CreatedAt)),
+    ];
+
     internal static readonly IReadOnlyList<ComparisonEntry<TopicContext>> TopicComparisons =
     [
         Entry<TopicContext>(
@@ -93,6 +117,14 @@ internal static class PortableNoteComparisons
             nameof(PortableTopic.Description),
             Ef(("TopicModel", nameof(TopicModel.Description))),
             (context, failures) => CompareField(failures, "topic", context.Row.Id, nameof(PortableTopic.Description), context.Row.Description, context.Expected.Description)),
+        Entry<TopicContext>(
+            nameof(PortableTopic.KindId),
+            Ef(("TopicModel", nameof(TopicModel.KindId))),
+            (context, failures) => CompareField(failures, "topic", context.Row.Id, nameof(PortableTopic.KindId), context.Row.KindId, context.Expected.KindId)),
+        Entry<TopicContext>(
+            nameof(PortableTopic.KindSource),
+            Ef(("TopicModel", nameof(TopicModel.KindSource))),
+            (context, failures) => CompareField(failures, "topic", context.Row.Id, nameof(PortableTopic.KindSource), context.Row.KindSource, context.Expected.KindSource)),
     ];
 
     internal static readonly IReadOnlyList<ComparisonEntry<NoteTopicContext>> NoteTopicComparisons =
@@ -124,6 +156,40 @@ internal static class PortableNoteComparisons
             if (actual.TryGetValue(id, out var row))
             {
                 Run(NoteComparisons, new NoteContext(row, item), failures);
+            }
+        }
+    }
+
+    internal static void CompareTopicKinds(
+        PortableLibraryData data,
+        List<TopicKindModel> topicKinds,
+        FailureList failures)
+    {
+        if (data.TopicKinds is null)
+        {
+            var expectedDefaults = TopicKindModel.CreateBuiltInSeeds().ToDictionary(item => item.Id);
+            var actualDefaults = topicKinds.ToDictionary(item => item.Id);
+            CompareIdSets("topicKind", expectedDefaults.Keys, actualDefaults.Keys, failures);
+            foreach (var (id, seed) in expectedDefaults)
+            {
+                if (actualDefaults.TryGetValue(id, out var row))
+                {
+                    CompareField(failures, "topicKind", row.Id, nameof(TopicKindModel.Name), row.Name, seed.Name);
+                    CompareField(failures, "topicKind", row.Id, nameof(TopicKindModel.ColorKey), row.ColorKey, seed.ColorKey);
+                    CompareField(failures, "topicKind", row.Id, nameof(TopicKindModel.SortOrder), row.SortOrder, seed.SortOrder);
+                }
+            }
+            return;
+        }
+
+        var expected = data.TopicKinds.ToDictionary(item => item.Id);
+        var actual = topicKinds.ToDictionary(item => item.Id);
+        CompareIdSets("topicKind", expected.Keys, actual.Keys, failures);
+        foreach (var (id, item) in expected)
+        {
+            if (actual.TryGetValue(id, out var row))
+            {
+                Run(TopicKindComparisons, new TopicKindContext(row, item), failures);
             }
         }
     }

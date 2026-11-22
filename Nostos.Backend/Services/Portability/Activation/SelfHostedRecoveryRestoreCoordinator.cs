@@ -486,10 +486,11 @@ internal sealed class SelfHostedRecoveryRestoreCoordinator
         var media = await BuildCandidateMediaAsync(recoveryId, restoreId, manifest, ct);
         Step(SelfHostedRecoveryRestoreSteps.AfterBuildMedia);
 
-        var payload = await ExtractPayloadAsync(recoveryId, restoreId, media.PrimaryMedia, manifest.Counts, ct);
+        var rawPayload = await ExtractPayloadAsync(recoveryId, restoreId, media.PrimaryMedia, manifest.Counts, ct);
         Step(SelfHostedRecoveryRestoreSteps.AfterExtractPayload);
 
-        await BuildCandidateDatabaseAsync(restoreId, payload, ct);
+        var restoreResult = await BuildCandidateDatabaseAsync(restoreId, rawPayload, ct);
+        var payload = rawPayload.WithAppliedRestore(restoreResult);
         Step(SelfHostedRecoveryRestoreSteps.AfterBuildDatabase);
 
         await VerifyCandidateDatabaseAsync(restoreId, payload, ct);
@@ -739,7 +740,7 @@ internal sealed class SelfHostedRecoveryRestoreCoordinator
         TryDelete(payloadPath);
     }
 
-    private async Task BuildCandidateDatabaseAsync(
+    private async Task<PortableRelationalRestoreResult> BuildCandidateDatabaseAsync(
         Guid restoreId,
         PortableRecoveryPayload payload,
         CancellationToken ct)
@@ -747,7 +748,7 @@ internal sealed class SelfHostedRecoveryRestoreCoordinator
         await using var scope = _scopes.CreateAsyncScope();
         var builder = scope.ServiceProvider
             .GetRequiredService<ISelfHostedActivationDatabaseBuilder>();
-        await builder.BuildPortableCandidateFromVerifiedPayloadAsync(
+        return await builder.BuildPortableCandidateFromVerifiedPayloadAsync(
             restoreId, _paths.RestorePayload(restoreId), payload.PrimaryMedia, ct);
     }
 

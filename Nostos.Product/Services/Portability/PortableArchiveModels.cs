@@ -128,7 +128,8 @@ internal sealed record PortableLibraryData(
     PortableAssistantSettings? AssistantSettings,
     List<PortableWritingNote>? WritingNotes = null,
     List<PortableNoteImportBookLink>? NoteImportBookLinks = null,
-    List<PortableReadingListEntry>? ReadingListEntries = null);
+    List<PortableReadingListEntry>? ReadingListEntries = null,
+    List<PortableTopicKind>? TopicKinds = null);
 
 internal sealed record PortableWork(
     Guid Id,
@@ -234,7 +235,19 @@ internal sealed record PortableTopic(
     // The reader's own words about the topic. Appended and optional, with no
     // data version bump: an archive written before it imports every topic
     // without a description.
-    [property: JsonPropertyName("description")] string? Description = null);
+    [property: JsonPropertyName("description")] string? Description = null,
+    // Topic kind assignment (issue #1767). Appended and optional, with no
+    // data version bump: older readers ignore these keys and older archives
+    // import every topic untyped.
+    Guid? KindId = null,
+    string? KindSource = null);
+
+internal sealed record PortableTopicKind(
+    Guid Id,
+    string Name,
+    string ColorKey,
+    int SortOrder,
+    DateTime CreatedAt);
 
 internal sealed record PortableNoteTopic(
     Guid NoteId,

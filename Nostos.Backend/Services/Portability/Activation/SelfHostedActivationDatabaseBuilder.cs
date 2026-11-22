@@ -27,7 +27,7 @@ internal interface ISelfHostedActivationDatabaseBuilder
     /// candidate, its sidecars, its temporary payload and any finalization marker
     /// are discarded first. The result is deliberately NOT cutover-ready.
     /// </summary>
-    Task BuildPortableCandidateAsync(
+    Task<PortableRelationalRestoreResult> BuildPortableCandidateAsync(
         Guid jobId,
         IPreparedPortableImport prepared,
         CancellationToken cancellationToken = default);
@@ -41,7 +41,7 @@ internal interface ISelfHostedActivationDatabaseBuilder
     /// is the only recovery-restore-specific entry point; activation behaviour is
     /// unchanged.
     /// </summary>
-    Task BuildPortableCandidateFromVerifiedPayloadAsync(
+    Task<PortableRelationalRestoreResult> BuildPortableCandidateFromVerifiedPayloadAsync(
         Guid jobId,
         string verifiedPayloadPath,
         IReadOnlyList<PortableArchiveMediaEntry> media,
@@ -111,7 +111,7 @@ internal sealed class SelfHostedActivationDatabaseBuilder : ISelfHostedActivatio
     /// <summary>Test seam: invoked with the step name immediately BEFORE each finalization step.</summary>
     internal Action<string>? BeforeFinalizeStepForTesting { get; set; }
 
-    public async Task BuildPortableCandidateAsync(
+    public async Task<PortableRelationalRestoreResult> BuildPortableCandidateAsync(
         Guid jobId,
         IPreparedPortableImport prepared,
         CancellationToken cancellationToken = default)
@@ -126,9 +126,10 @@ internal sealed class SelfHostedActivationDatabaseBuilder : ISelfHostedActivatio
             await CopyVerifiedDataAsync(prepared, dataPath, cancellationToken);
             AfterBuildStepForTesting?.Invoke("data");
 
-            await ApplyPortableAsync(candidate, dataPath, prepared.Media, cancellationToken);
+            var restoreResult = await ApplyPortableAsync(candidate, dataPath, prepared.Media, cancellationToken);
             File.Delete(dataPath); // the verified payload is now materialized; keep the candidate area clean
             AfterBuildStepForTesting?.Invoke("portable");
+            return restoreResult;
         }
         catch
         {
@@ -145,7 +146,7 @@ internal sealed class SelfHostedActivationDatabaseBuilder : ISelfHostedActivatio
     /// still imports the current host operational state under the exclusive
     /// lease.
     /// </summary>
-    public async Task BuildPortableCandidateFromVerifiedPayloadAsync(
+    public async Task<PortableRelationalRestoreResult> BuildPortableCandidateFromVerifiedPayloadAsync(
         Guid jobId,
         string verifiedPayloadPath,
         IReadOnlyList<PortableArchiveMediaEntry> media,
@@ -169,9 +170,10 @@ internal sealed class SelfHostedActivationDatabaseBuilder : ISelfHostedActivatio
                     descriptor,
                     new PortableStagedMediaReference($"recovery/{descriptor.BookId:N}/{descriptor.Kind}")))
                 .ToArray();
-            await ApplyPortableAsync(candidate, dataPath, preparedMedia, cancellationToken);
+            var restoreResult = await ApplyPortableAsync(candidate, dataPath, preparedMedia, cancellationToken);
             File.Delete(dataPath);
             AfterBuildStepForTesting?.Invoke("portable");
+            return restoreResult;
         }
         catch
         {
@@ -297,12 +299,13 @@ internal sealed class SelfHostedActivationDatabaseBuilder : ISelfHostedActivatio
         }
     }
 
-    private static async Task ApplyPortableAsync(
+    private static async Task<PortableRelationalRestoreResult> ApplyPortableAsync(
         string candidate,
         string dataPath,
         IReadOnlyList<PortablePreparedMedia> media,
         CancellationToken cancellationToken)
     {
+        PortableRelationalRestoreResult restoreResult;
         await using (var db = CreateContext(candidate, readOnly: false, pooling: true))
         {
             // Documented bootstrap path: a fresh candidate gets the complete
@@ -320,7 +323,7 @@ internal sealed class SelfHostedActivationDatabaseBuilder : ISelfHostedActivatio
                 FileShare.Read,
                 128 * 1024,
                 FileOptions.Asynchronous | FileOptions.SequentialScan);
-            await PortableLibraryRelationalRestore.ApplyVerifiedPayloadAsync(
+            restoreResult = await PortableLibraryRelationalRestore.ApplyVerifiedPayloadAsync(
                 db,
                 verified,
                 media,
@@ -329,6 +332,7 @@ internal sealed class SelfHostedActivationDatabaseBuilder : ISelfHostedActivatio
         }
 
         SelfHostedSqliteFile.ClearPoolFor(candidate);
+        return restoreResult;
     }
 
     /// <summary>

@@ -434,16 +434,17 @@ internal sealed class SelfHostedActivationCoordinator : IMigrationActivationServ
 
             await _mediaBuilder.BuildMediaAsync(jobId, prepared, progress: null, ct);
             Step(SelfHostedActivationSteps.AfterBuildMedia);
-            await _databaseBuilder.BuildPortableCandidateAsync(jobId, prepared, ct);
+            var restoreResult = await _databaseBuilder.BuildPortableCandidateAsync(jobId, prepared, ct);
+            var effectiveExpected = expected.WithAppliedRestore(restoreResult);
             Step(SelfHostedActivationSteps.AfterBuildDatabase);
-            await VerifyCandidateAsync(jobId, prepared, expected, ct);
+            await VerifyCandidateAsync(jobId, prepared, effectiveExpected, ct);
             Step(SelfHostedActivationSteps.AfterVerifyCandidate);
 
             await heartbeat.DisposeAsync();
             heartbeat = null;
 
             // ---- Phase B: exclusive maintenance, bounded, committed or rolled back. ----
-            var recoveryStatus = await RunCutoverAsync(jobId, state, record, prepared, expected,
+            var recoveryStatus = await RunCutoverAsync(jobId, state, record, prepared, effectiveExpected,
                 capture, retain, confirmedRevision, token, ct);
             return new SelfHostedActivationResult(jobId, SelfHostedActivationOutcome.Completed,
                 MigrationJobState.Completed, recoveryStatus);

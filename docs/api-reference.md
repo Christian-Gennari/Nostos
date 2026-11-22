@@ -913,7 +913,7 @@ reads the Brain uses. Routes are implemented by
 Without `search`: every topic with its usage count, most-used first.
 
 **Response:** `TopicDto[]` — `{ id, name, usageCount, noteMatchCount,
-noteMatchSnippet, description }`.
+noteMatchSnippet, description, kindId, kindSource }`.
 
 **Query:** `search` searches the text of the notes, so a topic is found through
 what a note says as well as through its name. It returns at most 50 topics, each
@@ -958,8 +958,19 @@ writings, writingIds }`. `404` for an unknown topic.
 The whole-brain co-occurrence graph.
 
 **Response:** `TopicGraphDto` — `{ nodes, edges }`. Nodes are `{ id, name,
-usageCount }` and include topics with no links; edges are `{ sourceId, targetId,
-sharedNotes }`.
+usageCount, kindId }` and include topics with no links; edges are `{ sourceId,
+targetId, sharedNotes }`.
+
+### `PUT /api/topics/kind`
+
+Set or clear the kind on one or many topics (source `reader`).
+
+**Body:** `{ "topicIds": ["guid"], "kindId": "guid?" }` — 1–500 topic ids;
+`kindId: null` clears both `kindId` and `kindSource`.
+
+**Response:** `SetTopicsKindResultDto` — `{ updatedTopicIds, kindId, kindSource }`.
+`400` when `topicIds` is empty or exceeds 500; `404` when `kindId` or any topic
+id does not exist.
 
 ### `PUT /api/topics/{id}`
 
@@ -981,7 +992,8 @@ text is at most 4000 characters (`400` beyond that). `404` for an unknown topic.
 
 ### `POST /api/topics/{id}/merge`
 
-Merge this topic into another: its notes move to the target and it is gone.
+Merge this topic into another: its notes move to the target and it is gone. If
+the target has no kind, it inherits the merged topic's `kindId` and `kindSource`.
 
 **Body:** `{ "targetId": "guid" }`
 
@@ -1006,6 +1018,49 @@ does not exist; `400` for an invalid topic name or an oversized request.
 
 Delete a topic and its note links, and turn its references in the notes' text
 into plain words so it is not re-created on their next save.
+
+**Response:** `204 No Content`, or `404` when it does not exist.
+
+---
+
+## Topic Kinds — `/api/topic-kinds`
+
+Topic kinds classify topics into at most 12 mutually distinct categories, each
+with a unique folded name and a unique palette key (`kind-1` … `kind-12`).
+Libraries start with six built-in seeded kinds (`Person`, `Idea`, `Place`,
+`Work`, `Event`, `Field`), all editable or deletable by the reader. Routes are
+implemented by [`TopicsEndpoints`](../Nostos.Product/Endpoints/TopicsEndpoints.cs).
+
+### `GET /api/topic-kinds`
+
+List all topic kinds in sort order with the count of topics currently using each.
+
+**Response:** `TopicKindDto[]` — `{ id, name, colorKey, sortOrder, createdAt, topicCount }`.
+
+### `POST /api/topic-kinds`
+
+Create a new topic kind.
+
+**Body:** `{ "name": "string", "colorKey": "kind-1..kind-12" }`
+
+**Response:** `201 Created` with `TopicKindDto`. `400` when name is blank /
+over 100 chars or `colorKey` is not `kind-1`…`kind-12`; `409` on duplicate name
+or colour; `422` when the 12-kind limit has been reached.
+
+### `PUT /api/topic-kinds/{id}`
+
+Update a kind's `name`, `colorKey`, and/or `sortOrder`.
+
+**Body:** `{ "name"?: "string", "colorKey"?: "kind-1..kind-12", "sortOrder"?: int, "swapColor"?: bool }`
+
+If another kind holds `colorKey`, returns `409` unless `swapColor: true`, which
+exchanges the two kinds' colours atomically in one transaction. `400` on invalid
+name/colour; `404` for an unknown id; `409` on duplicate name.
+
+### `DELETE /api/topic-kinds/{id}`
+
+Delete a topic kind. Any topics assigned to it become untyped (`kindId` and
+`kindSource` are both cleared to `null`).
 
 **Response:** `204 No Content`, or `404` when it does not exist.
 

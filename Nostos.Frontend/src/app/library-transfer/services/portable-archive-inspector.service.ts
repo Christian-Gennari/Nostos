@@ -457,6 +457,7 @@ function mapCounts(source: Record<string, unknown>, mediaEntries: number): Migra
     assistantSettings: value('assistantSettings'),
     noteImportBookLinks: value('noteImportBookLinks'),
     readingListEntries: value('readingListEntries'),
+    topicKinds: value('topicKinds'),
     mediaEntries,
     totalRows: 0,
   };
@@ -473,7 +474,8 @@ function mapCounts(source: Record<string, unknown>, mediaEntries: number): Migra
     counts.acquisitions +
     counts.assistantSettings +
     counts.noteImportBookLinks +
-    counts.readingListEntries;
+    counts.readingListEntries +
+    counts.topicKinds;
   return counts;
 }
 

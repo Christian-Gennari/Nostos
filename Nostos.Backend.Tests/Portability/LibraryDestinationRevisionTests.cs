@@ -178,6 +178,7 @@ public sealed class LibraryDestinationRevisionTests : IDisposable
             typeof(CollectionModel),
             typeof(BookCollectionModel),
             typeof(NoteModel),
+            typeof(TopicKindModel),
             typeof(TopicModel),
             typeof(NoteTopicModel),
             typeof(WritingModel),
@@ -765,6 +766,7 @@ public sealed class LibraryDestinationRevisionTests : IDisposable
             var suffix = Guid.NewGuid().ToString("N");
             var work = new WorkModel { Id = Guid.NewGuid(), Title = $"W-{suffix}", NormalizedTitle = $"W-{suffix}", NormalizedAuthor = "" };
             var collection = new CollectionModel { Id = Guid.NewGuid(), Name = $"C-{suffix}" };
+            var topicKind = new TopicKindModel { Id = Guid.NewGuid(), Name = $"Kind-{suffix}", ColorKey = "kind-12", SortOrder = 99 };
             var topic = new TopicModel { Id = Guid.NewGuid(), Topic = $"T-{suffix}" };
             var writing = new WritingModel { Id = Guid.NewGuid(), Name = $"Writing-{suffix}", Type = WritingType.Document };
             BookModel book = type switch
@@ -786,6 +788,7 @@ public sealed class LibraryDestinationRevisionTests : IDisposable
                 _ when type == typeof(CollectionModel) => collection,
                 _ when type == typeof(BookCollectionModel) => new BookCollectionModel { BookId = book.Id, CollectionId = collection.Id, AddedAt = DateTime.UtcNow },
                 _ when type == typeof(NoteModel) => note,
+                _ when type == typeof(TopicKindModel) => topicKind,
                 _ when type == typeof(TopicModel) => topic,
                 _ when type == typeof(NoteTopicModel) => new NoteTopicModel { NoteId = note.Id, TopicId = topic.Id },
                 _ when type == typeof(WritingModel) => writing,
@@ -829,6 +832,7 @@ public sealed class LibraryDestinationRevisionTests : IDisposable
             CollectionModel collection => new object?[] { collection.Id },
             BookCollectionModel membership => new object?[] { membership.BookId, membership.CollectionId },
             NoteModel note => new object?[] { note.Id },
+            TopicKindModel kind => new object?[] { kind.Id },
             TopicModel topic => new object?[] { topic.Id },
             NoteTopicModel link => new object?[] { link.NoteId, link.TopicId },
             WritingModel writing => new object?[] { writing.Id },
@@ -850,6 +854,7 @@ public sealed class LibraryDestinationRevisionTests : IDisposable
                 case CollectionModel collection: collection.Name = "Changed"; break;
                 case BookCollectionModel membership: membership.AddedAt = membership.AddedAt.AddMinutes(1); break;
                 case NoteModel note: note.Content = "Changed"; break;
+                case TopicKindModel kind: kind.Name = "ChangedKind-" + Guid.NewGuid().ToString("N"); break;
                 case TopicModel topic: topic.Topic = "Changed-" + Guid.NewGuid().ToString("N"); break;
                 case WritingModel writing: writing.Name = "Changed"; break;
                 case WritingNoteModel link: link.AddedAt = link.AddedAt.AddMinutes(1); break;

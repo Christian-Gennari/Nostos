@@ -181,6 +181,93 @@ public sealed class BackupServiceTests
     }
 
     [Fact]
+    public async Task RestoreBackup_RoundTripsTopicKindsAndTopicKindAssignments()
+    {
+        using var h = BackupHarness.Create();
+        var customKindId = Guid.NewGuid();
+        var readerTopicId = Guid.NewGuid();
+        var assistantTopicId = Guid.NewGuid();
+
+        await using (var db = h.NewDbContext())
+        {
+            var person = await db.TopicKinds.SingleAsync(k => k.Id == TopicKindModel.PersonId);
+            person.Name = "Author";
+
+            db.TopicKinds.Add(new TopicKindModel
+            {
+                Id = customKindId,
+                Name = "Method",
+                ColorKey = "kind-9",
+                SortOrder = 7,
+                CreatedAt = new DateTime(2026, 2, 1, 0, 0, 0, DateTimeKind.Utc),
+            });
+
+            db.Topics.AddRange(
+                new TopicModel
+                {
+                    Id = readerTopicId,
+                    Topic = "Kant",
+                    KindId = TopicKindModel.PersonId,
+                    KindSource = TopicKindSources.Reader,
+                },
+                new TopicModel
+                {
+                    Id = assistantTopicId,
+                    Topic = "Phenomenology",
+                    KindId = customKindId,
+                    KindSource = TopicKindSources.Assistant,
+                });
+
+            await db.SaveChangesAsync();
+        }
+
+        var created = await h.Service.CreateBackupAsync();
+        created.Status.Should().Be(BackupStatus.Completed);
+
+        // Mutate live database before restoring
+        await using (var db = h.NewDbContext())
+        {
+            db.Topics.RemoveRange(db.Topics);
+            db.TopicKinds.RemoveRange(db.TopicKinds);
+            await db.SaveChangesAsync();
+        }
+
+        var restored = await h.Service.RestoreBackupAsync(created.Id);
+        restored.Success.Should().BeTrue(restored.Message);
+
+        await using var after = h.NewDbContext();
+        var restoredPerson = await after.TopicKinds.AsNoTracking().SingleAsync(k => k.Id == TopicKindModel.PersonId);
+        restoredPerson.Name.Should().Be("Author");
+
+        var restoredCustom = await after.TopicKinds.AsNoTracking().SingleAsync(k => k.Id == customKindId);
+        restoredCustom.Name.Should().Be("Method");
+        restoredCustom.ColorKey.Should().Be("kind-9");
+        restoredCustom.SortOrder.Should().Be(7);
+
+        var restoredReaderTopic = await after.Topics.AsNoTracking().SingleAsync(t => t.Id == readerTopicId);
+        restoredReaderTopic.KindId.Should().Be(TopicKindModel.PersonId);
+        restoredReaderTopic.KindSource.Should().Be(TopicKindSources.Reader);
+
+        var restoredAssistantTopic = await after.Topics.AsNoTracking().SingleAsync(t => t.Id == assistantTopicId);
+        restoredAssistantTopic.KindId.Should().Be(customKindId);
+        restoredAssistantTopic.KindSource.Should().Be(TopicKindSources.Assistant);
+
+        var connection = after.Database.GetDbConnection();
+        await connection.OpenAsync();
+        await using (var cmd = connection.CreateCommand())
+        {
+            cmd.CommandText = "PRAGMA integrity_check";
+            ((string)(await cmd.ExecuteScalarAsync())!).Should().Be("ok");
+        }
+        await using (var cmd = connection.CreateCommand())
+        {
+            cmd.CommandText = "PRAGMA foreign_key_check";
+            await using var reader = await cmd.ExecuteReaderAsync();
+            reader.HasRows.Should().BeFalse();
+        }
+    }
+
+    [Fact]
     public async Task RestoreBackup_GivesEveryRestoredCoverANewVersion()
     {
         // A browser may hold the backed-up version's URL cached with other

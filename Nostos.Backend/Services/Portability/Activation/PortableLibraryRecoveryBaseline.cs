@@ -127,9 +127,19 @@ public static class PortableLibraryRecoveryBaseline
             var actual = ResolveActualTable(tables, table.LogicalTable);
             if (!table.Present)
             {
-                if (actual is not null && CountRows(connection, actual) > 0)
+                if (actual is not null)
                 {
-                    throw Mismatch();
+                    if (string.Equals(table.LogicalTable, "TopicKinds", StringComparison.Ordinal))
+                    {
+                        if (!HasUntouchedTopicKindSeeds(connection, actual))
+                        {
+                            throw Mismatch();
+                        }
+                    }
+                    else if (CountRows(connection, actual) > 0)
+                    {
+                        throw Mismatch();
+                    }
                 }
 
                 continue;
@@ -155,12 +165,60 @@ public static class PortableLibraryRecoveryBaseline
         }
     }
 
+    private static bool HasUntouchedTopicKindSeeds(SqliteConnection connection, string table)
+    {
+        var seeds = Nostos.Backend.Data.Models.TopicKindModel.CreateBuiltInSeeds();
+        var seedById = seeds.ToDictionary(s => s.Id);
+        var count = 0;
+
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            $"SELECT \"Id\", \"Name\", \"NormalizedName\", \"ColorKey\", \"SortOrder\" FROM {Quote(table)};";
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            count++;
+            var idValue = reader.GetValue(0);
+            Guid id;
+            if (idValue is Guid g)
+            {
+                id = g;
+            }
+            else if (idValue is string s && Guid.TryParse(s, out var parsed))
+            {
+                id = parsed;
+            }
+            else if (idValue is byte[] b && b.Length == 16)
+            {
+                id = new Guid(b);
+            }
+            else
+            {
+                return false;
+            }
+
+            if (!seedById.TryGetValue(id, out var seed)
+                || !string.Equals(reader.GetString(1), seed.Name, StringComparison.Ordinal)
+                || !string.Equals(reader.GetString(2), seed.NormalizedName, StringComparison.Ordinal)
+                || !string.Equals(reader.GetString(3), seed.ColorKey, StringComparison.Ordinal)
+                || Convert.ToInt32(reader.GetValue(4), CultureInfo.InvariantCulture) != seed.SortOrder)
+            {
+                return false;
+            }
+        }
+
+        return count == seeds.Length;
+    }
+
     /// <summary>
     /// Requires the extracted portable payload's per-kind counts to equal the
     /// counts the retention manifest recorded for the same generation.
     /// <see cref="MigrationExistingCounts.AssistantSettings"/> counts rows that
     /// carry a portable value while the payload counts the singleton's
     /// presence, so the latter may be one when the former is zero.
+    /// Likewise, <see cref="MigrationExistingCounts.TopicKinds"/> reports zero when
+    /// defaults were untouched or pre-migration, while the extracted payload
+    /// carries the 6 seeded rows.
     /// </summary>
     public static void RequireCountsPreserved(
         MigrationExistingCounts expected,
@@ -181,6 +239,19 @@ public static class PortableLibraryRecoveryBaseline
         Equal(expected.Acquisitions, actual.Acquisitions);
         Equal(expected.NoteImportBookLinks, actual.NoteImportBookLinks);
         Equal(expected.ReadingListEntries, actual.ReadingListEntries);
+        if (expected.TopicKinds == 0)
+        {
+            if (actual.TopicKinds != 0
+                && actual.TopicKinds != Nostos.Backend.Data.Models.TopicKindModel.BuiltInSeedCount)
+            {
+                throw Mismatch();
+            }
+        }
+        else
+        {
+            Equal(expected.TopicKinds, actual.TopicKinds);
+        }
+
         if (expected.AssistantSettings > 0 && actual.AssistantSettings != 1)
         {
             throw Mismatch();

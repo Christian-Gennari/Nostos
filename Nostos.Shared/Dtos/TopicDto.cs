@@ -8,7 +8,10 @@ public record TopicDto(
     int NoteMatchCount = 0,
     string? NoteMatchSnippet = null,
     // APPENDED: the reader's own words about the topic.
-    string? Description = null);
+    string? Description = null,
+    // APPENDED (issue #1767): optional topic kind classification and source.
+    Guid? KindId = null,
+    string? KindSource = null);
 
 // For the detail view
 public record TopicDetailDto(Guid Id, string Name, List<NoteContextDto> Notes);
@@ -47,9 +50,37 @@ public record NoteContextDto(
 );
 
 // For the whole-brain knowledge graph
-public record TopicGraphNodeDto(Guid Id, string Name, int UsageCount);
+public record TopicGraphNodeDto(
+    Guid Id,
+    string Name,
+    int UsageCount,
+    // APPENDED (issue #1767): optional topic kind id for map colouring.
+    Guid? KindId = null);
 public record TopicGraphEdgeDto(Guid SourceId, Guid TargetId, int SharedNotes);
 public record TopicGraphDto(List<TopicGraphNodeDto> Nodes, List<TopicGraphEdgeDto> Edges);
+
+public record TopicKindDto(
+    Guid Id,
+    string Name,
+    string ColorKey,
+    int SortOrder,
+    DateTime CreatedAt,
+    int TopicCount = 0);
+
+public record CreateTopicKindDto(string Name, string ColorKey);
+
+public record UpdateTopicKindDto(
+    string? Name = null,
+    string? ColorKey = null,
+    int? SortOrder = null,
+    bool SwapColor = false);
+
+public record SetTopicsKindDto(IReadOnlyList<Guid> TopicIds, Guid? KindId);
+
+public record SetTopicsKindResultDto(
+    IReadOnlyList<Guid> UpdatedTopicIds,
+    Guid? KindId,
+    string? KindSource);
 
 public record CreateTopicDto(string Topic);
 public record UpdateTopicDto(string Topic);

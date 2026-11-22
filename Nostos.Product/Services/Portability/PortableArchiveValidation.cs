@@ -704,6 +704,55 @@ internal static class PortableArchiveValidation
             }
         }
 
+        HashSet<Guid>? topicKindIds = null;
+        if (data.TopicKinds is not null)
+        {
+            if (data.TopicKinds.Count > TopicKindModel.MaxKinds)
+            {
+                throw new PortableArchiveException(
+                    "too_many_topic_kinds",
+                    $"Portable archive contains {data.TopicKinds.Count} topic kinds; at most {TopicKindModel.MaxKinds} are allowed.");
+            }
+
+            RequireUniqueGuids(data.TopicKinds.Select(x => x.Id), "topic kind");
+            topicKindIds = data.TopicKinds.Select(x => x.Id).ToHashSet();
+
+            var kindNames = new HashSet<string>(StringComparer.Ordinal);
+            var kindColors = new HashSet<string>(StringComparer.Ordinal);
+
+            foreach (var kind in data.TopicKinds)
+            {
+                if (string.IsNullOrWhiteSpace(kind.Name)
+                    || kind.Name.Trim().Length > TopicKindModel.MaxNameLength)
+                {
+                    throw new PortableArchiveException(
+                        "malformed_data",
+                        $"Topic kind {kind.Id} has an invalid name.");
+                }
+
+                if (!kindNames.Add(TopicKindModel.NormalizeName(kind.Name)))
+                {
+                    throw new PortableArchiveException(
+                        "duplicate_topic_kind",
+                        $"Portable archive contains duplicate topic kind '{kind.Name}'.");
+                }
+
+                if (!TopicKindModel.IsValidColorKey(kind.ColorKey))
+                {
+                    throw new PortableArchiveException(
+                        "malformed_data",
+                        $"Topic kind {kind.Id} has an invalid color key '{kind.ColorKey}'.");
+                }
+
+                if (!kindColors.Add(kind.ColorKey))
+                {
+                    throw new PortableArchiveException(
+                        "duplicate_topic_kind_color",
+                        $"Portable archive contains duplicate topic kind color '{kind.ColorKey}'.");
+                }
+            }
+        }
+
         var topicNames = new HashSet<string>(StringComparer.Ordinal);
         foreach (var topic in data.Topics)
         {
@@ -718,6 +767,28 @@ internal static class PortableArchiveValidation
                 throw new PortableArchiveException(
                     "invalid_topic_description",
                     $"Topic '{topic.Topic}' has a description longer than {TopicModel.MaxDescriptionLength} characters.");
+            }
+            if (topic.KindId is { } kindId)
+            {
+                if (topicKindIds is null || !topicKindIds.Contains(kindId))
+                {
+                    throw new PortableArchiveException(
+                        "malformed_relationship",
+                        $"Topic '{topic.Topic}' references unknown topic kind {kindId}.");
+                }
+
+                if (topic.KindSource is not null && !TopicKindSources.IsValid(topic.KindSource))
+                {
+                    throw new PortableArchiveException(
+                        "malformed_data",
+                        $"Topic '{topic.Topic}' has invalid kind source '{topic.KindSource}'.");
+                }
+            }
+            else if (topic.KindSource is not null)
+            {
+                throw new PortableArchiveException(
+                    "malformed_data",
+                    $"Topic '{topic.Topic}' specifies a kind source without a kind.");
             }
         }
 

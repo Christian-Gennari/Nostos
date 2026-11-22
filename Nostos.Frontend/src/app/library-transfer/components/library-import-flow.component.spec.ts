@@ -178,6 +178,7 @@ function preflightRequest(archiveBytes: number): MigrationPreflightRequestDto {
       assistantSettings: 0,
       noteImportBookLinks: 0,
       readingListEntries: 0,
+      topicKinds: 0,
       mediaEntries: 0,
       totalRows: 0,
     },
@@ -1323,6 +1324,7 @@ describe('LibraryImportFlowComponent', () => {
         readingListEntries: 0,
         assistantSettings: 0,
         totalRows: 27,
+        topicKinds: 0,
       },
       changedSinceImportStarted: true,
     });
