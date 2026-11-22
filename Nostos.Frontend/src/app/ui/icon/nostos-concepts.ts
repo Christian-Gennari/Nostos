@@ -48,6 +48,8 @@ export const NOSTOS_CONCEPTS = {
   unsorted: 'tray',
   /** The Brain's map: topics as a graph, joined by the notes they share. */
   topicMap: 'graph',
+  /** The Brain's kinds: the reader's categories for topics. */
+  kinds: 'squares-four',
 
   /** The writing studio's AI suggestion surface. */
   aiSuggestion: 'sparkle',

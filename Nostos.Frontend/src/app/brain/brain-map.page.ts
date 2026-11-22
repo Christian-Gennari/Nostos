@@ -6,6 +6,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { catchError, map, of, startWith, switchMap } from 'rxjs';
 
 import { NotesService } from '../core/services/notes.service';
+import type { TopicDto } from '../core/services/topics.service';
 import { ButtonComponent } from '../ui/button/button.component';
 import { InputDirective } from '../ui/form-control/form-control.directive';
 import { NostosIconComponent } from '../ui/icon/nostos-icon.component';
@@ -25,6 +26,7 @@ import {
   toggleKindFilter,
 } from './topic-map/topic-map.helpers';
 import { BrainStateService } from './brain-state.service';
+import { TopicKindPickerComponent } from './kinds/topic-kind-picker.component';
 import { type MapColorMode, plural } from './brain.helpers';
 import { SearchFieldComponent } from '../ui/search-field/search-field.component';
 import { SegmentedComponent, type SegmentedOption } from '../ui/segmented/segmented.component';
@@ -67,6 +69,7 @@ function parseMin(raw: string | null, fallback: number | null = null): number | 
     TopicChipComponent,
     TopicMapComponent,
     MapKindLegendComponent,
+    TopicKindPickerComponent,
   ],
   templateUrl: './brain-map.page.html',
   styleUrls: ['./brain-map.page.css'],
@@ -172,6 +175,10 @@ export class BrainMapPage {
   readonly legendEntries = computed(() => this.map()?.kindLegend() ?? []);
   readonly hiddenByKindCount = computed(() => this.scope().hiddenByKindCount);
 
+  /** The topic whose kind the card's pill is changing, and what to hang the picker from. */
+  readonly kindPickerTopic = signal<TopicDto | null>(null);
+  readonly kindPickerOrigin = signal<HTMLElement | null>(null);
+
   readonly finder = signal('');
   readonly finderOpen = signal(false);
   readonly finderActive = signal(0);
@@ -268,6 +275,20 @@ export class BrainMapPage {
 
   openTopic(topicId: string | null = this.focus()): void {
     if (topicId) void this.router.navigate(['/brain/topics', topicId]);
+  }
+
+  /** The card's kind pill asks for the picker; the pill itself anchors it. */
+  openKindPicker(request: { topicId: string; kindId: string | null }): void {
+    const topic = this.state.topicById(request.topicId);
+    if (!topic) return;
+    const active = typeof document !== 'undefined' ? document.activeElement : null;
+    this.kindPickerOrigin.set(active instanceof HTMLElement ? active : this.controlsOrigin);
+    this.kindPickerTopic.set(topic);
+  }
+
+  closeKindPicker(): void {
+    this.kindPickerTopic.set(null);
+    this.kindPickerOrigin.set(null);
   }
 
   mapAroundTopic(topicId: string): void {

@@ -115,6 +115,7 @@
     [topicKinds]="state.topicKinds()"
     [kindsLoaded]="state.kindsLoaded()"
     [visibleKindKeys]="visibleKindKeys()"
+    [kindPickerEnabled]="true"
     [camera]="startCamera"
     [centerOnLoad]="!startCamera"
     notesLabel="Open topic"
@@ -127,6 +128,7 @@
     (cameraKept)="keepCamera($event)"
     (kindToggled)="onToggleKind($event)"
     (clearKindFilter)="onClearKindFilter()"
+    (kindPickerRequested)="openKindPicker($event)"
   >
     <div mapHudControls class="map-hud-controls">
       @if (aroundTopic(); as root) {
@@ -164,6 +166,16 @@
     }
     }
   </app-topic-map>
+
+  @if (kindPickerTopic(); as kindTopic) {
+  <app-topic-kind-picker
+    [topic]="kindTopic"
+    [showTrigger]="false"
+    [open]="true"
+    [origin]="kindPickerOrigin()"
+    (closed)="closeKindPicker()"
+  />
+  }
 
   @if (controlsOpen()) {
   <nostos-settings-popover

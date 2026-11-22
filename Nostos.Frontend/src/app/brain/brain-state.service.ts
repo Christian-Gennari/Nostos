@@ -94,9 +94,11 @@ export class BrainStateService {
   private refreshSeq = 0;
   /** The counts were asked for and have not failed; they are not asked for twice. */
   private summaryRequested = false;
-  /** A screen asked for kinds, so a later refresh may retry a failed load. */
+  /** A screen asked for kinds, so every later refresh reads them again. */
   private kindsRequested = false;
   private kindsLoading = false;
+  /** A reload was asked for while one was in flight; it runs when that one lands. */
+  private kindsQueued = false;
 
   /** Loads the topics and counts the first time anything asks. */
   ensureLoaded(): void {
@@ -116,6 +118,17 @@ export class BrainStateService {
   }
 
   /**
+   * Re-reads kind metadata now, after the reader changed a kind (renamed,
+   * recoloured, reordered, added or deleted). A write to a topic's kind only
+   * has to call `refresh()`, which rereads the kinds whenever a screen asked
+   * for them.
+   */
+  reloadKinds(): void {
+    this.kindsRequested = true;
+    this.loadKinds();
+  }
+
+  /**
    * Loads the topics the first time anything asks, without the counts: for a
    * page that offers topics but shows no sidebar. `ensureLoaded` called later
    * still fetches the counts.
@@ -130,10 +143,11 @@ export class BrainStateService {
   /** Reloads the topics and counts after notes or topics changed. */
   refresh(): void {
     this.dataVersion.update((version) => version + 1);
-    // A screen that never asked for kinds keeps its request count unchanged;
-    // one whose kinds call failed asks again on the next refresh, because an
-    // empty list would be indistinguishable from a library with no kinds.
-    this.load({ summary: true, kinds: this.kindsRequested && !this.kindsLoaded() });
+    // The kinds carry `topicCount`, so they age with every topic-kind write:
+    // a screen that asked for them (the picker, the sorter) gets them read
+    // again here, or its delete confirm counts topics that no longer have the
+    // kind. A screen that never asked keeps its request count unchanged.
+    this.load({ summary: true, kinds: this.kindsRequested });
   }
 
   /** A topic was renamed, merged or deleted: refresh, and have lists reread their notes. */
@@ -166,20 +180,33 @@ export class BrainStateService {
   }
 
   private loadKinds(): void {
-    if (this.kindsLoading) return;
+    if (this.kindsLoading) {
+      // A write landed while the last answer was in flight: read again once it
+      // does, so the counts are the ones after the write.
+      this.kindsQueued = true;
+      return;
+    }
     this.kindsLoading = true;
     this.topicsService.listKinds().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (kinds) => {
         this.topicKinds.set(kinds);
         this.kindsLoaded.set(true);
         this.kindsLoading = false;
+        this.runQueuedKinds();
       },
       // Kind metadata decorates the map and topic views; tolerate transient errors
       // and let the next full load ask again.
       error: () => {
         this.kindsLoading = false;
+        this.runQueuedKinds();
       },
     });
+  }
+
+  private runQueuedKinds(): void {
+    if (!this.kindsQueued) return;
+    this.kindsQueued = false;
+    this.loadKinds();
   }
 
   private loadSummary(seq: number): void {

@@ -1,0 +1,89 @@
+@if (showTrigger()) {
+  <!-- One button for both states: the pill and the "Add a kind" line swap
+       inside it, so focus returns to the same element when the panel closes
+       (two branches would destroy the trigger under the focused panel). -->
+  <button
+    #trigger
+    type="button"
+    class="kind-trigger"
+    [class.is-add]="!currentKind()"
+    [attr.aria-expanded]="isOpen()"
+    aria-haspopup="dialog"
+    [attr.aria-label]="triggerLabel()"
+    (click)="toggle()"
+  >
+    @if (currentKind(); as kind) {
+      <app-topic-kind-pill [name]="kind.name" [colorKey]="kind.colorKey" />
+      <nostos-icon class="kind-caret" name="caret-down" [size]="12" />
+    } @else {
+      Add a kind
+    }
+  </button>
+}
+
+@if (isOpen()) {
+  <nostos-settings-popover
+    [origin]="anchor()"
+    heading="Kind"
+    initialFocus=".kind-choice.is-current"
+    (dismissed)="close()"
+  >
+    <div class="kind-picker">
+      <p class="kind-picker-lead">A kind groups topics by what they are.</p>
+
+      <app-kind-choice-list
+        [kinds]="kinds()"
+        [selectedId]="topic().kindId ?? null"
+        [label]="'Kind for ' + topic().name"
+        (picked)="choose($event)"
+      />
+
+      <div class="kind-picker-divider" role="separator"></div>
+
+      @if (creating()) {
+        <form class="kind-create" (submit)="$event.preventDefault(); createKind()">
+          <label class="visually-hidden" for="new-kind-name">Name for the new kind</label>
+          <input
+            appInput
+            id="new-kind-name"
+            type="text"
+            class="kind-create-field"
+            autocomplete="off"
+            maxlength="100"
+            placeholder="Kind name"
+            [value]="draftName()"
+            [disabled]="busy()"
+            (input)="draftName.set($any($event.target).value)"
+            (keydown.escape)="cancelCreating(); $event.stopPropagation()"
+          />
+          <div class="kind-create-actions">
+            <button appButton variant="primary" size="sm" type="submit" [busy]="busy()" [disabled]="busy()">
+              Add kind
+            </button>
+            <button appButton variant="ghost" size="sm" type="button" [disabled]="busy()" (click)="cancelCreating()">
+              Cancel
+            </button>
+          </div>
+          <p class="kind-create-hint">A free colour is chosen for it.</p>
+        </form>
+      } @else if (atKindLimit()) {
+        <p class="kind-picker-note">
+          All {{ maxKinds }} kinds are in use. Delete one to add another.
+        </p>
+      } @else {
+        <button appButton variant="ghost" size="sm" type="button" class="kind-picker-action" (click)="startCreating()">
+          <nostos-icon name="plus" [size]="14" />New kind…
+        </button>
+      }
+
+      @if (error(); as message) {
+        <p class="kind-picker-error" role="alert">{{ message }}</p>
+      }
+
+      <a appButton variant="link" size="sm" class="kind-manage" routerLink="/brain/kinds" (click)="close()">
+        Manage kinds
+        <nostos-icon name="arrow-right" [size]="14" />
+      </a>
+    </div>
+  </nostos-settings-popover>
+}

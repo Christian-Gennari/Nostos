@@ -21,6 +21,7 @@ books (`docs/brain-library-parity.md`). How topics live in a note's text is in
 | Map | `/brain/map` | The topic graph. `?around=<topicId>&depth=<1-3>&min=<n>` scopes to a local map around a topic; `?kinds=<id>,<id>` filters visible topic kinds (`none` for untyped); `?focus=<topicId>` centres a topic |
 | A topic | `/brain/topics/:id` | The topic's notes. `?with=<topicId>` narrows to notes shared with another topic |
 | A note | `/brain/notes/:id` | One note on its own, for links from elsewhere |
+| Kinds | `/brain/kinds` | The kinds editor and the topic kind sorter. `?filter=<id>` (`untyped` for no kind, `assistant` for Ask Nostos, `connected-app` for a connected app) and `?q=` are in the URL |
 | Sort one by one | `/brain/unsorted/sort` | Full screen, one unsorted note at a time |
 
 `/second-brain` (the old Brain) redirects: `?topicId` and `?conceptId` to the
@@ -100,6 +101,40 @@ title. A click edits them in place (⌘/Ctrl+Enter or Save keeps them, Escape
 cancels, saving nothing clears them); they show as paragraphs, and shortened
 on the map card. A topic you described stays even when no note carries it.
 
+Under the title, a **kind** pill ("Person") or a quiet "Add a kind" line opens
+the kind picker: every kind with its colour, **No kind**, **New kind…** and
+**Manage kinds**. The same picker opens from the selected topic's kind pill on
+the map. Choosing here stores the source `reader`, so later AI runs never
+overwrite it.
+
+## Kinds
+
+A kind says what a topic is: Person, Place, Idea, or the reader's own. One
+kind per topic, or none, and at most twelve — one per palette colour
+(`--map-kind-1..12`; untyped topics use `--map-kind-none`). The built-in
+kinds are seeds and fully editable.
+
+**The kinds editor** sits at the top of `/brain/kinds`: each kind shows its
+colour swatch, name and how many topics it holds. The name renames in place.
+The swatch opens the palette: colours no other kind holds are offered, and a
+colour that is taken names its kind and offers a swap. The arrows reorder the
+kinds (the map legend follows), and Delete asks first: "34 topics will have no
+kind. The topics stay." **New kind** is disabled at twelve, and says why.
+
+**The sorter** under it lists every topic with its note count, its kind pill
+and who set it ("Set by Ask Nostos", "Set by a connected app", "Set by you").
+The filters — No kind, a kind, or either source — and the name search are in
+the URL, so `/brain/kinds?filter=untyped` is the map legend's **Sort them**
+link and a shared link reopens the same view. Tick topics (shift-click takes a
+range) and the bar sets one kind, clears it, or **Keep**s it: re-saving the
+current kind as `reader`, so a later Ask Nostos run leaves the reader's choice
+alone. One bulk request sets or clears up to 500 topics.
+
+**Person?** is a small offline suggestion: when an untyped topic is named after
+an author of a book in the library (accents, punctuation and case ignored; the
+surname matches a full name), one click sets the Person kind as the reader's
+choice. It reads the recent 500 books and never guesses from note text.
+
 ## Sorting one by one
 
 Unsorted has **Sort one by one**, a full screen with one note and one
@@ -166,3 +201,4 @@ bottom HUD so the graph keeps the screen.
 | Screenshots | `Nostos.Frontend/e2e/visual-evidence/brain-rebuild/` (`part7-*`: every place, the sorter, selection and the map at 1280 and 390, light and dark, SelfHosted and Cloud) |
 | Local map | `Nostos.Frontend/e2e/visual-evidence/brain-local-map/` (whole map with Strength filter, `?around=<id>&depth=2&min=1`, and phone `Controls` sheet at 1280 and 390, light and dark, SelfHosted and Cloud) |
 | Map kind colours | `Nostos.Frontend/e2e/visual-evidence/brain-map-kind-colours/` (whole and local map in Kind mode with `?kinds=` filter, legend and selected card kind pill at 1280 and 390, light and dark, SelfHosted and Cloud) |
+| Setting kinds by hand | `Nostos.Frontend/e2e/visual-evidence/brain-topic-kinds/` (`before/` and `after/`: a topic with and without a kind, the picker open, the sorter with a selection, and the kinds editor with its palette at 1280 and 390, light and dark, SelfHosted and Cloud) |

@@ -154,12 +154,14 @@ describe('BrainSidebarComponent', () => {
       'Passages',
       'Unsorted',
       'Map',
+      'Kinds',
     ]);
     expect(links.map((link) => link.getAttribute('aria-label'))).toEqual([
       'All notes',
       'Passages',
       'Unsorted',
       'Map',
+      'Kinds',
     ]);
   });
 });

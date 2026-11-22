@@ -42,6 +42,7 @@ import { NoticeComponent } from '../ui/notice/notice.component';
 import { TopicPickerPopoverComponent } from '../ui/topic-picker-popover/topic-picker-popover.component';
 import { InlineRenameComponent } from '../ui/inline-rename/inline-rename.component';
 import { BrainTopicUsedInComponent, USED_IN_FETCHED } from './topic-used-in/brain-topic-used-in.component';
+import { TopicKindPickerComponent } from './kinds/topic-kind-picker.component';
 import { BrainListCacheService } from './brain-list-cache.service';
 import { BrainNoteActionsService } from './brain-note-actions.service';
 import { BrainNoteDetailComponent } from './brain-note-detail.component';
@@ -119,6 +120,7 @@ const SELECTION_PICKER_POSITIONS: ConnectedPosition[] = [
     PagingStatusComponent,
     SelectionBarComponent,
     TopicChipComponent,
+    TopicKindPickerComponent,
   ],
   providers: [BrainNoteActionsService, BrainTopicSuggestionsService],
   templateUrl: './brain-list.page.html',

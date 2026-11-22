@@ -54,19 +54,24 @@ import { IconButtonComponent } from '../icon-button/icon-button.component';
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="selection-bar" role="toolbar" [attr.aria-label]="label()">
-      <span class="selection-count" role="status" aria-live="polite">{{ countText() }}</span>
-      <div class="selection-actions">
-        <ng-content />
+      <div class="selection-primary">
+        <span class="selection-count" role="status" aria-live="polite">{{ countText() }}</span>
+        <div class="selection-actions">
+          <ng-content />
+        </div>
+        <button
+          appIconButton
+          type="button"
+          icon="x"
+          class="selection-close"
+          [glyphSize]="16"
+          aria-label="Stop selecting"
+          (click)="closed.emit()"
+        ></button>
       </div>
-      <button
-        appIconButton
-        type="button"
-        icon="x"
-        class="selection-close"
-        [glyphSize]="16"
-        aria-label="Stop selecting"
-        (click)="closed.emit()"
-      ></button>
+      @if (note(); as message) {
+        <p class="selection-note" role="alert" [id]="noteId()">{{ message }}</p>
+      }
     </div>
   `,
   styles: [
@@ -85,12 +90,15 @@ import { IconButtonComponent } from '../icon-button/icon-button.component';
       }
 
       /* The dock's material, not a filled pill: a raised surface with a
-         hairline and a cast, one step rounder than a card. */
+         hairline and a cast, one step rounder than a card. A column, so the
+         note (when there is one) is a row of its own instead of a reason for
+         the actions to wrap — a bar with three actions must stay one row at
+         390px, as every other selection bar does. */
       .selection-bar {
         box-sizing: border-box;
         display: flex;
-        align-items: center;
-        gap: 0.35rem;
+        flex-direction: column;
+        align-items: stretch;
         max-width: 100%;
         padding: 0.4rem 0.45rem 0.4rem 1rem;
         border: 1px solid var(--dock-border);
@@ -100,6 +108,27 @@ import { IconButtonComponent } from '../icon-button/icon-button.component';
         color: var(--color-text-main);
         font-size: var(--text-sm);
         white-space: nowrap;
+      }
+
+      /* The count, the actions and the close control: one row, never wrapped.
+         The bar's own width is the row's max-content width. */
+      .selection-primary {
+        display: flex;
+        flex-wrap: nowrap;
+        align-items: center;
+        gap: 0.35rem;
+        min-width: 0;
+      }
+
+      /* A reason the actions are unavailable (over a bulk limit), on its own
+         line under them; the buttons point at it with their aria-describedby. */
+      .selection-note {
+        margin: 0.25rem 0 0.1rem;
+        color: var(--color-danger);
+        font-size: var(--text-xs);
+        font-weight: var(--fw-medium);
+        line-height: 1.35;
+        white-space: normal;
       }
 
       /* The count is a status, not a title: muted ink and tabular figures so
@@ -135,8 +164,11 @@ import { IconButtonComponent } from '../icon-button/icon-button.component';
         }
 
         .selection-bar {
-          gap: 0.15rem;
           padding-inline: 0.75rem 0.5rem;
+        }
+
+        .selection-primary {
+          gap: 0.15rem;
         }
 
         :host ::ng-deep .selection-action {
@@ -164,6 +196,13 @@ export class SelectionBarComponent {
 
   /** The toolbar's accessible name — "Selected books", "Selected notes". */
   readonly label = input('Selected items');
+
+  /**
+   * Why the bar's actions are unavailable right now (over a bulk limit), shown
+   * on its own line and referenced by the caller's buttons through `noteId`.
+   */
+  readonly note = input<string | null>(null);
+  readonly noteId = input('selection-bar-note');
 
   /** The close control was pressed. The caller owns what leaving means. */
   readonly closed = output<void>();

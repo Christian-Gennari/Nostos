@@ -126,6 +126,7 @@
 /* The strips sit in the same column as the toolbar and the notes: the max
    width is unchanged, and the auto margins centre it in whatever space the
    sidebar leaves. */
+.topic-kind,
 .topic-words,
 .often-with,
 .filter-bar,
@@ -135,8 +136,13 @@
   padding: 0 3rem;
 }
 
+.topic-kind {
+  padding-top: 0.55rem;
+  padding-bottom: 0.1rem;
+}
+
 .topic-words {
-  padding-top: 0.75rem;
+  padding-top: 0.5rem;
   padding-bottom: 0.5rem;
 }
 
@@ -250,6 +256,7 @@
   }
 
   .toolbar,
+  .topic-kind,
   .topic-words,
   .often-with,
   .filter-bar,
@@ -259,6 +266,7 @@
 
   /* The strips above the panes were centred in the reading column; with two
      panes they belong over the list, which is the column they filter. */
+  .topic-kind,
   .topic-words,
   .often-with,
   .filter-bar,
@@ -413,6 +421,7 @@
     min-height: var(--control-h-touch);
   }
 
+  .topic-kind,
   .topic-words,
   .often-with,
   .filter-bar,
