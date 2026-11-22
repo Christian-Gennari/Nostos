@@ -187,6 +187,12 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
   readonly hoveredId = signal<string | null>(null);
   readonly selectedNodeId = signal<string | null>(null);
   readonly isFullscreen = signal(false);
+  /**
+   * The topics the built graph was scoped to (after the kind filter). Written
+   * only when a graph is built: an in-place metadata update changes colours,
+   * not the source set, and counting every topic again made a filtered map
+   * claim "Showing 50 of 50" the moment a kind was re-saved.
+   */
   readonly sourceCount = signal(0);
   readonly scopeTotal = signal(0);
   readonly shownCount = signal(0);
@@ -284,7 +290,6 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
     }
     if (changes['topics']) {
       const nextTopics = this.topics ?? [];
-      this.sourceCount.set(nextTopics.length);
       // A kind (or the topic's own words) changing on the topics already drawn
       // is not a different graph. Reading the graph back and disposing Sigma
       // for it dropped the reader's view and re-ran the layout for a colour;
@@ -296,10 +301,20 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
           nextTopics
         )
       ) {
-        this.applyTopicMetadata(
+        const rebuilt = this.applyTopicMetadata(
           changes['topics'].previousValue as TopicDto[],
           nextTopics
         );
+        // The same pass may also have changed the scope (`?around`, depth,
+        // strength, kind filter) without the metadata update rebuilding for it.
+        // The early return must not skip that rebuild.
+        if (!rebuilt && this.scopeInputsChanged(changes) && this.graphData && !this.loading()) {
+          if (this.viewInitialized) {
+            this.rebuildSigma();
+          } else {
+            this.pendingRebuild = true;
+          }
+        }
         return;
       }
       this.loadGraphData();
@@ -311,14 +326,7 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
     if (colourChanged && this.graphData && !this.loading() && this.lastBuilt) {
       this.applyKindAppearance();
     }
-    if (
-      (changes['rootId'] ||
-        changes['depth'] ||
-        changes['minShared'] ||
-        changes['visibleKindKeys']) &&
-      this.graphData &&
-      !this.loading()
-    ) {
+    if (this.scopeInputsChanged(changes) && this.graphData && !this.loading()) {
       if (this.viewInitialized) {
         this.rebuildSigma();
       } else {
@@ -418,7 +426,9 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
     previous: readonly TopicDto[] | undefined,
     next: readonly TopicDto[]
   ): boolean {
-    if (!this.lastBuilt || !previous || previous.length !== next.length) return false;
+    // While a read is in flight the graph in hand is already stale: applying
+    // metadata to it would describe a graph that is about to be replaced.
+    if (this.loading() || !this.lastBuilt || !previous || previous.length !== next.length) return false;
     const before = new Map(previous.map((topic) => [topic.id, topic]));
     return next.every((topic) => {
       const old = before.get(topic.id);
@@ -435,7 +445,7 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
   private applyTopicMetadata(
     previous: readonly TopicDto[],
     next: readonly TopicDto[]
-  ): void {
+  ): boolean {
     const before = new Map(previous.map((topic) => [topic.id, topic]));
     const kindById = new Map(next.map((topic) => [topic.id, topic.kindId ?? null]));
     const withKind = <T extends { id: string; kindId?: string | null }>(items: readonly T[]): T[] =>
@@ -463,7 +473,7 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
     if (drawingChanged) {
       // No request: the graph the map was built from is still the right one.
       this.rebuildSigma();
-      return;
+      return true;
     }
 
     const graph = this.renderer.graphInstance;
@@ -482,6 +492,17 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
       return { ...model, kindId };
     });
     this.applyKindAppearance();
+    return false;
+  }
+
+  /** A change that rescopes or refilters the drawn graph, not just its colours. */
+  private scopeInputsChanged(changes: SimpleChanges): boolean {
+    return !!(
+      changes['rootId'] ||
+      changes['depth'] ||
+      changes['minShared'] ||
+      changes['visibleKindKeys']
+    );
   }
 
   /** Recompute the legend from the scope and the topics actually drawn. */

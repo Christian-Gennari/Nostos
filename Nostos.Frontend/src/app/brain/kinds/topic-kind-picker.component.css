@@ -48,6 +48,22 @@
   background: var(--bg-hover);
 }
 
+/* The kind list did not arrive: the topic's kind cannot be named, but it is
+   not absent. A muted capsule, not the italic "Add a kind" invitation. */
+.kind-trigger.is-unavailable {
+  padding: 2px 9px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-pill);
+  background: var(--bg-hover);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.kind-trigger.is-unavailable:hover {
+  filter: none;
+  background: var(--bg-surface);
+}
+
 .kind-picker {
   display: flex;
   flex-direction: column;

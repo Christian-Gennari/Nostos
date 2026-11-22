@@ -6,7 +6,8 @@
     #trigger
     type="button"
     class="kind-trigger"
-    [class.is-add]="!currentKind()"
+    [class.is-add]="!currentKind() && !kindUnavailable()"
+    [class.is-unavailable]="kindUnavailable()"
     [attr.aria-expanded]="isOpen()"
     aria-haspopup="dialog"
     [attr.aria-label]="triggerLabel()"
@@ -15,6 +16,8 @@
     @if (currentKind(); as kind) {
       <app-topic-kind-pill [name]="kind.name" [colorKey]="kind.colorKey" />
       <nostos-icon class="kind-caret" name="caret-down" [size]="12" />
+    } @else if (kindUnavailable()) {
+      <span class="kind-unavailable">Kind unavailable</span>
     } @else {
       Add a kind
     }
@@ -26,7 +29,7 @@
     [origin]="anchor()"
     heading="Kind"
     initialFocus=".kind-choice.is-current"
-    (dismissed)="close()"
+    (dismissed)="close($event)"
   >
     <div class="kind-picker">
       <p class="kind-picker-lead">A kind groups topics by what they are.</p>
@@ -75,7 +78,11 @@
           <p class="kind-create-hint">A free colour is chosen for it.</p>
         </form>
       } @else if (createBlocked()) {
-        <p class="kind-picker-note">{{ createBlocked() }}</p>
+        <!-- The failed alert above already says the kinds did not load; it owns
+             that message and its Try again. -->
+        @if (!kindsFailed()) {
+          <p class="kind-picker-note">{{ createBlocked() }}</p>
+        }
       } @else {
         <button #createTrigger appButton variant="ghost" size="sm" type="button" class="kind-picker-action" (click)="startCreating()">
           <nostos-icon name="plus" [size]="14" />New kind…

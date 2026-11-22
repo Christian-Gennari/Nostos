@@ -576,17 +576,42 @@ describe('BrainKindsPage', () => {
     expect(label).toBe('Clear selection');
   });
 
-  it('ignores a second reorder click that lands before the refreshed list', () => {
+  it('keeps the new order while the reload is in flight, so a second click reads it', () => {
     const answer = new Subject<TopicKindDto>();
     updateKind.mockReturnValue(answer);
+    // The GET that follows the writes is held open: the interesting moment is
+    // after the PUTs answered and before the list was read back.
+    const reload = new Subject<TopicKindDto[]>();
+    listKinds.mockReturnValue(reload);
+
     component().moveKind(person, 1);
+    expect(component().busy()).toBe(true);
     // The buttons are disabled while `busy`, but a second click can already be
     // queued; it read the same old sort orders and duplicated them.
     component().moveKind(person, 1);
-
     expect(updateKind).toHaveBeenCalledTimes(2);
-    expect(updateKind).toHaveBeenCalledWith('k1', { sortOrder: 2 });
-    expect(updateKind).toHaveBeenCalledWith('k2', { sortOrder: 1 });
+
+    answer.next(person);
+    answer.complete();
+
+    expect(component().busy()).toBe(false);
+    expect(component().kinds().map((item) => item.id)).toEqual(['k2', 'k1']);
+    expect(component().kinds().map((item) => item.sortOrder)).toEqual([1, 2]);
+
+    // A click sent before the GET answered now moves from the order the reader
+    // just made, instead of trading the old values a second time.
+    updateKind.mockReturnValue(of(person));
+    updateKind.mockClear();
+    component().moveKind(component().kinds()[0], 1);
+    expect(updateKind.mock.calls).toEqual([
+      ['k1', { sortOrder: 1 }],
+      ['k2', { sortOrder: 2 }],
+    ]);
+
+    // The reload finally lands with the server's order; nothing jumps.
+    reload.next([{ ...idea, sortOrder: 1 }, { ...person, sortOrder: 2 }]);
+    reload.complete();
+    expect(component().kinds().map((item) => item.id)).toEqual(['k2', 'k1']);
   });
 
   it('repairs equal sort orders instead of trading two equal values', () => {
@@ -607,6 +632,25 @@ describe('BrainKindsPage', () => {
       ['k3', { sortOrder: 2 }],
       ['k2', { sortOrder: 3 }],
     ]);
+  });
+
+  it('forgets a capped Select all once its rows are pruned', () => {
+    topics = Array.from({ length: 520 }, (_, i) => topic(`t${i}`, `Topic ${String(i).padStart(3, '0')}`));
+    TestBed.inject(BrainStateService).refresh();
+    fixture.detectChanges();
+
+    component().toggleAll();
+    expect(component().selectAllCapped()).toBe(true);
+
+    // One selected row leaves the list (a kind set in the No kind view). The cap
+    // no longer describes what is selected, so the label must not say "Clear
+    // selection" for a list the reader never fully selected.
+    topics = topics.slice(1);
+    TestBed.inject(BrainStateService).refresh();
+    fixture.detectChanges();
+
+    expect(component().selectAllCapped()).toBe(false);
+    expect(component().selectAllActive()).toBe(false);
   });
 
   it('keeps only the failed rows selected when a Keep is partly refused', () => {
@@ -635,22 +679,27 @@ describe('BrainKindsPage', () => {
     expect(component().selectedCount()).toBe(2);
   });
 
-  it('does not navigate from a deleted page, and drops the swap it was waiting for', () => {
+  it('does not navigate from a deleted page, but still rereads the shared lists', () => {
     const answer = new Subject<void>();
     deleteKind.mockReturnValue(answer);
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    const state = TestBed.inject(BrainStateService);
+    const refresh = vi.spyOn(state, 'refresh');
     setQuery({ filter: 'k2' });
     // A swap is waiting on Idea's colour.
     component().chooseColor(person, 'kind-2');
     expect(component().pendingSwap()?.other.id).toBe('k2');
     component().askDelete(idea);
     navigate.mockClear();
+    refresh.mockClear();
 
     component().deleteKind();
     // The page is left while the delete is in flight.
     fixture.destroy();
     answer.next();
 
+    // The delete is shared state: other screens still need the list read again.
+    expect(refresh).toHaveBeenCalled();
     expect(navigate).not.toHaveBeenCalled();
     expect(component().pendingSwap()).toBeNull();
   });
@@ -723,6 +772,51 @@ describe('BrainKindsPage', () => {
     expect(rowFor('Ursula').contains(document.activeElement)).toBe(true);
   });
 
+  it('finds the next row before the answered one leaves the No kind view', async () => {
+    setQuery({ filter: 'untyped' });
+    const rowFor = (name: string): HTMLElement =>
+      (Array.from(fixture.nativeElement.querySelectorAll('.topic-row')) as HTMLElement[])
+        .find((row) => row.querySelector('.topic-name')?.textContent?.includes(name))!;
+
+    // A–Z in this view: Tolkien, then Ursula. Answering Tolkien removes its row
+    // before the frame that moves focus, so the neighbour must be found first.
+    (rowFor('Tolkien').querySelector('.person-suggestion') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    await settleFrame();
+
+    expect(rowFor('Ursula').contains(document.activeElement)).toBe(true);
+  });
+
+  it('goes to the previous row when the answered one was the last', async () => {
+    setQuery({ filter: 'untyped' });
+    const rowFor = (name: string): HTMLElement =>
+      (Array.from(fixture.nativeElement.querySelectorAll('.topic-row')) as HTMLElement[])
+        .find((row) => row.querySelector('.topic-name')?.textContent?.includes(name))!;
+
+    // Ursula is the last untyped row; its row leaves, so the previous row keeps
+    // the reader's place.
+    (rowFor('Ursula').querySelector('.person-suggestion') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    await settleFrame();
+
+    expect(rowFor('Tolkien').contains(document.activeElement)).toBe(true);
+  });
+
+  it('falls back to the sorter heading when the last Person answer empties the list', async () => {
+    topics = [topic('t3', 'Tolkien')];
+    TestBed.inject(BrainStateService).refresh();
+    setQuery({ filter: 'untyped' });
+    fixture.detectChanges();
+
+    const suggestion = fixture.nativeElement.querySelector('.person-suggestion') as HTMLButtonElement;
+    suggestion.click();
+    fixture.detectChanges();
+    await settleFrame();
+
+    const heading = fixture.nativeElement.querySelector('#kinds-sorter-title') as HTMLElement;
+    expect(document.activeElement).toBe(heading);
+  });
+
   it('reads only the author pages the library has, and keeps the ones that answer', async () => {
     listBooks.mockImplementation(({ page }: { page: number }) =>
       page === 2
@@ -764,6 +858,42 @@ describe('BrainKindsPage', () => {
 
     expect(fixture.nativeElement.querySelector('.kinds-failed')).toBeNull();
     expect((fixture.nativeElement.querySelector('.new-kind') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('explains a failed kind list inside the bulk Set kind panel', async () => {
+    kindsFail = true;
+    await remount();
+
+    checkbox(0, true);
+    component().setKindOpen.set(true);
+    fixture.detectChanges();
+    await Promise.resolve();
+
+    const panel = document.querySelector('.bulk-kind-panel') as HTMLElement;
+    expect(panel).not.toBeNull();
+    expect(panel.textContent).toContain('Could not load your kinds');
+    expect(panel.querySelector('.kind-choice')).toBeNull();
+    const retry = panel.querySelector('button') as HTMLButtonElement;
+    expect(retry.textContent?.trim()).toBe('Try again');
+
+    kindsFail = false;
+    retry.click();
+    fixture.detectChanges();
+
+    // The bulk list has no "No kind" row: the two kinds are the choices.
+    expect(document.querySelectorAll('.kind-choice').length).toBe(2);
+  });
+
+  it('anchors the bulk Set kind panel to its own trigger', async () => {
+    checkbox(0, true);
+    component().setKindOpen.set(true);
+    fixture.detectChanges();
+    await Promise.resolve();
+
+    const trigger = fixture.nativeElement.querySelector(
+      'button[aria-label="Set kind…"]',
+    ) as HTMLElement;
+    expect(component().setKindOrigin()?.nativeElement).toBe(trigger);
   });
 
   it('does not call a typed topic untyped while the kinds are unavailable', async () => {

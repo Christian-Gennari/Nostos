@@ -433,6 +433,22 @@ describe('BrainMapPage', () => {
     expect(page.kindPickerOrigin()).not.toBe(document.body);
   });
 
+  it('anchors an unusable pill request to the Controls button, and a second press closes it', async () => {
+    await mountPage({});
+    const page = fixture.componentInstance;
+    const controls = el().querySelector('.map-controls-trigger') as HTMLElement;
+
+    // A touch in Safari leaves activeElement on <body>: the panel falls back to
+    // the Controls button (whose ElementRef must be read, not the component).
+    page.openKindPicker({ topicId: 'edu', kindId: 'k1', origin: document.body });
+    expect(page.kindPickerOrigin()).toBe(controls);
+    expect(page.kindPickerTopic()?.id).toBe('edu');
+
+    // The second press closes it even though the request did not carry a pill.
+    page.openKindPicker({ topicId: 'edu', kindId: 'k1', origin: document.body });
+    expect(page.kindPickerTopic()).toBeNull();
+  });
+
   it('ignores a picker request for a topic the page no longer holds', async () => {
     await mountPage({});
     const page = fixture.componentInstance;

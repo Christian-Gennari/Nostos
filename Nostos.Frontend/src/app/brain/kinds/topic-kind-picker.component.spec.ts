@@ -1,11 +1,13 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { OverlayModule } from '@angular/cdk/overlay';
+import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
 import { Subject, of, throwError } from 'rxjs';
 
 import { NotesService } from '../../core/services/notes.service';
 import { TopicsService, type TopicDto, type TopicKindDto } from '../../core/services/topics.service';
 import { AssistantService } from '../../ui/assistant/assistant.service';
+import { SettingsPopoverComponent } from '../../ui/settings-popover/settings-popover.component';
 import { BrainStateService } from '../brain-state.service';
 import { TopicKindPickerComponent } from './topic-kind-picker.component';
 
@@ -57,6 +59,13 @@ describe('TopicKindPickerComponent', () => {
     fixture.detectChanges();
   }
 
+  /** A fresh picker over the data as it now stands (a failed first load). */
+  async function remount(): Promise<void> {
+    fixture.destroy();
+    TestBed.resetTestingModule();
+    await mount();
+  }
+
   beforeEach(async () => {
     kinds = [person, idea];
     kindsFail = false;
@@ -84,6 +93,21 @@ describe('TopicKindPickerComponent', () => {
     const trigger = fixture.nativeElement.querySelector('.kind-trigger') as HTMLElement;
     expect(trigger.textContent?.trim()).toContain('Person');
     expect(trigger.classList.contains('is-add')).toBe(false);
+  });
+
+  it('says the kind is unavailable, not Add a kind, when the list failed', async () => {
+    kindsFail = true;
+    await remount();
+
+    // The topic carries a kindId, so it has a kind; the failed list just cannot
+    // name it. Offering "Add a kind" would invite overwriting a real kind.
+    fixture.componentRef.setInput('topic', { ...topic, kindId: 'k1', kindSource: 'reader' });
+    fixture.detectChanges();
+
+    const trigger = fixture.nativeElement.querySelector('.kind-trigger') as HTMLElement;
+    expect(trigger.textContent?.trim()).toBe('Kind unavailable');
+    expect(trigger.classList.contains('is-add')).toBe(false);
+    expect(trigger.getAttribute('aria-label')).not.toContain('Add a kind');
   });
 
   it('opens with every kind, No kind, New kind… and Manage kinds', () => {
@@ -116,6 +140,45 @@ describe('TopicKindPickerComponent', () => {
     await tick();
 
     expect((document.activeElement as HTMLElement).textContent).toContain('No kind');
+  });
+
+  it('leaves focus where the reader put it after an outside press', async () => {
+    fixture.componentInstance.toggle();
+    fixture.detectChanges();
+    await tick();
+
+    // The reader pressed a control elsewhere on the page: the panel closes, but
+    // focus stays with what they pressed, not back on the pill.
+    const outside = document.createElement('button');
+    document.body.appendChild(outside);
+    outside.focus();
+
+    const popover = fixture.debugElement
+      .query(By.directive(SettingsPopoverComponent))
+      .componentInstance as SettingsPopoverComponent;
+    popover.dismissed.emit('outside');
+    fixture.detectChanges();
+    await tick();
+
+    expect(fixture.componentInstance.isOpen()).toBe(false);
+    expect(document.activeElement).toBe(outside);
+    outside.remove();
+  });
+
+  it('gives focus back to the trigger on Escape', async () => {
+    fixture.componentInstance.toggle();
+    fixture.detectChanges();
+    await tick();
+
+    const popover = fixture.debugElement
+      .query(By.directive(SettingsPopoverComponent))
+      .componentInstance as SettingsPopoverComponent;
+    popover.dismissed.emit('escape');
+    fixture.detectChanges();
+    await tick();
+
+    expect(fixture.componentInstance.isOpen()).toBe(false);
+    expect(document.activeElement).toBe(fixture.nativeElement.querySelector('.kind-trigger'));
   });
 
   it('gives focus back to the trigger after a choice, not to the page body', async () => {
@@ -200,6 +263,10 @@ describe('TopicKindPickerComponent', () => {
     const failed = document.querySelector('.kind-picker-failed') as HTMLElement;
     expect(failed).not.toBeNull();
     expect(failed.textContent).toContain('Could not load your kinds');
+    // One message: the failed alert already says it, and the "New kind" note
+    // used to repeat the same failure underneath it.
+    expect(document.body.textContent?.match(/Could not load your kinds\./g)).toHaveLength(1);
+    expect(document.body.textContent).not.toContain('Your kinds have not loaded yet');
     // A create over an unknown list picks a colour another kind holds.
     expect(document.body.textContent).not.toContain('New kind…');
     fixture.componentInstance.startCreating();

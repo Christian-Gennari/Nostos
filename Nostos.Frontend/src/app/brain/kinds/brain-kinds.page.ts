@@ -211,7 +211,12 @@ export class BrainKindsPage {
   /** "Select all" has done all it can: everything shown, or the cap. */
   readonly selectAllActive = computed(() => this.allVisibleSelected() || this.selectAllCapped());
   readonly setKindOpen = signal(false);
-  readonly setKindOrigin = viewChild<ElementRef<HTMLElement>>('setKindTrigger');
+  // `#setKindTrigger` is a `button[appButton]` (a component), so the query has
+  // to ask for the ElementRef: the plain one is the ButtonComponent, whose
+  // `nativeElement` is undefined and would unanchor the popover.
+  readonly setKindOrigin = viewChild<string, ElementRef<HTMLElement>>('setKindTrigger', {
+    read: ElementRef,
+  });
   /** Where focus goes after a bulk action, so it is not dropped on `<body>`. */
   private readonly sorterHeading = viewChild<ElementRef<HTMLElement>>('sorterHeading');
   /** The button that opens the create form, and the field it reveals. */
@@ -273,6 +278,8 @@ export class BrainKindsPage {
         if (!gone.length) return;
         const kept = new Set([...current].filter((id) => visible.has(id)));
         this.selected.set(kept);
+        // The cap described the list that was just pruned, not this one.
+        this.selectAllCapped.set(false);
         if (this.anchorId && !visible.has(this.anchorId)) this.anchorId = null;
         // The bulk panel acted on a selection that no longer exists.
         if (!kept.size) this.setKindOpen.set(false);
@@ -499,6 +506,12 @@ export class BrainKindsPage {
       changes.map((change) => this.topicsService.updateKind(change.id, { sortOrder: change.sortOrder }))
     ).subscribe({
       next: () => {
+        // The reload is a fire-and-forget read: `busy` used to drop before its
+        // answer, so a click landing in between traded the old orders again and
+        // duplicated them. The write's own order is the truth until it lands.
+        this.state.topicKinds.set(
+          reordered.map((item, position) => ({ ...item, sortOrder: position + 1 })),
+        );
         this.busy.set(false);
         this.state.refresh();
       },
@@ -593,11 +606,13 @@ export class BrainKindsPage {
         if (swap && (swap.kind.id === kind.id || swap.other.id === kind.id)) this.pendingSwap.set(null);
         if (this.renamingId() === kind.id) this.renamingId.set(null);
         if (this.colorPickId() === kind.id) this.colorPickId.set(null);
+        // The delete is shared state: every screen reads the list again, even
+        // if this page is already gone. Only the UI work below is page-local.
+        this.state.refresh();
         // The answer can land after the reader left the page; navigating from a
         // destroyed page would move them off wherever they went.
         if (this.destroyed) return;
         if (this.filter() === kind.id) this.setFilter('all');
-        this.state.refresh();
         this.toast.success(`Deleted “${kind.name}”`);
       },
       error: () => {
@@ -784,9 +799,13 @@ export class BrainKindsPage {
     this.topicsService.setTopicsKind([topic.id], kind.id).subscribe({
       next: () => {
         this.busy.set(false);
+        // Find the neighbour BEFORE the row can leave the DOM: under the "No
+        // kind" filter the answered row is removed, and its own sibling links
+        // go with it.
+        const neighbour = row?.nextElementSibling ?? row?.previousElementSibling ?? null;
         this.state.replaceTopic({ ...topic, kindId: kind.id, kindSource: 'reader' });
         this.toast.success(`“${topic.name}” is a ${kind.name}`);
-        this.focusNextPerson(row);
+        this.focusNextPerson(neighbour);
       },
       error: (error: unknown) => {
         this.busy.set(false);
@@ -796,16 +815,20 @@ export class BrainKindsPage {
   }
 
   /**
-   * Focus the next row that still offers "Person?", or its name link: the row
-   * the reader just answered is gone from under the pointer.
+   * Focus the neighbour that still offers "Person?", or its name link: the row
+   * the reader just answered may be gone from under the pointer. The neighbour
+   * is the one captured before the write; when it went too, the sorter heading
+   * is the next thing the reader needs.
    */
-  private focusNextPerson(row: Element | null): void {
-    if (!row || this.destroyed) return;
+  private focusNextPerson(neighbour: Element | null): void {
+    if (this.destroyed) return;
     window.requestAnimationFrame(() => {
       if (this.destroyed) return;
-      const next = row.nextElementSibling;
-      const target = next?.querySelector<HTMLElement>('.person-suggestion, .topic-name');
-      target?.focus();
+      const target =
+        neighbour?.isConnected
+          ? neighbour.querySelector<HTMLElement>('.person-suggestion, .topic-name')
+          : null;
+      (target ?? this.sorterHeading()?.nativeElement)?.focus();
     });
   }
 

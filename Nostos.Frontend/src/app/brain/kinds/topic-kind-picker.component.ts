@@ -20,7 +20,10 @@ import { ToastService } from '../../core/services/toast.service';
 import { ButtonComponent } from '../../ui/button/button.component';
 import { InputDirective } from '../../ui/form-control/form-control.directive';
 import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
-import { SettingsPopoverComponent } from '../../ui/settings-popover/settings-popover.component';
+import {
+  SettingsPopoverComponent,
+  type SettingsPopoverDismissal,
+} from '../../ui/settings-popover/settings-popover.component';
 import { BrainStateService } from '../brain-state.service';
 import { KindChoiceListComponent } from './kind-choice-list.component';
 import { MAX_TOPIC_KINDS, firstFreeKindColor, normalizeName } from './kinds.helpers';
@@ -79,11 +82,19 @@ export class TopicKindPickerComponent {
   });
   readonly isOpen = computed(() => (this.showTrigger() ? this.localOpen() : this.open()));
   readonly anchor = computed(() => this.origin() ?? this.trigger()?.nativeElement ?? null);
+  /**
+   * The topic has a kind, but the list that could name it did not arrive. The
+   * trigger must say that rather than "Add a kind": the topic is not untyped,
+   * and the invitation would overwrite a kind the reader already has.
+   */
+  readonly kindUnavailable = computed(
+    () => !!this.topic().kindId && !this.kindsLoaded() && !this.currentKind(),
+  );
   readonly triggerLabel = computed(() => {
     const kind = this.currentKind();
-    return kind
-      ? `Change kind for ${this.topic().name}: ${kind.name}`
-      : `Add a kind to ${this.topic().name}`;
+    if (kind) return `Change kind for ${this.topic().name}: ${kind.name}`;
+    if (this.kindUnavailable()) return `Kind for ${this.topic().name} is unavailable`;
+    return `Add a kind to ${this.topic().name}`;
   });
   readonly maxKinds = MAX_TOPIC_KINDS;
   readonly atKindLimit = computed(() => this.kinds().length >= MAX_TOPIC_KINDS);
@@ -108,6 +119,8 @@ export class TopicKindPickerComponent {
   });
   private readonly createField = viewChild<ElementRef<HTMLInputElement>>('createField');
   private panelWasOpen = false;
+  /** Why the panel just closed; a press elsewhere must keep focus where it went. */
+  private dismissal: SettingsPopoverDismissal | null = null;
 
   constructor() {
     this.state.ensureKindsLoaded();
@@ -121,7 +134,9 @@ export class TopicKindPickerComponent {
       });
     });
     // The panel closed under the reader (a choice, Escape): the field it was in
-    // is gone, so put focus back on the pill instead of the page body.
+    // is gone, so put focus back on the pill instead of the page body. A press
+    // outside is the exception: the reader chose where focus should go, and
+    // pulling it back to the pill would steal the control they just pressed.
     effect(() => {
       const open = this.isOpen();
       untracked(() => {
@@ -131,6 +146,9 @@ export class TopicKindPickerComponent {
         }
         if (!this.panelWasOpen) return;
         this.panelWasOpen = false;
+        const reason = this.dismissal;
+        this.dismissal = null;
+        if (reason === 'outside') return;
         if (this.showTrigger() && this.trigger()?.nativeElement.isConnected) {
           this.trigger()?.nativeElement.focus();
         }
@@ -141,10 +159,18 @@ export class TopicKindPickerComponent {
   toggle(): void {
     if (this.busy()) return;
     this.localOpen.update((open) => !open);
-    if (!this.localOpen()) this.resetDraft();
+    if (!this.localOpen()) {
+      this.dismissal = 'close';
+      this.resetDraft();
+    }
   }
 
-  close(): void {
+  /**
+   * Closes the panel and says why. `outside` is the one reason focus must not
+   * come back here: a press elsewhere is the reader moving focus themselves.
+   */
+  close(reason: SettingsPopoverDismissal = 'close'): void {
+    this.dismissal = reason;
     this.localOpen.set(false);
     this.resetDraft();
     this.closed.emit();

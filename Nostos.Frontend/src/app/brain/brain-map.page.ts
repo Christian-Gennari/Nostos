@@ -82,7 +82,11 @@ export class BrainMapPage {
   readonly state = inject(BrainStateService);
 
   private readonly map = viewChild(TopicMapComponent);
-  private readonly controlsTrigger = viewChild<ElementRef<HTMLElement>>('mapControlsTrigger');
+  // The trigger is a `button[appButton]` (a component): without `read` the
+  // query hands back the ButtonComponent, whose `nativeElement` is undefined.
+  private readonly controlsTrigger = viewChild<string, ElementRef<HTMLElement>>('mapControlsTrigger', {
+    read: ElementRef,
+  });
 
   private readonly queryParams = toSignal(this.route.queryParamMap, {
     initialValue: this.route.snapshot.queryParamMap,
@@ -280,7 +284,9 @@ export class BrainMapPage {
   /** The card's kind pill asks for the picker; the pill itself anchors it. */
   openKindPicker(request: { topicId: string; kindId: string | null; origin?: HTMLElement | null }): void {
     // A second press on the same topic's pill is the reader closing the panel.
-    if (this.kindPickerTopic()?.id === request.topicId && this.kindPickerOrigin()) {
+    // Only the topic decides: the request may have carried no usable pill and
+    // fallen back to the Controls button, and that is still the same panel.
+    if (this.kindPickerTopic()?.id === request.topicId) {
       this.closeKindPicker();
       return;
     }
