@@ -226,6 +226,16 @@ export function readStored<T extends string>(key: string, valid: (value: unknown
   }
 }
 
+/** Reads a stored choice or null when absent or storage is blocked. */
+export function readStoredNullable<T extends string>(key: string, valid: (value: unknown) => value is T): T | null {
+  try {
+    const value = localStorage.getItem(key);
+    return valid(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
 export function writeStored(key: string, value: string): void {
   try {
     localStorage.setItem(key, value);
@@ -236,4 +246,14 @@ export function writeStored(key: string, value: string): void {
 
 export function isTopicSort(value: unknown): value is TopicSort {
   return value === 'usage' || value === 'az';
+}
+
+/** How nodes on the Brain map are coloured. */
+export type MapColorMode = 'kind' | 'cluster' | 'none';
+
+export const MAP_COLOR_MODES: readonly MapColorMode[] = ['kind', 'cluster', 'none'];
+export const MAP_COLOR_MODE_KEY = 'nostos.brain.mapColorMode';
+
+export function isMapColorMode(value: unknown): value is MapColorMode {
+  return typeof value === 'string' && (MAP_COLOR_MODES as readonly string[]).includes(value);
 }

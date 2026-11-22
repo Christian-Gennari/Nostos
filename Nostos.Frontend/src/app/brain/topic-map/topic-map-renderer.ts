@@ -1,7 +1,8 @@
 import Graph from 'graphology';
 import Sigma, { DEFAULT_STYLES } from 'sigma';
 
-import type { TopicGraphEdgeDto, TopicGraphNodeDto } from '../../core/services/topics.service';
+import type { TopicGraphEdgeDto, TopicGraphNodeDto, TopicKindDto } from '../../core/services/topics.service';
+import type { MapColorMode } from '../brain.helpers';
 import {
   COMMUNITY_HUES,
   COMMUNITY_MIN_SIZE,
@@ -22,11 +23,13 @@ import {
   drawThemeNodeHover,
   hashSeed,
   hexToRgba,
+  kindIndexFromColorKey,
   logicalCanvasWidth,
   mixHex,
   pickHubs,
   placeLabels,
   readTheme,
+  resolveKindColor,
   seedPositions,
   selectLabelCandidates,
   type DiscObstacle,
@@ -79,6 +82,8 @@ export interface TopicMapRendererCallbacks {
 export interface BuildGraphOptions {
   rootId?: string | null;
   initialPositions?: ReadonlyMap<string, { x: number; y: number }> | null;
+  colorMode?: MapColorMode;
+  topicKinds?: readonly TopicKindDto[];
 }
 
 export interface BuiltTopicGraph {
@@ -115,7 +120,7 @@ export class TopicMapRenderer {
 
   /**
    * Construct the Graphology graph with seeded coordinates, sizes, hubs,
-   * community hues, and styled edges.
+   * mode-specific colours (kind / cluster / none), and styled edges.
    */
   buildGraph(
     visibleNodes: readonly TopicGraphNodeDto[],
@@ -126,6 +131,8 @@ export class TopicMapRenderer {
     const graph = new Graph();
     const rootId = options.rootId ?? null;
     const initialPositions = options.initialPositions ?? null;
+    const colorMode: MapColorMode = options.colorMode ?? 'cluster';
+    const kindById = new Map((options.topicKinds ?? []).map((kind) => [kind.id, kind]));
 
     const usages = visibleNodes.map((n) => Math.max(0, n.usageCount));
     const minUsage = Math.min(...usages);
@@ -137,30 +144,72 @@ export class TopicMapRenderer {
 
     const hubs = pickHubs([...visibleNodes]);
 
-    const clusterRank = detectCommunities(
-      visibleNodes.map((n) => n.id),
-      [...visibleEdges]
-    );
+    const clusterRank =
+      colorMode === 'cluster'
+        ? detectCommunities(
+            visibleNodes.map((n) => n.id),
+            [...visibleEdges]
+          )
+        : null;
     const clusterSizes = new Map<number, number>();
-    for (const rank of clusterRank.values()) {
-      clusterSizes.set(rank, (clusterSizes.get(rank) ?? 0) + 1);
+    if (clusterRank) {
+      for (const rank of clusterRank.values()) {
+        clusterSizes.set(rank, (clusterSizes.get(rank) ?? 0) + 1);
+      }
     }
-    const hueOf = (id: string): string | null => {
+
+    const clusterHueOf = (id: string): string | null => {
+      if (!clusterRank) return null;
       const rank = clusterRank.get(id);
       if (rank === undefined || rank >= COMMUNITY_HUES) return null;
       if ((clusterSizes.get(rank) ?? 0) < COMMUNITY_MIN_SIZE) return null;
       return this.theme.communities[rank] ?? null;
     };
 
+    const resolveNodeKind = (node: TopicGraphNodeDto): { key: string | null; hue: string | null } => {
+      const kindId = node.kindId?.trim();
+      if (!kindId) return { key: null, hue: null };
+      const kind = kindById.get(kindId);
+      if (kind) {
+        return { key: kind.id, hue: resolveKindColor(kind.colorKey, this.theme) };
+      }
+      if (kindIndexFromColorKey(kindId) !== null) {
+        return { key: kindId, hue: resolveKindColor(kindId, this.theme) };
+      }
+      return { key: null, hue: null };
+    };
+
     const hueById = new Map<string, string | null>();
+    const groupKeyById = new Map<string, string | null>();
+
     for (const node of visibleNodes) {
       const ratio = (Math.max(0, node.usageCount) - minUsage) / usageRange;
       const size = NODE_SIZE_MIN + (NODE_SIZE_MAX - NODE_SIZE_MIN) * Math.sqrt(ratio);
-      const hue = hueOf(node.id);
+
+      let hue: string | null = null;
+      let nodeColor: string;
+      let groupKey: string | null = null;
+
+      if (colorMode === 'kind') {
+        const resolved = resolveNodeKind(node);
+        hue = resolved.hue;
+        groupKey = resolved.key;
+        nodeColor = resolved.hue ?? this.theme.kindNone;
+      } else if (colorMode === 'cluster') {
+        hue = clusterHueOf(node.id);
+        groupKey = hue;
+        nodeColor = hue
+          ? mixHex(this.theme.node, hue, 0.55 + ratio * 0.45)
+          : mixHex(this.theme.node, this.theme.nodeHead, 0.18 + ratio * 0.42);
+      } else {
+        hue = null;
+        groupKey = null;
+        nodeColor = mixHex(this.theme.node, this.theme.nodeHead, 0.18 + ratio * 0.42);
+      }
+
       hueById.set(node.id, hue);
-      const nodeColor = hue
-        ? mixHex(this.theme.node, hue, 0.55 + ratio * 0.45)
-        : mixHex(this.theme.node, this.theme.nodeHead, 0.18 + ratio * 0.42);
+      groupKeyById.set(node.id, groupKey);
+
       const seeded = seedById.get(node.id)!;
       const isRoot = rootId !== null && node.id === rootId;
       const hub = hubs.has(node.id);
@@ -184,12 +233,14 @@ export class TopicMapRenderer {
       const strength = edge.sharedNotes / maxShared;
       const edgeSize = EDGE_SIZE_MIN + strength * (EDGE_SIZE_MAX - EDGE_SIZE_MIN);
       const alpha = EDGE_ALPHA_MIN + strength * EDGE_ALPHA_RANGE;
-      const sourceHue = hueOf(edge.sourceId);
-      const sameCluster = sourceHue !== null && sourceHue === hueOf(edge.targetId);
+      const sourceGroup = groupKeyById.get(edge.sourceId) ?? null;
+      const sourceHue = hueById.get(edge.sourceId) ?? null;
+      const sameGroup =
+        sourceGroup !== null && sourceHue !== null && sourceGroup === (groupKeyById.get(edge.targetId) ?? null);
       try {
         graph.addEdge(edge.sourceId, edge.targetId, {
           size: edgeSize,
-          color: sameCluster
+          color: sameGroup
             ? hexToRgba(mixHex(this.theme.edge, sourceHue, 0.6), alpha)
             : hexToRgba(this.theme.edge, alpha),
           sharedNotes: edge.sharedNotes,

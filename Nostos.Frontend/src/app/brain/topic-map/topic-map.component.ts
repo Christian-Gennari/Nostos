@@ -18,6 +18,7 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { RouterLink } from '@angular/router';
 import type { Subscription } from 'rxjs';
 
 import { IconButtonComponent } from '../../ui/icon-button/icon-button.component';
@@ -28,16 +29,24 @@ import { LoadingIndicatorComponent } from '../../ui/loading-indicator/loading-in
 import { EmptyStateComponent } from '../../ui/empty-state/empty-state.component';
 import {
   TopicDto,
+  TopicKindDto,
   TopicsService,
   TopicGraphDto,
+  TopicGraphNodeDto,
 } from '../../core/services/topics.service';
+import type { MapColorMode } from '../brain.helpers';
 
 import {
   LOCAL_MAP_DEPTH_MAX,
   LOCAL_MAP_DEPTH_MIN,
   MAX_MAP_TOPICS,
+  buildKindLegendEntries,
   drawnTopics,
+  filterScopedGraphByKind,
+  filterTopicsByKind,
+  kindCssVar,
   scopeGraph,
+  type KindLegendEntry,
   type MapCamera,
 } from './topic-map.helpers';
 import { TopicMapRenderer } from './topic-map-renderer';
@@ -58,6 +67,7 @@ export interface MapScopeInfo {
   maxShared: number;
   effectiveMin: number;
   capped: boolean;
+  hiddenByKindCount: number;
 }
 
 interface MapModel {
@@ -66,6 +76,7 @@ interface MapModel {
   /** Neighbours by shared notes, strongest first. */
   neighbours: Map<string, Array<{ id: string; sharedNotes: number }>>;
   hue: Map<string, string | null>;
+  kindId: Map<string, string | null>;
 }
 
 /** Where the map's camera stands, as Sigma reports it. */
@@ -75,6 +86,9 @@ export interface MapSelection {
   usageCount: number;
   connectionCount: number;
   hue: string | null;
+  kindId: string | null;
+  kindName: string | null;
+  kindColor: string | null;
   related: Array<{ id: string; name: string; sharedNotes: number }>;
 }
 
@@ -83,6 +97,7 @@ export interface MapSelection {
   standalone: true,
   imports: [
     CommonModule,
+    RouterLink,
     IconButtonComponent,
     ButtonComponent,
     ChipComponent,
@@ -105,6 +120,16 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
   @Input() rootId: string | null = null;
   @Input() depth = LOCAL_MAP_DEPTH_MIN;
   @Input() minShared: number | null = null;
+  @Input() colorMode: MapColorMode = 'cluster';
+  @Input() topicKinds: TopicKindDto[] = [];
+  /** Visible kind keys (UUIDs or `'none'` for untyped); null means all kinds are shown. */
+  @Input() visibleKindKeys: ReadonlySet<string> | null = null;
+  /**
+   * Makes the selected-topic card's kind pill a button. Off by default, so the
+   * pill is plain text until the kind picker (#1769) is wired to
+   * `kindPickerRequested`.
+   */
+  @Input() kindPickerEnabled = false;
 
   @Output() readonly cameraKept = new EventEmitter<MapCamera>();
   @Output() readonly topicSelected = new EventEmitter<string>();
@@ -113,6 +138,10 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
   @Output() readonly selectionCleared = new EventEmitter<void>();
   @Output() readonly mapAround = new EventEmitter<string>();
   @Output() readonly scopeInfo = new EventEmitter<MapScopeInfo>();
+  @Output() readonly kindToggled = new EventEmitter<string>();
+  @Output() readonly clearKindFilter = new EventEmitter<void>();
+  /** Asks the page to open the kind picker for this topic (wired by #1769). */
+  @Output() readonly kindPickerRequested = new EventEmitter<{ topicId: string; kindId: string | null }>();
 
   @ViewChild('sigmaContainer', { static: false }) sigmaContainer!: ElementRef<HTMLDivElement>;
   @ViewChild('mapStage', { static: false }) mapStage!: ElementRef<HTMLElement>;
@@ -146,14 +175,31 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
   readonly sourceCount = signal(0);
   readonly scopeTotal = signal(0);
   readonly shownCount = signal(0);
+  readonly hiddenByKindCount = signal(0);
   readonly isLocal = signal(false);
   readonly isCapped = computed(() =>
     this.isLocal() ? this.scopeTotal() > MAX_MAP_TOPICS : this.sourceCount() > MAX_MAP_TOPICS
   );
   readonly noConnections = signal(false);
+  readonly allHiddenByKind = computed(() => this.hiddenByKindCount() > 0 && this.shownCount() === 0);
+  readonly kindLegend = signal<KindLegendEntry[]>([]);
   readonly accessibleNodes = signal<
     Array<{ id: string; name: string; usageCount: number; connectionCount: number }>
   >([]);
+
+  /**
+   * A reactive copy of the kind inputs. The selection card is a computed over
+   * the model, so it has to depend on a signal to see a new kind list.
+   */
+  private readonly kindView = signal<{
+    colorMode: MapColorMode;
+    topicKinds: TopicKindDto[];
+    kindPickerEnabled: boolean;
+  }>({
+    colorMode: 'cluster',
+    topicKinds: [],
+    kindPickerEnabled: false,
+  });
 
   private readonly model = signal<MapModel | null>(null);
 
@@ -163,18 +209,30 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
     const model = this.model();
     if (!id || !model || !model.names.has(id)) return null;
     const neighbours = model.neighbours.get(id) ?? [];
+    const kindId = model.kindId.get(id) ?? null;
+    const { topicKinds } = this.kindView();
+    const kind = kindId ? topicKinds.find((k) => k.id === kindId) ?? null : null;
     return {
       id,
       name: model.names.get(id)!,
       usageCount: model.usage.get(id) ?? 0,
       connectionCount: neighbours.length,
       hue: model.hue.get(id) ?? null,
+      kindId: kind ? kind.id : null,
+      kindName: kind ? kind.name : null,
+      kindColor: kind ? kindCssVar(kind.colorKey) : null,
       related: neighbours.slice(0, SELECTION_RELATED_MAX).map((n) => ({
         id: n.id,
         name: model.names.get(n.id) ?? n.id,
         sharedNotes: n.sharedNotes,
       })),
     };
+  });
+
+  /** In Kind mode an untyped topic still says so; other modes show no pill for it. */
+  readonly showUntypedCardPill = computed(() => {
+    const { colorMode, kindPickerEnabled } = this.kindView();
+    return colorMode === 'kind' || kindPickerEnabled;
   });
 
   @HostListener('document:keydown', ['$event'])
@@ -187,6 +245,13 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
   /* ── Lifecycle ── */
 
   ngOnChanges(changes: SimpleChanges): void {
+    if (changes['colorMode'] || changes['topicKinds'] || changes['kindPickerEnabled']) {
+      this.kindView.set({
+        colorMode: this.colorMode,
+        topicKinds: this.topicKinds ?? [],
+        kindPickerEnabled: this.kindPickerEnabled,
+      });
+    }
     if (changes['selectedId']) {
       this.selectedNodeId.set(this.selectedId);
       this.renderer.refresh();
@@ -196,7 +261,16 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
       this.loadGraphData();
       return;
     }
-    if ((changes['rootId'] || changes['depth'] || changes['minShared']) && this.graphData && !this.loading()) {
+    if (
+      (changes['rootId'] ||
+        changes['depth'] ||
+        changes['minShared'] ||
+        changes['colorMode'] ||
+        changes['topicKinds'] ||
+        changes['visibleKindKeys']) &&
+      this.graphData &&
+      !this.loading()
+    ) {
       if (this.viewInitialized) {
         this.rebuildSigma();
       } else {
@@ -283,17 +357,28 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
         ? Math.max(1, Math.floor(this.minShared))
         : null;
 
-    let visibleNodes = this.graphData.nodes;
+    const allTopics = this.topics ?? [];
+    const topicKindById = new Map(allTopics.map((t) => [t.id, t.kindId ?? null]));
+    const enrichedGraphNodes = this.graphData.nodes.map((node) => ({
+      ...node,
+      kindId: node.kindId !== undefined ? node.kindId : (topicKindById.get(node.id) ?? null),
+    }));
+    const nodeKindById = new Map(enrichedGraphNodes.map((n) => [n.id, n.kindId ?? null]));
+
+    let visibleNodes: TopicGraphNodeDto[] = enrichedGraphNodes;
     let visibleEdges = this.graphData.edges;
     let hops: Map<string, number> | null = null;
     let totalInScope = 0;
+    let filteredSourceTotal = allTopics.length;
+    let hiddenByKind = 0;
     let maxShared = 1;
     let effectiveMin = explicitMin ?? 1;
+    let legendItems: ReadonlyArray<{ kindId?: string | null }> = [];
 
     if (normalizedRootId) {
-      const allowedIds = new Set((this.topics ?? []).map((t) => t.id));
+      const allowedIds = new Set(allTopics.map((t) => t.id));
       const allowedGraph: TopicGraphDto = {
-        nodes: this.graphData.nodes.filter((n) => allowedIds.has(n.id)),
+        nodes: enrichedGraphNodes.filter((n) => allowedIds.has(n.id)),
         edges: this.graphData.edges.filter((e) => allowedIds.has(e.sourceId) && allowedIds.has(e.targetId)),
       };
       const baseScope = scopeGraph(allowedGraph, normalizedRootId, clampedDepth, 1, Number.MAX_SAFE_INTEGER);
@@ -310,14 +395,37 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
           maxShared >= 2;
         effectiveMin = denseDepth2Plus ? 2 : 1;
       }
-      const scoped = scopeGraph(allowedGraph, normalizedRootId, clampedDepth, effectiveMin, MAX_MAP_TOPICS);
+      // Scope the whole graph first, then filter, then cap: hiding a kind must
+      // not cut the co-occurrence paths that define "within N steps", and the
+      // filter must free cap room for the kinds that remain visible.
+      const unfilteredScope = scopeGraph(
+        allowedGraph,
+        normalizedRootId,
+        clampedDepth,
+        effectiveMin,
+        Number.MAX_SAFE_INTEGER
+      );
+      legendItems = unfilteredScope.nodes;
+
+      const scoped = filterScopedGraphByKind(unfilteredScope, this.visibleKindKeys, normalizedRootId);
       visibleNodes = scoped.nodes;
       visibleEdges = scoped.edges;
       hops = scoped.hops;
       totalInScope = scoped.totalInScope;
+      hiddenByKind = scoped.hiddenByKind;
     } else {
-      const visibleIds = new Set(drawnTopics(this.topics ?? []).map((c) => c.id));
-      visibleNodes = this.graphData.nodes.filter((n) => visibleIds.has(n.id));
+      const mergedTopics = allTopics.map((t) => ({
+        ...t,
+        kindId: t.kindId !== undefined ? t.kindId : (nodeKindById.get(t.id) ?? null),
+      }));
+      legendItems = mergedTopics;
+
+      const filteredTopics = filterTopicsByKind(mergedTopics, this.visibleKindKeys);
+      filteredSourceTotal = filteredTopics.length;
+      hiddenByKind = mergedTopics.length - filteredTopics.length;
+
+      const visibleIds = new Set(drawnTopics(filteredTopics).map((c) => c.id));
+      visibleNodes = enrichedGraphNodes.filter((n) => visibleIds.has(n.id));
       const candidateEdges = this.graphData.edges.filter(
         (e) => visibleIds.has(e.sourceId) && visibleIds.has(e.targetId) && e.sourceId !== e.targetId
       );
@@ -325,8 +433,14 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
         if (edge.sharedNotes > maxShared) maxShared = edge.sharedNotes;
       }
       visibleEdges = candidateEdges.filter((e) => e.sharedNotes >= effectiveMin);
-      totalInScope = (this.topics ?? []).length;
+      totalInScope = filteredSourceTotal;
     }
+
+    this.kindLegend.set(
+      this.colorMode === 'kind'
+        ? buildKindLegendEntries(legendItems, this.topicKinds ?? [], this.visibleKindKeys)
+        : []
+    );
 
     const scopeChanged =
       this.lastBuilt &&
@@ -335,9 +449,10 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
         this.lastEffectiveMin !== effectiveMin);
     const keepPositions =
       this.lastBuilt &&
-      normalizedRootId !== null &&
-      this.lastRootId === normalizedRootId &&
-      (this.lastDepth !== clampedDepth || this.lastEffectiveMin !== effectiveMin);
+      (!scopeChanged ||
+        (normalizedRootId !== null &&
+          this.lastRootId === normalizedRootId &&
+          (this.lastDepth !== clampedDepth || this.lastEffectiveMin !== effectiveMin)));
 
     let previousPositions: Map<string, { x: number; y: number }> | undefined;
     if (keepPositions && this.renderer.graphInstance) {
@@ -358,19 +473,22 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
     this.activeRootId = normalizedRootId;
 
     this.isLocal.set(normalizedRootId !== null);
+    this.sourceCount.set(filteredSourceTotal);
     this.scopeTotal.set(totalInScope);
     this.shownCount.set(visibleNodes.length);
+    this.hiddenByKindCount.set(hiddenByKind);
     this.scopeInfo.emit({
       totalInScope,
       shownCount: visibleNodes.length,
       maxShared,
       effectiveMin,
       capped: this.isCapped(),
+      hiddenByKindCount: hiddenByKind,
     });
 
     if (visibleNodes.length === 0) {
       this.model.set(null);
-      this.noConnections.set(true);
+      this.noConnections.set(hiddenByKind === 0);
       this.accessibleNodes.set([]);
       return;
     }
@@ -378,6 +496,8 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
     const { graph, hueById } = this.renderer.buildGraph(visibleNodes, visibleEdges, {
       rootId: normalizedRootId,
       initialPositions: previousPositions,
+      colorMode: this.colorMode,
+      topicKinds: this.topicKinds ?? [],
     });
 
     // Build the selection card's view of the graph.
@@ -406,6 +526,7 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
       usage: new Map(visibleNodes.map((n) => [n.id, n.usageCount])),
       neighbours,
       hue: hueById,
+      kindId: new Map(visibleNodes.map((n) => [n.id, n.kindId ?? null])),
     });
 
     this.noConnections.set(normalizedRootId ? false : graph.size === 0);
@@ -558,6 +679,10 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
   focusTopic(id: string): void {
     this.selectAccessibleNode(id);
     this.centerSelected();
+  }
+
+  onToggleKind(key: string): void {
+    this.kindToggled.emit(key);
   }
 
   zoomIn(): void {

@@ -19,10 +19,14 @@ import {
   LOCAL_MAP_DEPTH_MAX,
   LOCAL_MAP_DEPTH_MIN,
   drawnTopics,
+  kindFilterKeyOf,
+  parseKindsParam,
+  toggleKindFilter,
 } from './topic-map/topic-map.helpers';
 import { BrainStateService } from './brain-state.service';
-import { plural } from './brain.helpers';
+import { type MapColorMode, plural } from './brain.helpers';
 import { SearchFieldComponent } from '../ui/search-field/search-field.component';
+import { SegmentedComponent, type SegmentedOption } from '../ui/segmented/segmented.component';
 
 const FINDER_LIMIT = 6;
 
@@ -40,9 +44,10 @@ function parseMin(raw: string | null, fallback: number | null = null): number | 
 
 /**
  * The map as a place: the topic graph at full size, a finder that centres a
- * topic, local scoping (`?around=<topicId>&depth=<1-3>&min=<n>`), and a card
- * whose Open topic goes to the topic's page. Camera, depth and strength are
- * kept, so Back from a topic returns to the same view; `?focus=<id>` centres
+ * topic, local scoping (`?around=<topicId>&depth=<1-3>&min=<n>`), colour modes
+ * (`Kind` / `Cluster` / `None`) with `?kinds=<id>,<id>` filtering, and a card
+ * whose Open topic goes to the topic's page. Camera, depth, strength and kind
+ * filter are kept, so Back returns to the same view; `?focus=<id>` centres
  * and selects a topic.
  */
 @Component({
@@ -52,6 +57,7 @@ function parseMin(raw: string | null, fallback: number | null = null): number | 
     QuoteBlockComponent,
     TopicOptionComponent,
     SearchFieldComponent,
+    SegmentedComponent,
     ButtonComponent,
     InputDirective,
     NostosIconComponent,
@@ -79,6 +85,14 @@ export class BrainMapPage {
 
   readonly focus = computed(() => this.queryParams().get('focus'));
   readonly around = computed(() => this.queryParams().get('around'));
+  readonly kinds = computed(() => this.queryParams().get('kinds'));
+  readonly visibleKindKeys = computed(() => parseKindsParam(this.kinds()));
+
+  readonly colorModeOptions: readonly SegmentedOption<MapColorMode>[] = [
+    { value: 'kind', label: 'Kind' },
+    { value: 'cluster', label: 'Cluster' },
+    { value: 'none', label: 'None' },
+  ];
 
   private restoredDepth = LOCAL_MAP_DEPTH_MIN;
   private restoredMin: number | null = null;
@@ -92,7 +106,13 @@ export class BrainMapPage {
     const kept = this.state.mapView();
     const back = this.router.currentNavigation()?.trigger === 'popstate';
     const params = this.route.snapshot.queryParamMap;
-    if (back && kept && kept.focus === params.get('focus') && kept.around === params.get('around')) {
+    if (
+      back &&
+      kept &&
+      kept.focus === params.get('focus') &&
+      kept.around === params.get('around') &&
+      (kept.kinds ?? null) === params.get('kinds')
+    ) {
       this.restoredDepth = Math.max(LOCAL_MAP_DEPTH_MIN, Math.min(LOCAL_MAP_DEPTH_MAX, kept.depth || LOCAL_MAP_DEPTH_MIN));
       this.restoredMin = kept.min;
       return kept.camera;
@@ -115,6 +135,7 @@ export class BrainMapPage {
     maxShared: 1,
     effectiveMin: 1,
     capped: false,
+    hiddenByKindCount: 0,
   });
   readonly effectiveMin = computed(() => this.min() ?? this.scope().effectiveMin);
   readonly maxShared = computed(() => Math.max(1, this.scope().maxShared));
@@ -122,11 +143,13 @@ export class BrainMapPage {
   readonly scopeCountText = computed(() => {
     if (!this.state.topicsLoaded()) return '';
     const info = this.scope();
+    const hiddenSuffix =
+      info.hiddenByKindCount > 0 ? ` (${info.hiddenByKindCount} hidden by kind)` : '';
     if (info.capped) {
-      const total = this.around() ? info.totalInScope : this.state.sidebarTopics().length;
-      return `Showing ${info.shownCount} of ${total} topics`;
+      const total = info.totalInScope + info.hiddenByKindCount;
+      return `Showing ${info.shownCount} of ${total} topics${hiddenSuffix}`;
     }
-    return plural(info.shownCount, 'topic');
+    return `${plural(info.shownCount, 'topic')}${hiddenSuffix}`;
   });
 
   readonly controlsOpen = signal(false);
@@ -175,6 +198,7 @@ export class BrainMapPage {
 
   constructor() {
     this.state.ensureLoaded();
+    this.state.ensureKindsLoaded();
   }
 
   get controlsOrigin(): HTMLElement | null {
@@ -188,11 +212,40 @@ export class BrainMapPage {
       around: this.around(),
       depth: this.depth(),
       min: this.min(),
+      kinds: this.kinds(),
     });
   }
 
   onScopeInfo(info: MapScopeInfo): void {
     this.scope.set(info);
+  }
+
+  onColorModeChange(mode: MapColorMode): void {
+    this.state.setMapColorMode(mode);
+  }
+
+  onToggleKind(key: string): void {
+    const legendKeys = (this.map()?.kindLegend() ?? []).map((entry) => entry.key);
+    const presentKeys =
+      legendKeys.length > 0
+        ? legendKeys
+        : Array.from(new Set(this.topics().map((t) => kindFilterKeyOf(t.kindId))));
+    if (presentKeys.length === 0) return;
+    const next = toggleKindFilter(this.visibleKindKeys(), key, presentKeys);
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { kinds: next },
+      queryParamsHandling: 'merge',
+    });
+  }
+
+  onClearKindFilter(): void {
+    if (this.kinds() === null) return;
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { kinds: null },
+      queryParamsHandling: 'merge',
+    });
   }
 
   openTopic(topicId: string | null = this.focus()): void {

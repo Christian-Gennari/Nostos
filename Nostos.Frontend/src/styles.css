@@ -302,6 +302,28 @@
   --graph-community-2: #B06A30; /* clay */
   --graph-community-3: #5560A8; /* slate */
 
+  /* Topic kind categorical palette (issue #1768). Twelve hues 30° apart in
+     OKLCH, all at L 58, so no kind is visually louder than another and the
+     set reads as one family. Chroma is each hue's sRGB-gamut maximum at that
+     lightness. Every colour holds >= 3.9:1 against the light stage
+     (#FBFBFC), WCAG 1.4.11 non-text contrast; protan/deutan/tritan were
+     checked and adjacent hues necessarily collapse under deuteranopia, which
+     is why every kind also carries its name in the legend and the card pill.
+     `--map-kind-none` is the quiet neutral for untyped topics. */
+  --map-kind-1: #c74a4f;
+  --map-kind-2: #bd5a02;
+  --map-kind-3: #9e7207;
+  --map-kind-4: #7e8008;
+  --map-kind-5: #3a902b;
+  --map-kind-6: #0e8f71;
+  --map-kind-7: #028b92;
+  --map-kind-8: #0c85b1;
+  --map-kind-9: #4076d8;
+  --map-kind-10: #7d64d0;
+  --map-kind-11: #a455b3;
+  --map-kind-12: #bd4a86;
+  --map-kind-none: #6f737c;
+
   /* ── Accent (slate) ── */
   --color-accent: #5B5E66;
   --color-accent-hover: #2A2D34;
@@ -998,6 +1020,21 @@
   --graph-community-1: #4D9F78;
   --graph-community-2: #C9803F;
   --graph-community-3: #7D85DA;
+  /* Same twelve hues as Light, raised to L 68 for >= 6.2:1 against the dark
+     stage (#0d0e11). */
+  --map-kind-1: #e17172;
+  --map-kind-2: #db7c3f;
+  --map-kind-3: #c48d02;
+  --map-kind-4: #9da020;
+  --map-kind-5: #64ad58;
+  --map-kind-6: #0bb28d;
+  --map-kind-7: #13adb5;
+  --map-kind-8: #09a6dc;
+  --map-kind-9: #6597ee;
+  --map-kind-10: #9987e7;
+  --map-kind-11: #bf79cc;
+  --map-kind-12: #d871a3;
+  --map-kind-none: #8a8f99;
 
   /* ── Accent — the palette's own primary, used as the accent role ──
      The artifact's prose accent is spruce #3a5d53, but spruce on this ground
@@ -2308,6 +2345,19 @@ app-assistant {
   --graph-community-1: #2d6945;
   --graph-community-2: #ae662f;
   --graph-community-3: #505b99;
+  --map-kind-1: #c74a4f;
+  --map-kind-2: #bd5a02;
+  --map-kind-3: #9e7207;
+  --map-kind-4: #7e8008;
+  --map-kind-5: #3a902b;
+  --map-kind-6: #0e8f71;
+  --map-kind-7: #028b92;
+  --map-kind-8: #0c85b1;
+  --map-kind-9: #4076d8;
+  --map-kind-10: #7d64d0;
+  --map-kind-11: #a455b3;
+  --map-kind-12: #bd4a86;
+  --map-kind-none: #6f737c;
 
   --color-accent: #63594e;
   --color-accent-hover: #4b3d31;
@@ -2493,6 +2543,19 @@ app-assistant {
   --graph-community-1: #5fa585;
   --graph-community-2: #c98a4f;
   --graph-community-3: #8b93d8;
+  --map-kind-1: #e17172;
+  --map-kind-2: #db7c3f;
+  --map-kind-3: #c48d02;
+  --map-kind-4: #9da020;
+  --map-kind-5: #64ad58;
+  --map-kind-6: #0bb28d;
+  --map-kind-7: #13adb5;
+  --map-kind-8: #09a6dc;
+  --map-kind-9: #6597ee;
+  --map-kind-10: #9987e7;
+  --map-kind-11: #bf79cc;
+  --map-kind-12: #d871a3;
+  --map-kind-none: #8a8f99;
   --danger-ink: #dde0e6;
   --color-success: #8FC7A8;
   --color-success-dark: #8FC7A8;
@@ -2626,6 +2689,19 @@ app-assistant {
   --graph-community-1: #6aa77c;
   --graph-community-2: #d08a45;
   --graph-community-3: #8f93d6;
+  --map-kind-1: #e17172;
+  --map-kind-2: #db7c3f;
+  --map-kind-3: #c48d02;
+  --map-kind-4: #9da020;
+  --map-kind-5: #64ad58;
+  --map-kind-6: #0bb28d;
+  --map-kind-7: #13adb5;
+  --map-kind-8: #09a6dc;
+  --map-kind-9: #6597ee;
+  --map-kind-10: #9987e7;
+  --map-kind-11: #bf79cc;
+  --map-kind-12: #d871a3;
+  --map-kind-none: #8a8f99;
   --danger-ink: #f1e6d3;
   --color-success: #a7c58e;
   --color-success-dark: #a7c58e;
