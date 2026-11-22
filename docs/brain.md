@@ -145,3 +145,4 @@ bottom HUD so the graph keeps the screen.
 | What | Where |
 | --- | --- |
 | Screenshots | `Nostos.Frontend/e2e/visual-evidence/brain-rebuild/` (`part7-*`: every place, the sorter, selection and the map at 1280 and 390, light and dark, SelfHosted and Cloud) |
+| Local map | `Nostos.Frontend/e2e/visual-evidence/brain-local-map/` (whole map with Strength filter, `?around=<id>&depth=2&min=1`, and phone `Controls` sheet at 1280 and 390, light and dark, SelfHosted and Cloud) |
