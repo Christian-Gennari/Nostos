@@ -199,7 +199,9 @@
           "count": "number",
           "id": "string"
         }
-      ]
+      ],
+      "topicKinds": "number",
+      "topicsWithoutKind": "number"
     }
   },
   "list_books(search)": {
@@ -291,6 +293,16 @@
       }
     ]
   },
+  "list_topics(withoutKind)": {
+    "topics": [
+      {
+        "id": "string",
+        "name": "string",
+        "notes": "number",
+        "url": "string"
+      }
+    ]
+  },
   "get_topic": {
     "id": "string",
     "name": "string",
@@ -312,6 +324,35 @@
         }
       }
     ]
+  },
+  "list_topic_kinds": {
+    "kinds": [
+      {
+        "id": "string",
+        "name": "string",
+        "colorKey": "string",
+        "topicCount": "number"
+      }
+    ],
+    "max": "number",
+    "freeSlots": "number",
+    "url": "string"
+  },
+  "create_topic_kind": {
+    "id": "string",
+    "name": "string",
+    "colorKey": "string",
+    "url": "string",
+    "message": "string"
+  },
+  "set_topic_kinds": {
+    "set": [
+      "string"
+    ],
+    "cleared": [],
+    "skippedReaderKinds": [],
+    "unknownTopicIds": [],
+    "message": "string"
   },
   "list_drafts": {
     "total": "number",

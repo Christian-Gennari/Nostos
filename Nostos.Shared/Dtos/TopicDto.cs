@@ -80,7 +80,13 @@ public record SetTopicsKindDto(IReadOnlyList<Guid> TopicIds, Guid? KindId);
 public record SetTopicsKindResultDto(
     IReadOnlyList<Guid> UpdatedTopicIds,
     Guid? KindId,
-    string? KindSource);
+    string? KindSource,
+    // APPENDED (issue #1771): per-outcome ids for a mixed batch. Null on the
+    // reader's single-kind endpoint response, which reports only UpdatedTopicIds.
+    IReadOnlyList<Guid>? SetTopicIds = null,
+    IReadOnlyList<Guid>? ClearedTopicIds = null,
+    IReadOnlyList<Guid>? SkippedReaderKindTopicIds = null,
+    IReadOnlyList<Guid>? UnknownTopicIds = null);
 
 public record CreateTopicDto(string Topic);
 public record UpdateTopicDto(string Topic);

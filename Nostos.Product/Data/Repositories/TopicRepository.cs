@@ -1159,34 +1159,61 @@ public class TopicRepository : ITopicRepository
         }
     }
 
-    public async Task<SetTopicsKindOutcome> SetTopicsKindAsync(
+    public Task<SetTopicsKindOutcome> SetTopicsKindAsync(
         IReadOnlyList<Guid> topicIds,
         Guid? kindId,
         string source = TopicKindSources.Reader,
+        CancellationToken cancellationToken = default) =>
+        SetTopicKindsAsync(
+            topicIds is null
+                ? new List<TopicKindAssignment>()
+                : topicIds.Select(topicId => new TopicKindAssignment(topicId, kindId)).ToList(),
+            source,
+            overwriteReaderKinds: true,
+            ignoreUnknownTopicIds: false,
+            cancellationToken);
+
+    public async Task<SetTopicsKindOutcome> SetTopicKindsAsync(
+        IReadOnlyList<TopicKindAssignment> assignments,
+        string source = TopicKindSources.Reader,
+        bool overwriteReaderKinds = true,
+        bool ignoreUnknownTopicIds = false,
         CancellationToken cancellationToken = default)
     {
-        if (topicIds is null || topicIds.Count == 0)
+        if (assignments is null || assignments.Count == 0)
         {
             return new SetTopicsKindOutcome(
                 SetTopicsKindStatus.InvalidInput,
                 ErrorMessage: "At least one topic id is required.");
         }
 
-        if (topicIds.Count > 500)
+        if (assignments.Count > 500)
         {
             return new SetTopicsKindOutcome(
                 SetTopicsKindStatus.InvalidInput,
                 ErrorMessage: "At most 500 topics can be updated in a single request.");
         }
 
-        if (kindId is not null && !TopicKindSources.IsValid(source))
+        // A repeated topic id is the same assignment: the last one wins, so a
+        // batch cannot apply two kinds to one topic.
+        var byTopic = new Dictionary<Guid, Guid?>();
+        foreach (var assignment in assignments)
+            byTopic[assignment.TopicId] = assignment.KindId;
+
+        var distinctIds = byTopic.Keys.ToList();
+        var targetKindIds = byTopic.Values
+            .Where(kindId => kindId.HasValue)
+            .Select(kindId => kindId!.Value)
+            .Distinct()
+            .ToList();
+
+        if (targetKindIds.Count > 0 && !TopicKindSources.IsValid(source))
         {
             return new SetTopicsKindOutcome(
                 SetTopicsKindStatus.InvalidInput,
                 ErrorMessage: "Invalid topic kind source.");
         }
 
-        var distinctIds = topicIds.Distinct().ToList();
         var ownsTransaction = _db.Database.CurrentTransaction is null;
         await using var transaction = ownsTransaction
             ? await _db.Database.BeginTransactionAsync(cancellationToken)
@@ -1195,10 +1222,13 @@ public class TopicRepository : ITopicRepository
         {
             await LibraryRevision.LockSingletonAsync(_db, cancellationToken);
 
-            if (kindId is { } targetKindId)
+            if (targetKindIds.Count > 0)
             {
-                var kindExists = await _db.TopicKinds.AnyAsync(k => k.Id == targetKindId, cancellationToken);
-                if (!kindExists)
+                var existingKindIds = await _db.TopicKinds
+                    .Where(k => targetKindIds.Contains(k.Id))
+                    .Select(k => k.Id)
+                    .ToListAsync(cancellationToken);
+                if (existingKindIds.Count != targetKindIds.Count)
                 {
                     if (transaction is not null)
                         await transaction.RollbackAsync(CancellationToken.None);
@@ -1211,7 +1241,9 @@ public class TopicRepository : ITopicRepository
             var topics = await _db.Topics
                 .Where(t => distinctIds.Contains(t.Id))
                 .ToListAsync(cancellationToken);
-            if (topics.Count != distinctIds.Count)
+            var byId = topics.ToDictionary(t => t.Id);
+            var unknown = distinctIds.Where(id => !byId.ContainsKey(id)).ToList();
+            if (unknown.Count > 0 && !ignoreUnknownTopicIds)
             {
                 if (transaction is not null)
                     await transaction.RollbackAsync(CancellationToken.None);
@@ -1220,11 +1252,33 @@ public class TopicRepository : ITopicRepository
                     ErrorMessage: "One or more topics were not found.");
             }
 
-            var resolvedSource = kindId.HasValue ? source : null;
-            foreach (var topic in topics)
+            // A kind the reader set is theirs. AI and connected apps may fill a
+            // blank, but never overwrite it unless the caller asks.
+            var protectsReaderKinds = !overwriteReaderKinds
+                && !string.Equals(source, TopicKindSources.Reader, StringComparison.Ordinal);
+            var set = new List<Guid>();
+            var cleared = new List<Guid>();
+            var skipped = new List<Guid>();
+
+            foreach (var (topicId, kindId) in byTopic)
             {
+                if (!byId.TryGetValue(topicId, out var topic))
+                    continue;
+
+                if (protectsReaderKinds
+                    && topic.KindId is not null
+                    && string.Equals(topic.KindSource, TopicKindSources.Reader, StringComparison.Ordinal))
+                {
+                    skipped.Add(topicId);
+                    continue;
+                }
+
                 topic.KindId = kindId;
-                topic.KindSource = resolvedSource;
+                topic.KindSource = kindId.HasValue ? source : null;
+                if (kindId.HasValue)
+                    set.Add(topicId);
+                else
+                    cleared.Add(topicId);
             }
 
             await _db.SaveChangesAsync(cancellationToken);
@@ -1232,9 +1286,18 @@ public class TopicRepository : ITopicRepository
             if (transaction is not null)
                 await transaction.CommitAsync(cancellationToken);
 
+            var distinctKinds = byTopic.Values.Distinct().ToList();
+            var resultKindId = distinctKinds.Count == 1 ? distinctKinds[0] : null;
             return new SetTopicsKindOutcome(
                 SetTopicsKindStatus.Success,
-                new SetTopicsKindResultDto(distinctIds, kindId, resolvedSource));
+                new SetTopicsKindResultDto(
+                    UpdatedTopicIds: set.Concat(cleared).ToList(),
+                    KindId: resultKindId,
+                    KindSource: resultKindId.HasValue ? source : null,
+                    SetTopicIds: set,
+                    ClearedTopicIds: cleared,
+                    SkippedReaderKindTopicIds: skipped,
+                    UnknownTopicIds: unknown));
         }
         catch
         {

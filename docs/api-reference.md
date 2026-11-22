@@ -1504,8 +1504,9 @@ so validation and limits are the same; only the result shape differs.
 | `list_books` | read | `library_list_books`, or `library_resolve_book` for an ISBN |
 | `get_book` | read | `library_get_book` |
 | `list_notes` | read | `notes_list_for_book`, in page order |
-| `list_topics` | read | `topics_list` / `topics_search` |
-| `get_topic` | read | `topics_get`, with a citation on every linked note |
+| `list_topics` | read | `topics_list` / `topics_search`, with each topic's kind; `withoutKind: true` keeps only topics with none |
+| `get_topic` | read | `topics_get`, with a citation on every linked note and the topic's kind |
+| `list_topic_kinds` | read | `ITopicRepository.GetAllKindsAsync`: name, colour key, topic count, free slots of 12 |
 | `list_drafts` | read | `writings_list` |
 | `read_draft` | read | `writings_read` |
 | `reading_list` | read | `reading_list_list` |
@@ -1515,6 +1516,12 @@ so validation and limits are the same; only the result shape differs.
 | `add_to_reading_list` | creates a To read entry | `reading_list_add` |
 | `add_book` | creates a book (paper, or an ebook/audiobook without its file) | `library_create_or_match_book` |
 | `update_book` | edits a book's details | `library_edit_book_details` (MCP only) |
+| `set_topic_kinds` | sets or clears the kind on up to 100 topics in one transaction | `ITopicRepository.SetTopicKindsAsync` (MCP only) |
+| `create_topic_kind` | creates one of at most 12 kinds | `ITopicRepository.CreateKindAsync` (MCP only) |
+
+Most tools wrap Ask Nostos capabilities through the registry; the topic-kind
+tools write through `ITopicRepository` so the reader-kind rule and the 12-kind
+limit live in one place. Writes still need `nostos:write`.
 
 Tools call the registry with `AssistantSurface.Mcp`, so a capability that is
 not marked for MCP cannot be reached from `/mcp` even by name. App links in
@@ -1546,7 +1553,14 @@ Same idempotency as `save_note`, with the title in the key.
 `create_draft` never changes an existing document; a resend with the same
 name, folder and words within ten minutes returns the document it already
 made (`duplicate: true`). `add_to_reading_list` returns an existing entry
-for the same ISBN, or the same title and author. A quote saved this way is
+for the same ISBN, or the same title and author. `set_topic_kinds` applies
+`{ assignments: [{ topicId, kindId | null }] }` in one transaction (at most
+100), stores source `connected-app`, and reports `set`, `cleared`,
+`skippedReaderKinds` and `unknownTopicIds`; a topic whose kind has source
+`reader` is skipped unless `overwriteReaderKinds: true`. `create_topic_kind`
+takes a name and an optional palette colour key (`kind-1` … `kind-12`), picks
+the next free colour when none is given, and is refused at 12 kinds with the
+existing kinds named. A quote saved this way is
 found and drawn in the reader like one Ask Nostos saved.
 `add_book` runs the strict create-or-match path with an idempotency key derived
 from the request and never looks metadata up elsewhere: a book with the same

@@ -36,7 +36,15 @@ public sealed record McpBookTextDocument(Guid BookId, IReadOnlyList<string>? Hea
 
 public sealed record McpNamedCount(string Name, int Count, string Id);
 
-public sealed record McpBrainOverview(int Notes, int UnsortedNotes, int Topics, IReadOnlyList<McpNamedCount> TopTopics, IReadOnlyList<McpNamedCount> BooksWithMostNotes);
+public sealed record McpBrainOverview(
+    int Notes,
+    int UnsortedNotes,
+    int Topics,
+    IReadOnlyList<McpNamedCount> TopTopics,
+    IReadOnlyList<McpNamedCount> BooksWithMostNotes,
+    // APPENDED (issue #1771): kinds, and how many topics have none yet.
+    int TopicKinds = 0,
+    int TopicsWithoutKind = 0);
 
 /// <summary>
 /// The whole-library read, passed through exactly as the library answers it so
@@ -68,11 +76,53 @@ public sealed record McpNote(string Id, string Kind, string? Quote, string? Note
 
 public sealed record McpNoteList(string Book, IReadOnlyList<McpNote> Notes, int Total, int? NextOffset);
 
-public sealed record McpTopic(string Id, string Name, int Notes, string Url);
+public sealed record McpTopic(
+    string Id,
+    string Name,
+    int Notes,
+    string Url,
+    // APPENDED (issue #1771): the topic's kind, when it has one.
+    McpTopicKindRef? Kind = null,
+    string? KindSource = null);
+
+/// <summary>A topic's kind, named for a client that has only an id.</summary>
+public sealed record McpTopicKindRef(Guid Id, string Name);
+
+/// <summary>One kind in <c>list_topic_kinds</c>: its palette colour and how many topics use it.</summary>
+public sealed record McpTopicKind(Guid Id, string Name, string ColorKey, int TopicCount);
+
+/// <summary>
+/// <c>list_topic_kinds</c>'s answer: the kinds, the 12-kind ceiling, and how
+/// many more can still be made.
+/// </summary>
+public sealed record McpTopicKindList(IReadOnlyList<McpTopicKind> Kinds, int Max, int FreeSlots, string Url);
+
+/// <summary>What <c>set_topic_kinds</c> did, by topic id.</summary>
+public sealed record McpTopicKindAssignmentResult(
+    IReadOnlyList<Guid> Set,
+    IReadOnlyList<Guid> Cleared,
+    IReadOnlyList<Guid> SkippedReaderKinds,
+    IReadOnlyList<Guid> UnknownTopicIds,
+    string Message);
+
+/// <summary>One assignment in <c>set_topic_kinds</c>; a null kind clears it.</summary>
+public sealed record McpTopicKindAssignment(Guid TopicId, Guid? KindId);
+
+/// <summary>What <c>create_topic_kind</c> made.</summary>
+public sealed record McpCreatedTopicKind(Guid Id, string Name, string ColorKey, string Url, string Message);
 
 public sealed record McpTopicList(IReadOnlyList<McpTopic> Topics);
 
-public sealed record McpTopicDetail(string Id, string Name, string? Description, int Notes, string Url, IReadOnlyList<McpNote> LinkedNotes);
+public sealed record McpTopicDetail(
+    string Id,
+    string Name,
+    string? Description,
+    int Notes,
+    string Url,
+    IReadOnlyList<McpNote> LinkedNotes,
+    // APPENDED (issue #1771): the topic's kind, when it has one.
+    McpTopicKindRef? Kind = null,
+    string? KindSource = null);
 
 public sealed record McpSavedNote(string Id, string Book, string Url, McpCitation Citation);
 

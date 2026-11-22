@@ -246,6 +246,38 @@
       }
     },
     {
+      "name": "create_topic_kind",
+      "title": "Create a topic kind",
+      "description": "Creates a kind topics can be given, with its own palette colour, and returns its id for `set_topic_kinds`. Nostos allows at most 12 kinds; at the limit the call is refused with the kinds that already exist. Prefer `list_topic_kinds` and an existing kind before making one.",
+      "annotations": {
+        "title": "Create a topic kind",
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "description": "The kind's name, 1 to 100 characters, unique in this library (for example Person or Place).",
+            "type": "string"
+          },
+          "colorKey": {
+            "description": "A palette colour key from `list_topic_kinds`, kind-1 to kind-12. Leave out to take the next free colour.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "name"
+        ]
+      }
+    },
+    {
       "name": "fetch",
       "title": "Read a result in full",
       "description": "Reads one result from `search` in full: the whole note or highlight, a topic with its notes, or a passage of a book. Pass the result's `id`.",
@@ -356,7 +388,7 @@
     {
       "name": "get_topic",
       "title": "One topic",
-      "description": "One topic: the user's own words about it and the notes linked to it across books, newest first, each with a citation. Pass a topic id from `list_topics` or `search`.",
+      "description": "One topic: its kind when it has one, the user's own words about it and the notes linked to it across books, newest first, each with a citation. Pass a topic id from `list_topics` or `search`.",
       "annotations": {
         "title": "One topic",
         "destructiveHint": null,
@@ -530,9 +562,25 @@
       }
     },
     {
+      "name": "list_topic_kinds",
+      "title": "Topic kinds",
+      "description": "The kinds a topic can have, each with its palette colour key and how many topics use it, and how many of the 12 slots are still free. Use a kind's `id` with `set_topic_kinds`.",
+      "annotations": {
+        "title": "Topic kinds",
+        "destructiveHint": null,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
       "name": "list_topics",
       "title": "Topics",
-      "description": "The topics that connect the user's notes across books, most used first, or those matching a search. Pass a topic's `id` to `fetch` to read its notes.",
+      "description": "The topics that connect the user's notes across books, most used first, or those matching a search, each with its kind when it has one. Pass a topic's `id` to `fetch` to read its notes. Pass `withoutKind` to list only topics no kind has been given to yet.",
       "annotations": {
         "title": "Topics",
         "destructiveHint": null,
@@ -550,6 +598,11 @@
               "null"
             ],
             "default": null
+          },
+          "withoutKind": {
+            "description": "Only topics that have no kind yet, so an app can classify them.",
+            "type": "boolean",
+            "default": false
           }
         }
       }
@@ -557,7 +610,7 @@
     {
       "name": "overview",
       "title": "Library and Brain at a glance",
-      "description": "A compact picture of the whole library and the Brain: every book with its collections, note totals, the most used topics, and the books with the most notes. Use it for questions about the library as a whole.",
+      "description": "A compact picture of the whole library and the Brain: every book with its collections, note totals, the most used topics, how many topic kinds exist and how many topics have none, and the books with the most notes. Use it for questions about the library as a whole.",
       "annotations": {
         "title": "Library and Brain at a glance",
         "destructiveHint": null,
@@ -802,6 +855,55 @@
         },
         "required": [
           "query"
+        ]
+      }
+    },
+    {
+      "name": "set_topic_kinds",
+      "title": "Set topic kinds",
+      "description": "Gives each listed topic a kind, or clears it with a null kind. At most 100 assignments per call, applied in one transaction; calling again with the same assignments changes nothing. A kind the reader set by hand is skipped unless `overwriteReaderKinds` is true, and unknown topic ids are reported instead of failing the batch. Show the reader the plan before a large change: they can review and clear kinds set by a connected app in Nostos at Brain → Kinds → \"Set by a connected app\".",
+      "annotations": {
+        "title": "Set topic kinds",
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "assignments": {
+            "description": "The topics and their new kinds. `{ topicId, kindId }`; a null `kindId` clears the kind. Max 100.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "topicId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "kindId": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                }
+              },
+              "required": [
+                "topicId",
+                "kindId"
+              ]
+            }
+          },
+          "overwriteReaderKinds": {
+            "description": "Also replace a kind the reader set by hand. Defaults to false, which leaves those topics alone.",
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": [
+          "assignments"
         ]
       }
     },

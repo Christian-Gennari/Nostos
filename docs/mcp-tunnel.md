@@ -190,6 +190,21 @@ curl -si https://nostos.example.com/api/books | head -n 1                      #
 3. Continue with steps 3 to 5 above. The code page names the app as ChatGPT
    calls itself.
 
+## What a connected app may do with topics
+
+With read and write access, an app can classify the Brain's topics: it reads
+their kind with `list_topics` / `get_topic`, lists the kinds with
+`list_topic_kinds`, and gives topics a kind with `set_topic_kinds` (at most 100
+in one call, in one transaction). With read-only access those tools are refused
+like every other write.
+
+A kind you set by hand in Nostos is yours: `set_topic_kinds` skips topics whose
+kind source is `reader` and says which ones in `skippedReaderKinds`, unless the
+app passes `overwriteReaderKinds: true`. A kind the app created is marked
+`connected-app` and can be reviewed or cleared in Nostos at **Brain → Kinds →
+"Set by a connected app"**. At most 12 kinds exist; `create_topic_kind` is
+refused at the limit and names the kinds that already exist.
+
 ## Revoke
 
 **Settings → Connected apps** lists each approved app. Revoking one stops its

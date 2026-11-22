@@ -14,7 +14,8 @@ namespace Nostos.Backend.Integrations.Mcp;
 /// needed for every tool; <see cref="NostosMcp.WriteScope"/> also for the
 /// tools that change something (<c>save_note</c>, <c>save_passage</c>,
 /// <c>create_draft</c>, <c>add_to_reading_list</c>, <c>add_book</c>,
-/// <c>update_book</c>). Scopes match ordinally. A caller with no scope
+/// <c>update_book</c>, <c>set_topic_kinds</c>, <c>create_topic_kind</c>).
+/// Scopes match ordinally. A caller with no scope
 /// claim at all counts as read-only.
 ///
 /// Hosts only fill the claim: SelfHosted from the access token the owner made
@@ -31,7 +32,7 @@ public static class McpScopes
 
     /// <summary>The message a read-only connection gets from a write tool.</summary>
     public const string ReadOnlyRefusal =
-        "This connection to Nostos is read-only, so nothing was saved. To let this app save notes, drafts and books to read, add books and edit book details, connect it with read and write access (on a self-hosted Nostos: make a read and write token in Settings → Connected apps).";
+        "This connection to Nostos is read-only, so nothing was saved. To let this app save notes, drafts and books to read, add books, edit book details, or set and create topic kinds, connect it with read and write access (on a self-hosted Nostos: make a read and write token in Settings → Connected apps).";
 
     /// <summary>The message a caller without <see cref="NostosMcp.ReadScope"/> gets from every tool.</summary>
     public const string NoReadRefusal =

@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol;
 using ModelContextProtocol.Server;
+using Nostos.Backend.Data.Interfaces;
 using Nostos.Backend.Integrations.Assistant;
 using Nostos.Backend.Services.Knowledge;
 using Nostos.Backend.Services.Library;
@@ -20,11 +21,13 @@ namespace Nostos.Backend.Integrations.Mcp;
 public sealed class McpBookTools(IHttpContextAccessor http) : NostosMcpTool(http)
 {
     [McpServerTool(Name = "overview", Title = "Library and Brain at a glance", ReadOnly = true, Idempotent = true, OpenWorld = false)]
-    [Description("A compact picture of the whole library and the Brain: every book with its collections, note totals, the most used topics, and the books with the most notes. Use it for questions about the library as a whole.")]
+    [Description("A compact picture of the whole library and the Brain: every book with its collections, note totals, the most used topics, how many topic kinds exist and how many topics have none, and the books with the most notes. Use it for questions about the library as a whole.")]
     public async Task<McpOverview> OverviewAsync(CancellationToken cancellationToken = default)
     {
         var library = await RunAsync<JsonElement>("library_overview", new { }, cancellationToken);
         var brain = await RunAsync<KnowledgeOverview>("knowledge_overview", new { }, cancellationToken);
+        var topics = await Services.GetRequiredService<ITopicRepository>().GetAllWithUsageCountAsync(cancellationToken);
+        var kinds = await Services.GetRequiredService<ITopicRepository>().GetAllKindsAsync(cancellationToken);
         return new McpOverview(
             library,
             new McpBrainOverview(
@@ -32,7 +35,9 @@ public sealed class McpBookTools(IHttpContextAccessor http) : NostosMcpTool(http
                 brain.UnlinkedNotes,
                 brain.TotalTopics,
                 brain.TopTopics.Select(t => new McpNamedCount(t.Name, t.UsageCount, McpEvidenceId.ForTopic(t.Id))).ToList(),
-                brain.TopBooksByNoteCount.Select(b => new McpNamedCount(b.BookTitle, b.NoteCount, b.BookId.ToString("D"))).ToList()));
+                brain.TopBooksByNoteCount.Select(b => new McpNamedCount(b.BookTitle, b.NoteCount, b.BookId.ToString("D"))).ToList(),
+                kinds.Count,
+                topics.Count(t => t.KindId is null)));
     }
 
     [McpServerTool(Name = "list_books", Title = "Find books", ReadOnly = true, Idempotent = true, OpenWorld = false)]
