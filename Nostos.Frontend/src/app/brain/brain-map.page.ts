@@ -278,11 +278,25 @@ export class BrainMapPage {
   }
 
   /** The card's kind pill asks for the picker; the pill itself anchors it. */
-  openKindPicker(request: { topicId: string; kindId: string | null }): void {
+  openKindPicker(request: { topicId: string; kindId: string | null; origin?: HTMLElement | null }): void {
+    // A second press on the same topic's pill is the reader closing the panel.
+    if (this.kindPickerTopic()?.id === request.topicId && this.kindPickerOrigin()) {
+      this.closeKindPicker();
+      return;
+    }
     const topic = this.state.topicById(request.topicId);
     if (!topic) return;
-    const active = typeof document !== 'undefined' ? document.activeElement : null;
-    this.kindPickerOrigin.set(active instanceof HTMLElement ? active : this.controlsOrigin);
+    // Only the element that was actually clicked: `document.activeElement` is
+    // `<body>` after a touch in Safari, and anchoring there put the panel at the
+    // top of the page. A sheet with no pill falls back to the Controls trigger.
+    const clicked =
+      typeof document !== 'undefined' &&
+      request.origin instanceof HTMLElement &&
+      request.origin !== document.body &&
+      request.origin.isConnected
+        ? request.origin
+        : null;
+    this.kindPickerOrigin.set(clicked ?? this.controlsOrigin);
     this.kindPickerTopic.set(topic);
   }
 

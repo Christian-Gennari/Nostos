@@ -83,6 +83,23 @@
   line-height: 1.45;
 }
 
+/* The kind list itself did not arrive: the panel says so and offers the same
+   read again, rather than listing nothing but "No kind". */
+.kind-picker-failed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.6rem;
+  padding: 0.35rem 0.6rem;
+  color: var(--color-text-light);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+}
+
+.kind-picker-failed p {
+  margin: 0;
+}
+
 .kind-picker-error {
   margin: 0;
   padding: 0.35rem 0.6rem;

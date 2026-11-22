@@ -96,7 +96,7 @@
       <nostos-segmented
         aria-labelledby="map-color-label"
         [options]="colorModeOptions"
-        [value]="state.mapColorMode()"
+        [value]="effectiveColorMode()"
         (valueChange)="onColorModeChange($event)"
       />
     </div>
@@ -192,7 +192,7 @@
           fill
           aria-labelledby="map-sheet-color-label"
           [options]="colorModeOptions"
-          [value]="state.mapColorMode()"
+          [value]="effectiveColorMode()"
           (valueChange)="onColorModeChange($event)"
         />
       </div>

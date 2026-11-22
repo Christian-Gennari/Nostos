@@ -115,6 +115,7 @@ describe('BrainStateService loading', () => {
     brain.ensureKindsLoaded();
     expect(listKinds).toHaveBeenCalledTimes(1);
     expect(brain.kindsLoaded()).toBe(false);
+    expect(brain.kindsFailed()).toBe(true);
     expect(brain.topicKinds()).toEqual([]);
 
     // The next refresh asks again rather than treating an empty list as "no kinds".
@@ -124,6 +125,7 @@ describe('BrainStateService loading', () => {
     brain.refresh();
     expect(listKinds).toHaveBeenCalledTimes(2);
     expect(brain.kindsLoaded()).toBe(true);
+    expect(brain.kindsFailed()).toBe(false);
     expect(brain.topicKinds()).toEqual([kind]);
     expect(brain.mapColorMode()).toBe('kind');
   });

@@ -379,7 +379,8 @@
   padding: 3rem 0;
 }
 
-.sorter-failed {
+.sorter-failed,
+.kinds-failed {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -389,8 +390,13 @@
   font-size: var(--text-sm);
 }
 
-.sorter-failed p {
+.sorter-failed p,
+.kinds-failed p {
   margin: 0;
+}
+
+.kinds-failed {
+  padding: 0.6rem 0 1rem;
 }
 
 .topic-rows {

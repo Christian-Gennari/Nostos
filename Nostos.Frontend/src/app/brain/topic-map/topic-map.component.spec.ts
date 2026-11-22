@@ -1837,7 +1837,123 @@ describe('TopicMapComponent', () => {
       const requested = vi.fn();
       component.kindPickerRequested.subscribe(requested);
       buttonPill.click();
-      expect(requested).toHaveBeenCalledWith({ topicId: 'gamma', kindId: null });
+      // The pill travels with the request: the page hangs the panel from the
+      // element that was clicked, not from `document.activeElement`.
+      expect(requested).toHaveBeenCalledWith({
+        topicId: 'gamma',
+        kindId: null,
+        origin: buttonPill,
+      });
+    });
+
+    it('shows a kind set on a topic in place, without reading the graph back or rebuilding Sigma', () => {
+      fixture.componentRef.setInput('colorMode', 'kind');
+      fixture.componentRef.setInput('topicKinds', kinds);
+      setTopics(kindTopics);
+      flushGraph(kindGraph);
+
+      const globals = globalThis as unknown as {
+        __nostosSigma: unknown;
+        __nostosGraph: { getNodeAttributes: (node: string) => Record<string, unknown> };
+      };
+      const sigmaBefore = globals.__nostosSigma;
+      const graph = globals.__nostosGraph;
+      component.selectAccessibleNode('gamma');
+      fixture.detectChanges();
+
+      // The card's kind pill writes the topic; the page's list reloads after it.
+      setTopics(kindTopics.map((topic) => (topic.id === 'gamma' ? { ...topic, kindId: 'k1' } : topic)));
+      http.expectNone('/api/topics/graph');
+
+      // Same Sigma, same graph object: only the node's metadata moved.
+      expect(globals.__nostosSigma).toBe(sigmaBefore);
+      expect(graph.getNodeAttributes('gamma')['kindId']).toBe('k1');
+      expect(component.selection()?.kindName).toBe('Concepts');
+      expect(component.kindLegend().map((entry) => `${entry.label} (${entry.count})`)).toEqual([
+        'Concepts (2)',
+        'People (1)',
+      ]);
+    });
+
+    it('rebuilds from the graph in hand when a kind change crosses the filter', () => {
+      fixture.componentRef.setInput('colorMode', 'kind');
+      fixture.componentRef.setInput('topicKinds', kinds);
+      fixture.componentRef.setInput('visibleKindKeys', new Set(['k1', 'k2']));
+      setTopics(kindTopics);
+      flushGraph(kindGraph);
+      expect(component.accessibleNodes().map((node) => node.id).sort()).toEqual(['alpha', 'beta']);
+
+      const globals = globalThis as unknown as { __nostosSigma: unknown };
+      const sigmaBefore = globals.__nostosSigma;
+      // gamma had no kind and was hidden; now it is a Concept and must appear.
+      setTopics(kindTopics.map((topic) => (topic.id === 'gamma' ? { ...topic, kindId: 'k1' } : topic)));
+      http.expectNone('/api/topics/graph');
+
+      expect(globals.__nostosSigma).not.toBe(sigmaBefore);
+      expect(component.accessibleNodes().map((node) => node.id).sort()).toEqual([
+        'alpha',
+        'beta',
+        'gamma',
+      ]);
+      expect(component.hiddenByKindCount()).toBe(0);
+    });
+
+    it('computes the legend when every topic is hidden and the kinds arrive after the build', () => {
+      fixture.componentRef.setInput('colorMode', 'kind');
+      fixture.componentRef.setInput('visibleKindKeys', new Set<string>());
+      setTopics(kindTopics);
+      flushGraph(kindGraph);
+      expect(component.shownCount()).toBe(0);
+      // Without the kind list every typed topic counts as untyped.
+      expect(component.kindLegend().map((entry) => entry.label)).toEqual(['No kind']);
+
+      fixture.componentRef.setInput('topicKinds', kinds);
+      fixture.detectChanges();
+
+      // No Sigma exists (nothing is drawn), but the legend is what brings the
+      // topics back.
+      expect(component.kindLegend().map((entry) => entry.label)).toEqual([
+        'Concepts',
+        'People',
+        'No kind',
+      ]);
+    });
+
+    it('stops dimming the map when the selected topic is hidden by the kind filter', () => {
+      fixture.componentRef.setInput('colorMode', 'kind');
+      fixture.componentRef.setInput('topicKinds', kinds);
+      fixture.componentRef.setInput('visibleKindKeys', new Set(['k1']));
+      fixture.componentRef.setInput('selectedId', 'beta'); // a Person, now hidden
+      setTopics(kindTopics);
+      flushGraph(kindGraph);
+
+      expect(component.selection()).toBeNull();
+      const globals = globalThis as unknown as {
+        __nostosSigma: { nodeReducer: (node: string, data: unknown, attrs: unknown) => unknown };
+        __nostosGraph: { getNodeAttributes: (node: string) => Record<string, unknown> };
+      };
+      // A selection the graph no longer holds must not dim everything else.
+      expect(globals.__nostosSigma.nodeReducer('alpha', {}, globals.__nostosGraph.getNodeAttributes('alpha')))
+        .toEqual({});
+      expect(
+        (fixture.nativeElement.querySelector('[aria-label="Center on selection"]') as HTMLButtonElement)
+          .disabled
+      ).toBe(true);
+    });
+
+    it('says nothing about the kind when the kind list never arrived', () => {
+      fixture.componentRef.setInput('colorMode', 'kind');
+      fixture.componentRef.setInput('topicKinds', []);
+      fixture.componentRef.setInput('kindsLoaded', false);
+      fixture.componentRef.setInput('kindPickerEnabled', true);
+      setTopics(kindTopics);
+      flushGraph(kindGraph);
+
+      component.selectAccessibleNode('alpha'); // alpha HAS a kind; it just cannot be named
+      fixture.detectChanges();
+
+      expect(component.selection()?.kindId).toBeNull();
+      expect(fixture.nativeElement.querySelector('.map-card-kind-pill')).toBeNull();
     });
 
     it('leaves one compact line on the map when kinds are hidden', () => {

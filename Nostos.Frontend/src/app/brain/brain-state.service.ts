@@ -62,6 +62,13 @@ export class BrainStateService {
    * every typed topic as untyped.
    */
   readonly kindsLoaded = signal(false);
+  /**
+   * The kind list was asked for and did not arrive. The screens that can add or
+   * edit a kind say so, and offer the same "Try again" as the topics list: a
+   * create form over an unknown list would pick a colour another kind holds and
+   * be refused by the server.
+   */
+  readonly kindsFailed = signal(false);
   readonly summary = signal<NoteSummary | null>(null);
   readonly topicSort = signal<TopicSort>(readStored(TOPIC_SORT_KEY, isTopicSort, 'usage'));
   private readonly mapColorModeChoice = signal<MapColorMode | null>(
@@ -191,12 +198,15 @@ export class BrainStateService {
       next: (kinds) => {
         this.topicKinds.set(kinds);
         this.kindsLoaded.set(true);
+        this.kindsFailed.set(false);
         this.kindsLoading = false;
         this.runQueuedKinds();
       },
-      // Kind metadata decorates the map and topic views; tolerate transient errors
-      // and let the next full load ask again.
+      // Kind metadata decorates the map and topic views, so a failure leaves the
+      // loaded list (if any) in place; a first failure is reported to the
+      // screens that let the reader add or edit a kind.
       error: () => {
+        this.kindsFailed.set(!this.kindsLoaded());
         this.kindsLoading = false;
         this.runQueuedKinds();
       },

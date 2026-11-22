@@ -21,23 +21,19 @@ const kind = (id: string, name: string, colorKey: string): TopicKindDto => ({
 const person = kind('k1', 'Person', 'kind-1');
 const idea = kind('k2', 'Idea', 'kind-2');
 
-/** Lets the popover's queued focus move and the panel's microtasks run. */
-const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+/** Lets the popover's queued focus move, the panel's rAF and its microtasks run. */
+const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 40));
 
 describe('TopicKindPickerComponent', () => {
   let fixture: ComponentFixture<TopicKindPickerComponent>;
   let kinds: TopicKindDto[];
   let setTopicsKind: ReturnType<typeof vi.fn>;
   let createKind: ReturnType<typeof vi.fn>;
+  let kindsFail: boolean;
 
   const topic: TopicDto = { id: 't1', name: 'Tolkien', usageCount: 3, kindId: null, kindSource: null };
 
-  beforeEach(async () => {
-    kinds = [person, idea];
-    setTopicsKind = vi.fn((ids: string[], kindId: string | null) =>
-      of({ updatedTopicIds: ids, kindId, kindSource: kindId ? 'reader' : null }));
-    createKind = vi.fn(() => of(kind('k3', 'Field', 'kind-3')));
-
+  async function mount(): Promise<void> {
     await TestBed.configureTestingModule({
       imports: [TopicKindPickerComponent, OverlayModule],
       providers: [
@@ -46,7 +42,7 @@ describe('TopicKindPickerComponent', () => {
           provide: TopicsService,
           useValue: {
             list: () => of([topic]),
-            listKinds: () => of(kinds),
+            listKinds: () => (kindsFail ? throwError(() => new Error('kinds unavailable')) : of(kinds)),
             setTopicsKind,
             createKind,
           },
@@ -59,6 +55,16 @@ describe('TopicKindPickerComponent', () => {
     fixture = TestBed.createComponent(TopicKindPickerComponent);
     fixture.componentRef.setInput('topic', topic);
     fixture.detectChanges();
+  }
+
+  beforeEach(async () => {
+    kinds = [person, idea];
+    kindsFail = false;
+    setTopicsKind = vi.fn((ids: string[], kindId: string | null) =>
+      of({ updatedTopicIds: ids, kindId, kindSource: kindId ? 'reader' : null }));
+    createKind = vi.fn(() => of(kind('k3', 'Field', 'kind-3')));
+
+    await mount();
   });
 
   afterEach(() => {
@@ -179,6 +185,50 @@ describe('TopicKindPickerComponent', () => {
     expect(fixture.componentInstance.atKindLimit()).toBe(true);
     expect(document.body.textContent).toContain('All 12 kinds are in use. Delete one to add another.');
     expect(document.body.textContent).not.toContain('New kind…');
+  });
+
+
+  it('says the kinds could not be loaded, offers Try again, and offers no new kind', async () => {
+    fixture.destroy();
+    TestBed.resetTestingModule();
+    kindsFail = true;
+    await mount();
+
+    fixture.componentInstance.toggle();
+    fixture.detectChanges();
+
+    const failed = document.querySelector('.kind-picker-failed') as HTMLElement;
+    expect(failed).not.toBeNull();
+    expect(failed.textContent).toContain('Could not load your kinds');
+    // A create over an unknown list picks a colour another kind holds.
+    expect(document.body.textContent).not.toContain('New kind…');
+    fixture.componentInstance.startCreating();
+    expect(fixture.componentInstance.creating()).toBe(false);
+
+    kindsFail = false;
+    (failed.querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(document.querySelector('.kind-picker-failed')).toBeNull();
+    expect(Array.from(document.querySelectorAll('.kind-choice')).length).toBe(3);
+    expect(document.body.textContent).toContain('New kind…');
+  });
+
+  it('focuses the new kind field when it opens, and the button when it closes', async () => {
+    fixture.componentInstance.toggle();
+    fixture.detectChanges();
+
+    fixture.componentInstance.startCreating();
+    fixture.detectChanges();
+    await tick();
+
+    expect(document.activeElement).toBe(document.querySelector('#new-kind-name'));
+
+    fixture.componentInstance.cancelCreating();
+    fixture.detectChanges();
+    await tick();
+
+    expect(document.activeElement).toBe(document.querySelector('.kind-picker-action'));
   });
 
   it('reports a duplicate name without asking the server', () => {

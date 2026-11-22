@@ -71,6 +71,8 @@ export class TopicKindPickerComponent {
   private readonly trigger = viewChild<ElementRef<HTMLButtonElement>>('trigger');
 
   readonly kinds = this.state.topicKinds;
+  readonly kindsLoaded = computed(() => this.state.kindsLoaded());
+  readonly kindsFailed = computed(() => this.state.kindsFailed());
   readonly currentKind = computed<TopicKindDto | null>(() => {
     const id = this.topic().kindId;
     return id ? this.kinds().find((kind) => kind.id === id) ?? null : null;
@@ -85,12 +87,27 @@ export class TopicKindPickerComponent {
   });
   readonly maxKinds = MAX_TOPIC_KINDS;
   readonly atKindLimit = computed(() => this.kinds().length >= MAX_TOPIC_KINDS);
+  /** Why "New kind…" cannot be offered, or null. */
+  readonly createBlocked = computed(() => {
+    if (!this.kindsLoaded()) return 'Your kinds have not loaded yet. Try again first.';
+    if (this.atKindLimit()) return `All ${MAX_TOPIC_KINDS} kinds are in use. Delete one to add another.`;
+    return null;
+  });
   readonly nextColor = computed(() => firstFreeKindColor(this.kinds()));
 
   readonly creating = signal(false);
   readonly draftName = signal('');
   readonly busy = signal(false);
   readonly error = signal<string | null>(null);
+
+  // `#createTrigger` sits on a `button[appButton]`, which is a component: the
+  // plain query would hand back the ButtonComponent, whose `nativeElement` is
+  // undefined. Reading the ElementRef explicitly is what makes it focusable.
+  private readonly createTrigger = viewChild<string, ElementRef<HTMLElement>>('createTrigger', {
+    read: ElementRef,
+  });
+  private readonly createField = viewChild<ElementRef<HTMLInputElement>>('createField');
+  private panelWasOpen = false;
 
   constructor() {
     this.state.ensureKindsLoaded();
@@ -101,6 +118,22 @@ export class TopicKindPickerComponent {
         this.creating.set(false);
         this.draftName.set('');
         this.error.set(null);
+      });
+    });
+    // The panel closed under the reader (a choice, Escape): the field it was in
+    // is gone, so put focus back on the pill instead of the page body.
+    effect(() => {
+      const open = this.isOpen();
+      untracked(() => {
+        if (open) {
+          this.panelWasOpen = true;
+          return;
+        }
+        if (!this.panelWasOpen) return;
+        this.panelWasOpen = false;
+        if (this.showTrigger() && this.trigger()?.nativeElement.isConnected) {
+          this.trigger()?.nativeElement.focus();
+        }
       });
     });
   }
@@ -118,16 +151,28 @@ export class TopicKindPickerComponent {
   }
 
   startCreating(): void {
-    if (this.atKindLimit() || this.busy()) return;
+    if (this.createBlocked() || this.busy()) return;
     this.creating.set(true);
     this.draftName.set('');
     this.error.set(null);
+    this.focusCreateField();
   }
 
   cancelCreating(): void {
     this.creating.set(false);
     this.draftName.set('');
     this.error.set(null);
+    // The button that opened the form only exists once the form closes.
+    window.requestAnimationFrame(() => this.createTrigger()?.nativeElement.focus());
+  }
+
+  /** The kind list failed to load: ask for it again. */
+  retryKinds(): void {
+    this.state.reloadKinds();
+  }
+
+  private focusCreateField(): void {
+    window.requestAnimationFrame(() => this.createField()?.nativeElement.focus());
   }
 
   choose(kindId: string | null): void {
@@ -149,7 +194,7 @@ export class TopicKindPickerComponent {
   }
 
   createKind(): void {
-    if (this.busy()) return;
+    if (this.busy() || this.createBlocked()) return;
     const name = this.draftName().trim();
     if (!name) {
       this.error.set('A kind needs a name.');

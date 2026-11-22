@@ -150,6 +150,18 @@ export class BrainKindsPage {
   // --- The kinds editor -----------------------------------------------------
 
   readonly atKindLimit = computed(() => this.kinds().length >= MAX_TOPIC_KINDS);
+  readonly kindsLoaded = computed(() => this.state.kindsLoaded());
+  readonly kindsFailed = computed(() => this.state.kindsFailed());
+  /**
+   * Why "New kind" is unavailable, or null. Before the kind list arrives the
+   * page cannot pick a free colour or refuse a duplicate, so the server would
+   * answer the create with a 409.
+   */
+  readonly newKindBlocked = computed(() => {
+    if (!this.kindsLoaded()) return 'Your kinds have not loaded yet. Try again first.';
+    if (this.atKindLimit()) return 'All 12 kinds are in use. Delete one to add another.';
+    return null;
+  });
   readonly nextKindColor = computed(() => firstFreeKindColor(this.kinds()));
   readonly nextKindColorCss = computed(() => {
     const key = this.nextKindColor();
@@ -158,7 +170,11 @@ export class BrainKindsPage {
 
   readonly renamingId = signal<string | null>(null);
   readonly renameError = signal<string | null>(null);
-  readonly renaming = signal(false);
+  /**
+   * The kinds whose rename is in flight. One flag for the page blocked a second
+   * kind's rename until the first answered.
+   */
+  readonly renamingIds = signal<ReadonlySet<string>>(new Set());
 
   readonly colorPickId = signal<string | null>(null);
   readonly pendingSwap = signal<PendingSwap | null>(null);
@@ -192,10 +208,19 @@ export class BrainKindsPage {
     const topics = this.topics();
     return topics.length > 0 && topics.every((topic) => this.selected().has(topic.id));
   });
+  /** "Select all" has done all it can: everything shown, or the cap. */
+  readonly selectAllActive = computed(() => this.allVisibleSelected() || this.selectAllCapped());
   readonly setKindOpen = signal(false);
   readonly setKindOrigin = viewChild<ElementRef<HTMLElement>>('setKindTrigger');
   /** Where focus goes after a bulk action, so it is not dropped on `<body>`. */
   private readonly sorterHeading = viewChild<ElementRef<HTMLElement>>('sorterHeading');
+  /** The button that opens the create form, and the field it reveals. */
+  // `#newKindTrigger` is a `button[appButton]` (a component), so the query has
+  // to ask for the ElementRef: the plain one is the ButtonComponent.
+  private readonly newKindTrigger = viewChild<string, ElementRef<HTMLElement>>('newKindTrigger', {
+    read: ElementRef,
+  });
+  private readonly newKindField = viewChild<ElementRef<HTMLInputElement>>('newKindField');
   readonly busy = signal(false);
 
   /** The authors in the library, for the offline "Person?" suggestion. */
@@ -205,8 +230,14 @@ export class BrainKindsPage {
 
   private anchorId: string | null = null;
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
-  /** The last "Select all" hit the 500 cap; the next one clears instead. */
-  private selectAllCapped = false;
+  /**
+   * The last "Select all" selected the cap rather than the whole list. A signal,
+   * so the button says "Clear selection": `allVisibleSelected` is false when the
+   * list is longer than the cap, and the label stayed "Select all" after a press
+   * that had already selected everything it could.
+   */
+  readonly selectAllCapped = signal(false);
+  private destroyed = false;
 
   constructor() {
     this.state.ensureLoaded();
@@ -240,12 +271,16 @@ export class BrainKindsPage {
         const current = this.selected();
         const gone = [...current].filter((id) => !visible.has(id));
         if (!gone.length) return;
-        this.selected.set(new Set([...current].filter((id) => visible.has(id))));
+        const kept = new Set([...current].filter((id) => visible.has(id)));
+        this.selected.set(kept);
         if (this.anchorId && !visible.has(this.anchorId)) this.anchorId = null;
+        // The bulk panel acted on a selection that no longer exists.
+        if (!kept.size) this.setKindOpen.set(false);
       });
     });
 
     this.destroyRef.onDestroy(() => {
+      this.destroyed = true;
       if (this.searchTimer !== null) clearTimeout(this.searchTimer);
     });
   }
@@ -285,6 +320,22 @@ export class BrainKindsPage {
     });
   }
 
+  /**
+   * Empty list, filter and search in ONE navigation. Two calls queued two
+   * router navigations, the second cancelled the first, and `q` survived the
+   * "Clear filters" button it was meant to clear.
+   */
+  clearFilters(): void {
+    if (this.searchTimer !== null) clearTimeout(this.searchTimer);
+    this.searchTimer = null;
+    this.searchDraft.set('');
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { q: null, filter: null },
+      queryParamsHandling: 'merge',
+    });
+  }
+
   openDrawer(): void {
     this.state.drawerOpen.set(true);
   }
@@ -312,32 +363,47 @@ export class BrainKindsPage {
   /**
    * Saves a rename. The kind's id comes from the row being edited, not from
    * whichever field is open when the answer lands: the reader can start another
-   * rename while this one is in flight.
+   * rename while this one is in flight. The in-flight set is per kind, so the
+   * second field is not blocked by the first (and not shown as busy).
    */
   commitRename(kindId: string, name: string): void {
     const kind = this.kinds().find((item) => item.id === kindId);
-    if (!kind || this.renaming()) return;
+    if (!kind || this.renamingIds().has(kindId)) return;
     const id = kind.id;
     const trimmed = name.trim();
     if (trimmed === kind.name) {
       if (this.renamingId() === id) this.cancelRename();
       return;
     }
-    this.renaming.set(true);
+    this.setRenaming(id, true);
     this.renameError.set(null);
     this.topicsService.updateKind(id, { name: trimmed }).subscribe({
       next: () => {
-        this.renaming.set(false);
+        this.setRenaming(id, false);
         this.state.refresh();
         // Only close the field this answer belongs to.
         if (this.renamingId() === id) this.renamingId.set(null);
       },
       error: (error: unknown) => {
-        this.renaming.set(false);
+        this.setRenaming(id, false);
         const message = serverMessage(error) ?? 'Could not rename the kind. Try again.';
         if (this.renamingId() === id) this.renameError.set(message);
         else this.toast.error(message);
       },
+    });
+  }
+
+  /** Whether this kind's rename is in flight. */
+  isRenaming(kindId: string): boolean {
+    return this.renamingIds().has(kindId);
+  }
+
+  private setRenaming(kindId: string, renaming: boolean): void {
+    this.renamingIds.update((ids) => {
+      const next = new Set(ids);
+      if (renaming) next.add(kindId);
+      else next.delete(kindId);
+      return next;
     });
   }
 
@@ -403,25 +469,43 @@ export class BrainKindsPage {
     });
   }
 
-  /** Moves a kind one place up or down by trading sort orders with its neighbour. */
+  /**
+   * Moves a kind one place up or down.
+   *
+   * The whole new order is computed here, then `1..N` is written for every row
+   * whose stored order differs. Trading two values was wrong in two ways: a
+   * second click landing before the refreshed list arrived read the same old
+   * values and produced duplicates, and once two kinds held the same order the
+   * trade could never separate them again. Writing the positions repairs both.
+   */
   moveKind(kind: TopicKindDto, direction: -1 | 1): void {
+    if (this.busy()) return;
     const list = this.kinds();
     const index = list.findIndex((item) => item.id === kind.id);
-    const other = list[index + direction];
-    if (index < 0 || !other) return;
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= list.length) return;
+
+    const reordered = [...list];
+    const [moved] = reordered.splice(index, 1);
+    reordered.splice(target, 0, moved);
+
+    const changes = reordered
+      .map((item, position) => ({ id: item.id, sortOrder: position + 1, current: item.sortOrder }))
+      .filter((change) => change.current !== change.sortOrder);
+    if (!changes.length) return;
+
     this.busy.set(true);
-    forkJoin([
-      this.topicsService.updateKind(kind.id, { sortOrder: other.sortOrder }),
-      this.topicsService.updateKind(other.id, { sortOrder: kind.sortOrder }),
-    ]).subscribe({
+    forkJoin(
+      changes.map((change) => this.topicsService.updateKind(change.id, { sortOrder: change.sortOrder }))
+    ).subscribe({
       next: () => {
         this.busy.set(false);
         this.state.refresh();
       },
       error: () => {
         this.busy.set(false);
-        // One of the two trades may have landed, leaving both kinds with the
-        // same order; read the server's list back so the arrows start from it.
+        // Some of the writes may have landed; read the server's list back so
+        // the arrows start from the orders it actually holds.
         this.state.refresh();
         this.toast.error('Could not reorder the kinds. Try again.');
       },
@@ -429,20 +513,32 @@ export class BrainKindsPage {
   }
 
   startNewKind(): void {
-    if (this.atKindLimit()) return;
+    if (this.newKindBlocked()) return;
     this.newKindOpen.set(true);
     this.newKindName.set('');
     this.newKindError.set(null);
+    this.focusNewKindField();
   }
 
   cancelNewKind(): void {
     this.newKindOpen.set(false);
     this.newKindName.set('');
     this.newKindError.set(null);
+    // The field the reader was in is gone; the button that opened it is the
+    // next thing they need, not the page body.
+    this.newKindTrigger()?.nativeElement.focus();
+  }
+
+  /** Focus the create field once Angular has painted it. */
+  private focusNewKindField(): void {
+    window.requestAnimationFrame(() => {
+      if (this.destroyed) return;
+      this.newKindField()?.nativeElement.focus();
+    });
   }
 
   createKind(): void {
-    if (this.newKindBusy() || this.atKindLimit()) return;
+    if (this.newKindBusy() || this.newKindBlocked()) return;
     const name = this.newKindName().trim();
     if (!name) {
       this.newKindError.set('A kind needs a name.');
@@ -491,8 +587,16 @@ export class BrainKindsPage {
       next: () => {
         this.deleting.set(false);
         this.deleteTarget.set(null);
-        if (this.filter() === kind.id) this.setFilter('all');
+        // Anything still pointing at the deleted kind is stale: a swap waiting
+        // for its other kind, a colour palette, a rename field.
+        const swap = this.pendingSwap();
+        if (swap && (swap.kind.id === kind.id || swap.other.id === kind.id)) this.pendingSwap.set(null);
+        if (this.renamingId() === kind.id) this.renamingId.set(null);
         if (this.colorPickId() === kind.id) this.colorPickId.set(null);
+        // The answer can land after the reader left the page; navigating from a
+        // destroyed page would move them off wherever they went.
+        if (this.destroyed) return;
+        if (this.filter() === kind.id) this.setFilter('all');
         this.state.refresh();
         this.toast.success(`Deleted “${kind.name}”`);
       },
@@ -535,31 +639,34 @@ export class BrainKindsPage {
       this.selected.set(toggleId(this.selected(), row.id, desired));
       this.anchorId = row.id;
     }
-    this.selectAllCapped = false;
+    this.selectAllCapped.set(false);
   }
 
   toggleAll(): void {
     // A capped "Select all" selected the first 500 of a longer list. Pressing
     // it again is the reader asking to undo that, not to select the same 500.
-    if (this.allVisibleSelected() || this.selectAllCapped) {
+    if (this.selectAllActive()) {
       const visible = new Set(this.topics().map((topic) => topic.id));
       this.selected.set(new Set([...this.selected()].filter((id) => !visible.has(id))));
       this.anchorId = null;
-      this.selectAllCapped = false;
+      this.selectAllCapped.set(false);
       return;
     }
+    // Exactly the first 500 rows, replacing any row picked past the cap: the
+    // server refuses more than 500 in one request, and a union kept those rows
+    // and produced 501.
     const ids = this.topics().slice(0, BULK_KIND_LIMIT).map((topic) => topic.id);
-    this.selected.set(new Set([...this.selected(), ...ids]));
+    this.selected.set(new Set(ids));
     this.anchorId = ids.at(-1) ?? null;
     const hidden = this.topics().length - ids.length;
-    this.selectAllCapped = hidden > 0;
+    this.selectAllCapped.set(hidden > 0);
     if (hidden > 0) this.toast.info(`Selected ${BULK_KIND_LIMIT} topics. Select fewer at a time.`);
   }
 
   clearSelection(): void {
     this.selected.set(new Set());
     this.anchorId = null;
-    this.selectAllCapped = false;
+    this.selectAllCapped.set(false);
     this.setKindOpen.set(false);
   }
 
@@ -599,8 +706,8 @@ export class BrainKindsPage {
    * Keep the reader's kinds: re-save each selected topic's current kind as
    * `reader`, so later AI runs leave it alone. Topics of different kinds are
    * grouped, one request per kind, because the API takes one kind at a time.
-   * A group can fail on its own: the reader is told which part was kept and
-   * the list is refreshed either way.
+   * A group can fail on its own: the reader is told which part was kept, and
+   * the selection shrinks to the rows that still need an answer.
    */
   keepSelection(): void {
     if (this.busy()) return;
@@ -625,19 +732,26 @@ export class BrainKindsPage {
     )).subscribe({
       next: (results) => {
         this.busy.set(false);
-        this.clearSelection();
-        this.state.refresh();
-        this.focusSorter();
         const kept = results.filter((result) => result.error === null);
         const failed = results.filter((result) => result.error !== null);
         const keptCount = kept.reduce((sum, result) => sum + result.ids.length, 0);
         const failedCount = failed.reduce((sum, result) => sum + result.ids.length, 0);
+        this.state.refresh();
+        // Clearing the selection throws away the only record of which rows the
+        // reader still has to redo. Only a full success may do that; a partial
+        // failure keeps the failed rows selected, and a total failure keeps the
+        // whole selection so the reader can simply press Keep again.
         if (!failed.length) {
+          this.clearSelection();
+          this.focusSorter();
           this.toast.success(`Kept ${plural(keptCount, 'topic')} as yours`);
         } else if (!kept.length) {
           this.toast.error(
             serverMessage(failed[0].error) ?? 'Could not keep the kinds. Try again.');
         } else {
+          this.selected.set(new Set(failed.flatMap((result) => result.ids)));
+          this.anchorId = null;
+          this.selectAllCapped.set(false);
           this.toast.error(
             `Kept ${plural(keptCount, 'topic')} as yours, but ${plural(failedCount, 'topic')} could not be kept. Try again.`);
         }
@@ -649,11 +763,17 @@ export class BrainKindsPage {
     event.stopPropagation();
     if (this.busy()) return;
     this.busy.set(true);
+    // The suggestion disappears once the row has a kind, dropping focus on the
+    // page body. Remember where the row is so the next candidate keeps it.
+    const row = (event.currentTarget ?? event.target) instanceof HTMLElement
+      ? ((event.currentTarget ?? event.target) as HTMLElement).closest('.topic-row')
+      : null;
     this.topicsService.setTopicsKind([topic.id], kind.id).subscribe({
       next: () => {
         this.busy.set(false);
         this.state.replaceTopic({ ...topic, kindId: kind.id, kindSource: 'reader' });
         this.toast.success(`“${topic.name}” is a ${kind.name}`);
+        this.focusNextPerson(row);
       },
       error: (error: unknown) => {
         this.busy.set(false);
@@ -662,9 +782,28 @@ export class BrainKindsPage {
     });
   }
 
+  /**
+   * Focus the next row that still offers "Person?", or its name link: the row
+   * the reader just answered is gone from under the pointer.
+   */
+  private focusNextPerson(row: Element | null): void {
+    if (!row || this.destroyed) return;
+    window.requestAnimationFrame(() => {
+      if (this.destroyed) return;
+      const next = row.nextElementSibling;
+      const target = next?.querySelector<HTMLElement>('.person-suggestion, .topic-name');
+      target?.focus();
+    });
+  }
+
   /** The topics failed to load: a failure state with a way to ask again. */
   retryTopics(): void {
     this.state.refresh();
+  }
+
+  /** The kind list failed to load: ask for it again without a full page reload. */
+  retryKinds(): void {
+    this.state.reloadKinds();
   }
 
   /**
@@ -676,21 +815,36 @@ export class BrainKindsPage {
     this.sorterHeading()?.nativeElement.focus();
   }
 
+  /**
+   * Reads the recent books' authors for the offline "Person?" suggestion.
+   *
+   * Page 1 is read first because it says how many books there are: a library of
+   * 40 books costs one request, not five. Each further page is one request, up
+   * to the recent 500 the Studio's spelling guide also reads, and one page
+   * failing leaves the names from the others in place.
+   */
   private loadAuthors(): void {
-    // The library endpoint caps a page at 100, so five pages are the recent 500
-    // books the Studio's spelling guide also reads.
-    forkJoin(
-      Array.from({ length: AUTHOR_BOOK_PAGES }, (_, index) =>
-        this.books.list({ page: index + 1, pageSize: AUTHOR_BOOK_PAGE_SIZE })),
-    ).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (pages) => this.authors.set(
-        pages
-          .flatMap((page) => page.items)
-          .map((book) => book.author)
-          .filter((author): author is string => !!author?.trim()),
-      ),
-      // The suggestion is a convenience: a failed load simply offers none.
-      error: () => undefined,
+    const page = (pageNumber: number) =>
+      this.books.list({ page: pageNumber, pageSize: AUTHOR_BOOK_PAGE_SIZE }).pipe(
+        catchError(() => of(null)),
+      );
+    page(1).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (first) => {
+        if (!first) return;
+        const pages = Math.min(
+          AUTHOR_BOOK_PAGES,
+          Math.max(1, Math.ceil((first.totalCount ?? 0) / AUTHOR_BOOK_PAGE_SIZE)),
+        );
+        if (pages === 1) {
+          this.authors.set(authorsOf([first]));
+          return;
+        }
+        forkJoin(Array.from({ length: pages - 1 }, (_, index) => page(index + 2)))
+          .pipe(takeUntilDestroyed(this.destroyRef))
+          .subscribe({
+            next: (rest) => this.authors.set(authorsOf([first, ...rest])),
+          });
+      },
     });
   }
 
@@ -709,4 +863,12 @@ function serverMessage(error: unknown): string | null {
   if (!(error instanceof HttpErrorResponse)) return null;
   const body = error.error as { error?: unknown } | null;
   return typeof body?.error === 'string' ? body.error : null;
+}
+
+/** The authors named by a set of book pages, skipping the pages that failed. */
+function authorsOf(pages: ReadonlyArray<{ items: ReadonlyArray<{ author?: string | null }> } | null>): string[] {
+  return pages
+    .flatMap((page) => page?.items ?? [])
+    .map((book) => book.author)
+    .filter((author): author is string => !!author?.trim());
 }
