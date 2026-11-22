@@ -58,7 +58,12 @@ by writing its reference into the text, unless the caller removed it.
 | `PUT /api/topics/{id}` | Rename (merges into an existing topic of that name) |
 | `POST /api/topics/{id}/merge` | Merge into `targetId` |
 | `PUT /api/topics/{id}/description` | Set the topic's own words; empty clears them |
+| `PUT /api/topics/kind` | Set or clear a kind on one or many topics (max 500, source `reader`) |
 | `DELETE /api/topics/{id}` | Delete, turning references into plain words |
+| `GET /api/topic-kinds` | List kinds in sort order with topic counts |
+| `POST /api/topic-kinds` | Create a kind (`409` duplicate name/colour, `422` at 12-kind cap) |
+| `PUT /api/topic-kinds/{id}` | Update name, colour (`swapColor` swaps with another kind), or sort order |
+| `DELETE /api/topic-kinds/{id}` | Delete a kind; its topics become untyped |
 | `POST /api/books/{bookId}/notes`, `PUT /api/notes/{id}` | Create or edit a note; optional `topics` are its pill topics (see "Writing a note") |
 | `POST /api/topics/link` | Add the named topics to many notes (creates new topics); one unit of work |
 | `POST /api/topics/unlink` | Remove the named topics from many notes; how a link is undone |
@@ -77,15 +82,38 @@ and appends the merged topic's after a blank line. Backups and the portable
 archive carry it; an archive written before descriptions imports its topics
 without one.
 
+## Topic kinds
+
+A topic can carry at most one kind (or none), stored on `TopicModel.KindId`
+with its provenance in `TopicModel.KindSource` (`reader`, `assistant`, or
+`connected-app`; null when untyped).
+
+- **Defaults and limit:** Each library starts with six built-in seeded kinds —
+  `Person`, `Idea`, `Place`, `Work`, `Event`, `Field` (`kind-1` … `kind-6`) —
+  which the reader can rename, recolour, reorder, or delete like custom kinds.
+  At most **12** kinds may exist, each with a unique folded `NormalizedName` and
+  palette key (`kind-1` … `kind-12`).
+- **Delete:** Deleting a kind sets both `KindId` and `KindSource` to `null` on
+  its topics without deleting topics.
+- **Merge:** Merging (or renaming onto an existing topic) keeps the survivor's
+  kind and source; if the survivor has none, it takes the merged topic's `KindId`
+  and `KindSource`.
+- **Portability and backup:** Backups and portable archives carry `topicKinds`
+  and each topic's `kindId`/`kindSource`. Archives without `topicKinds` import
+  with default kinds and untyped topics; imports match existing kinds by
+  normalized name and honour the 12-kind limit (extra kinds are skipped and
+  reported, with their topics imported untyped).
+
 ## Data model
 
 ```
-TopicModel (1) ←→ (M) NoteTopicModel (M) ←→ (1) NoteModel ──→ BookModel
+TopicKindModel (1) ←── (M) TopicModel (1) ←→ (M) NoteTopicModel (M) ←→ (1) NoteModel ──→ BookModel
 ```
 
 | Table | Fields |
 | --- | --- |
-| `Topics` | `Id`, `Topic`, `Description` (nullable, ≤ 4,000) |
+| `TopicKinds` | `Id`, `Name`, `NormalizedName` (unique), `ColorKey` (`kind-1`…`kind-12`, unique), `SortOrder`, `CreatedAt` |
+| `Topics` | `Id`, `Topic`, `NormalizedName` (unique), `Description` (nullable, ≤ 4,000), `KindId` (nullable FK → `TopicKinds`, `OnDelete: SetNull`), `KindSource` (nullable, `reader` \| `assistant` \| `connected-app`) |
 | `NoteTopics` | `NoteId`, `TopicId` (composite key) |
 | `Notes` | `Id`, `BookId`, `Content`, `SelectedText`, `Kind`, … |
 

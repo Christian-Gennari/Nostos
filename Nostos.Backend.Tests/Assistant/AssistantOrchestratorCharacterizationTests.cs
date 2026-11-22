@@ -103,7 +103,7 @@ public sealed class AssistantOrchestratorCharacterizationTests : IClassFixture<S
 
         Snapshot(ToolResultFor(h, "topics_list")).Should().Be(
             """
-            [{"id":"{id}","name":"Homecoming","usageCount":0,"noteMatchCount":0,"noteMatchSnippet":null,"description":null},{"id":"{id}","name":"Memory","usageCount":0,"noteMatchCount":0,"noteMatchSnippet":null,"description":null}]
+            [{"id":"{id}","name":"Homecoming","usageCount":0,"noteMatchCount":0,"noteMatchSnippet":null,"description":null,"kindId":null,"kindSource":null},{"id":"{id}","name":"Memory","usageCount":0,"noteMatchCount":0,"noteMatchSnippet":null,"description":null,"kindId":null,"kindSource":null}]
             """);
 
         Snapshot(response).Should().Be(

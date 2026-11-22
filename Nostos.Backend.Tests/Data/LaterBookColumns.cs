@@ -32,6 +32,7 @@ internal static class LaterBookColumns
         await RestoreWritingPageSetupAsync(db);
         await RestoreBookValuesAsync(db);
         await RestorePlaybackRateAsync(db);
+        await RestoreTopicKindColumnsAsync(db);
         await DropLegacyFavouriteAsync(db);
     }
 
@@ -99,6 +100,27 @@ internal static class LaterBookColumns
     public static async Task RestoreTopicNormalizedNameAsync(NostosDbContext db) =>
         await db.Database.ExecuteSqlRawAsync(
             "ALTER TABLE \"Topics\" ADD COLUMN \"NormalizedName\" TEXT NOT NULL DEFAULT ''");
+
+    /// <summary>
+    /// AddTopicKinds (issue #1767): the kind assignment columns the current
+    /// model reads and writes on every topic.
+    /// </summary>
+    public static async Task RestoreTopicKindColumnsAsync(NostosDbContext db)
+    {
+        await using var connection = new Microsoft.Data.Sqlite.SqliteConnection(db.Database.GetConnectionString()!);
+        await connection.OpenAsync();
+        foreach (var (column, ddl) in new[]
+        {
+            ("KindId", "ALTER TABLE \"Topics\" ADD COLUMN \"KindId\" TEXT NULL"),
+            ("KindSource", "ALTER TABLE \"Topics\" ADD COLUMN \"KindSource\" TEXT NULL"),
+        })
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT COUNT(*) FROM pragma_table_info('Topics') WHERE name = '{column}'";
+            if (Convert.ToInt32(await command.ExecuteScalarAsync()) == 0)
+                await db.Database.ExecuteSqlRawAsync(ddl);
+        }
+    }
 
     /// <summary>
     /// AddCoverVersion: the cover cache token the current model reads and

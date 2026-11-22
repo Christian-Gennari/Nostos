@@ -762,6 +762,51 @@ public sealed class PortableArchiveValidationTests
             "duplicate_relationship");
     }
 
+    [Fact]
+    public void Portable_data_validates_topic_kinds_and_topic_kind_references()
+    {
+        var kindA = new PortableTopicKind(Guid.NewGuid(), "Person", "kind-1", 1, DateTime.UnixEpoch);
+        var kindB = new PortableTopicKind(Guid.NewGuid(), "Idea", "kind-2", 2, DateTime.UnixEpoch);
+        var topic = new PortableTopic(Guid.NewGuid(), "Kant", KindId: kindA.Id, KindSource: TopicKindSources.Reader);
+
+        PortableArchiveValidation.ValidatePortableData(EmptyData() with
+        {
+            TopicKinds = [kindA, kindB],
+            Topics = [topic],
+        });
+
+        RejectData(
+            EmptyData() with { TopicKinds = [kindA, kindA] },
+            "duplicate_id");
+        RejectData(
+            EmptyData() with { TopicKinds = [kindA with { Name = "  " }] },
+            "malformed_data");
+        RejectData(
+            EmptyData() with { TopicKinds = [kindA with { Name = new string('k', 101) }] },
+            "malformed_data");
+        RejectData(
+            EmptyData() with { TopicKinds = [kindA, kindB with { Name = "person" }] },
+            "duplicate_topic_kind");
+        RejectData(
+            EmptyData() with { TopicKinds = [kindA with { ColorKey = "kind-99" }] },
+            "malformed_data");
+        RejectData(
+            EmptyData() with { TopicKinds = [kindA, kindB with { ColorKey = "kind-1" }] },
+            "duplicate_topic_kind_color");
+        RejectData(
+            EmptyData() with { TopicKinds = null, Topics = [topic] },
+            "malformed_relationship");
+        RejectData(
+            EmptyData() with { TopicKinds = [kindA], Topics = [topic with { KindId = Guid.NewGuid() }] },
+            "malformed_relationship");
+        RejectData(
+            EmptyData() with { TopicKinds = [kindA], Topics = [topic with { KindSource = "bot" }] },
+            "malformed_data");
+        RejectData(
+            EmptyData() with { TopicKinds = [kindA], Topics = [topic with { KindId = null, KindSource = TopicKindSources.Reader }] },
+            "malformed_data");
+    }
+
     private static void RejectData(PortableLibraryData data, string code) =>
         ThrowPortableError(() => PortableArchiveValidation.ValidatePortableData(data), code);
 

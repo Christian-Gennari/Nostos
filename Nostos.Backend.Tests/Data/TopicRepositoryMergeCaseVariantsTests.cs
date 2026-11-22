@@ -219,6 +219,81 @@ public sealed class TopicRepositoryMergeCaseVariantsTests : IClassFixture<Sqlite
         (await ReadRevisionAsync(db)).Should().Be(revisionBefore);
     }
 
+    [Fact]
+    public async Task MergeCaseVariantsAsync_carries_kind_only_when_survivor_has_none()
+    {
+        var dbPath = _fixture.CreateDatabasePath();
+        var alphaId = Guid.NewGuid();
+        var alphaLowerId = Guid.NewGuid();
+        var betaId = Guid.NewGuid();
+        var betaLowerId = Guid.NewGuid();
+
+        await using (var seedDb = _fixture.CreateContext(dbPath))
+        {
+            var book = new PhysicalBookModel { Id = Guid.NewGuid(), Title = "Kind Merge Book" };
+            seedDb.Books.Add(book);
+            var n1 = new NoteModel { Id = Guid.NewGuid(), BookId = book.Id, Content = "[[Alpha]] [[alpha]] [[Beta]] [[beta]]", CreatedAt = DateTime.UtcNow };
+            var n2 = new NoteModel { Id = Guid.NewGuid(), BookId = book.Id, Content = "[[Alpha]] [[Beta]]", CreatedAt = DateTime.UtcNow };
+            seedDb.Notes.AddRange(n1, n2);
+
+            // Alpha has more links and no kind -> takes alphaLower's PersonId + Assistant
+            var alpha = new TopicModel { Id = alphaId, Topic = "Alpha", NormalizedName = "ALPHA" };
+            var alphaLower = new TopicModel
+            {
+                Id = alphaLowerId,
+                Topic = "alpha",
+                NormalizedName = "ALPHA|1",
+                KindId = TopicKindModel.PersonId,
+                KindSource = TopicKindSources.Assistant,
+            };
+
+            // Beta has more links and already has IdeaId + Reader -> keeps IdeaId + Reader
+            var beta = new TopicModel
+            {
+                Id = betaId,
+                Topic = "Beta",
+                NormalizedName = "BETA",
+                KindId = TopicKindModel.IdeaId,
+                KindSource = TopicKindSources.Reader,
+            };
+            var betaLower = new TopicModel
+            {
+                Id = betaLowerId,
+                Topic = "beta",
+                NormalizedName = "BETA|1",
+                KindId = TopicKindModel.PlaceId,
+                KindSource = TopicKindSources.ConnectedApp,
+            };
+
+            seedDb.Topics.AddRange(alpha, alphaLower, beta, betaLower);
+            seedDb.NoteTopics.AddRange(
+                new NoteTopicModel { NoteId = n1.Id, TopicId = alphaId },
+                new NoteTopicModel { NoteId = n2.Id, TopicId = alphaId },
+                new NoteTopicModel { NoteId = n1.Id, TopicId = alphaLowerId },
+                new NoteTopicModel { NoteId = n1.Id, TopicId = betaId },
+                new NoteTopicModel { NoteId = n2.Id, TopicId = betaId },
+                new NoteTopicModel { NoteId = n1.Id, TopicId = betaLowerId });
+            await seedDb.SaveChangesAsync();
+        }
+
+        await using (var db = _fixture.CreateContext(dbPath))
+        {
+            var merged = await new TopicRepository(db).MergeCaseVariantsAsync();
+            merged.Should().Be(2);
+        }
+
+        await using (var verifyDb = _fixture.CreateContext(dbPath))
+        {
+            var alpha = await verifyDb.Topics.AsNoTracking().SingleAsync(t => t.Id == alphaId);
+            alpha.KindId.Should().Be(TopicKindModel.PersonId);
+            alpha.KindSource.Should().Be(TopicKindSources.Assistant);
+
+            var beta = await verifyDb.Topics.AsNoTracking().SingleAsync(t => t.Id == betaId);
+            beta.KindId.Should().Be(TopicKindModel.IdeaId);
+            beta.KindSource.Should().Be(TopicKindSources.Reader);
+        }
+    }
+
     private static async Task<long> ReadRevisionAsync(NostosDbContext db)
     {
         var row = await db.LibraryStates.AsNoTracking().SingleOrDefaultAsync();

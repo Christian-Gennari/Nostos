@@ -230,6 +230,245 @@ public sealed class PortableArchiveServiceTests
     }
 
     [Fact]
+    public async Task Portable_archive_round_trips_topic_kinds_and_topic_kind_assignments()
+    {
+        await using var source = await LocalPortableTestLibrary.CreateAsync();
+        var ids = await PortableArchiveTestSupport.PopulateRepresentativeAsync(source.Db, source.Storage);
+
+        var customKindId = Guid.NewGuid();
+        var secondTopicId = Guid.NewGuid();
+        var thirdTopicId = Guid.NewGuid();
+
+        var personKind = await source.Db.TopicKinds.SingleAsync(k => k.Id == TopicKindModel.PersonId);
+        personKind.Name = "Author";
+
+        // Remove one built-in kind so we prove deleted defaults stay deleted on round-trip.
+        var eventKind = await source.Db.TopicKinds.SingleAsync(k => k.Id == TopicKindModel.EventId);
+        source.Db.TopicKinds.Remove(eventKind);
+
+        source.Db.TopicKinds.Add(new TopicKindModel
+        {
+            Id = customKindId,
+            Name = "Method",
+            ColorKey = "kind-8",
+            SortOrder = 7,
+            CreatedAt = new DateTime(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc),
+        });
+
+        var primaryTopic = await source.Db.Topics.SingleAsync(t => t.Id == ids.TopicId);
+        primaryTopic.KindId = TopicKindModel.PersonId;
+        primaryTopic.KindSource = TopicKindSources.Reader;
+
+        source.Db.Topics.AddRange(
+            new TopicModel
+            {
+                Id = secondTopicId,
+                Topic = "Phenomenology",
+                KindId = customKindId,
+                KindSource = TopicKindSources.Assistant,
+            },
+            new TopicModel
+            {
+                Id = thirdTopicId,
+                Topic = "Athens",
+                KindId = TopicKindModel.PlaceId,
+                KindSource = TopicKindSources.ConnectedApp,
+            });
+        await source.Db.SaveChangesAsync();
+
+        using var archive = new MemoryStream();
+        var exported = await source.Portability().ExportAsync(archive);
+
+        await using var destination = await LocalPortableTestLibrary.CreateAsync();
+        archive.Position = 0;
+        var imported = await destination.Portability().ImportAsync(archive);
+
+        imported.IntegrityVerified.Should().BeTrue();
+        imported.SkippedTopicKinds.Should().BeNull();
+
+        destination.Db.ChangeTracker.Clear();
+        var importedKinds = await destination.Db.TopicKinds.AsNoTracking().OrderBy(k => k.SortOrder).ToListAsync();
+        importedKinds.Should().HaveCount(6);
+        importedKinds.Should().NotContain(k => k.Id == TopicKindModel.EventId);
+        importedKinds.Single(k => k.Id == TopicKindModel.PersonId).Name.Should().Be("Author");
+        var importedCustom = importedKinds.Single(k => k.Id == customKindId);
+        importedCustom.Name.Should().Be("Method");
+        importedCustom.ColorKey.Should().Be("kind-8");
+
+        var importedTopics = await destination.Db.Topics.AsNoTracking().ToListAsync();
+        var t1 = importedTopics.Single(t => t.Id == ids.TopicId);
+        t1.KindId.Should().Be(TopicKindModel.PersonId);
+        t1.KindSource.Should().Be(TopicKindSources.Reader);
+
+        var t2 = importedTopics.Single(t => t.Id == secondTopicId);
+        t2.KindId.Should().Be(customKindId);
+        t2.KindSource.Should().Be(TopicKindSources.Assistant);
+
+        var t3 = importedTopics.Single(t => t.Id == thirdTopicId);
+        t3.KindId.Should().Be(TopicKindModel.PlaceId);
+        t3.KindSource.Should().Be(TopicKindSources.ConnectedApp);
+    }
+
+    [Fact]
+    public async Task Portable_import_enforces_12_kind_limit_and_leaves_extra_kind_topics_untyped()
+    {
+        using var baseArchive = await ExportFixtureAsync();
+        var entries = await ReadEntriesAsync(baseArchive);
+
+        var keptKindId = Guid.NewGuid();
+        var extraKind13Id = Guid.NewGuid();
+        var extraKind14Id = Guid.NewGuid();
+        var keptTopicId = Guid.NewGuid();
+        var extraTopic13Id = Guid.NewGuid();
+        var extraTopic14Id = Guid.NewGuid();
+
+        var kindObjects = new JsonArray();
+        for (var i = 1; i <= 14; i++)
+        {
+            var id = i switch
+            {
+                1 => keptKindId,
+                13 => extraKind13Id,
+                14 => extraKind14Id,
+                _ => Guid.NewGuid(),
+            };
+            kindObjects.Add(new JsonObject
+            {
+                ["id"] = id,
+                ["name"] = $"Kind {i:D2}",
+                ["colorKey"] = $"kind-{((i - 1) % 12) + 1}",
+                ["sortOrder"] = i,
+                ["createdAt"] = DateTime.UnixEpoch,
+            });
+        }
+
+        MutateJsonEntry(entries, "data/library.json", root =>
+        {
+            root["topicKinds"] = kindObjects;
+            var topics = root["concepts"]!.AsArray();
+            topics.Add(new JsonObject
+            {
+                ["id"] = keptTopicId,
+                ["concept"] = "Kept Kind Topic",
+                ["kindId"] = keptKindId,
+                ["kindSource"] = TopicKindSources.Reader,
+            });
+            topics.Add(new JsonObject
+            {
+                ["id"] = extraTopic13Id,
+                ["concept"] = "Skipped Kind Topic 13",
+                ["kindId"] = extraKind13Id,
+                ["kindSource"] = TopicKindSources.Assistant,
+            });
+            topics.Add(new JsonObject
+            {
+                ["id"] = extraTopic14Id,
+                ["concept"] = "Skipped Kind Topic 14",
+                ["kindId"] = extraKind14Id,
+                ["kindSource"] = TopicKindSources.ConnectedApp,
+            });
+        });
+        MutateJsonEntry(entries, "manifest.json", root =>
+        {
+            var counts = root["counts"]!.AsObject();
+            counts["topics"] = counts["topics"]!.GetValue<int>() + 3;
+        });
+        RehashDataDescriptor(entries);
+
+        using var archive = await BuildArchiveAsync(entries);
+        await using var destination = await LocalPortableTestLibrary.CreateAsync();
+
+        var imported = await destination.Portability().ImportAsync(archive);
+
+        imported.IntegrityVerified.Should().BeTrue();
+        imported.SkippedTopicKinds.Should().Equal("Kind 13", "Kind 14");
+
+        destination.Db.ChangeTracker.Clear();
+        (await destination.Db.TopicKinds.CountAsync()).Should().Be(TopicKindModel.MaxKinds);
+
+        var keptTopic = await destination.Db.Topics.AsNoTracking().SingleAsync(t => t.Id == keptTopicId);
+        keptTopic.KindId.Should().Be(keptKindId);
+        keptTopic.KindSource.Should().Be(TopicKindSources.Reader);
+
+        var untyped13 = await destination.Db.Topics.AsNoTracking().SingleAsync(t => t.Id == extraTopic13Id);
+        untyped13.KindId.Should().BeNull();
+        untyped13.KindSource.Should().BeNull();
+
+        var untyped14 = await destination.Db.Topics.AsNoTracking().SingleAsync(t => t.Id == extraTopic14Id);
+        untyped14.KindId.Should().BeNull();
+        untyped14.KindSource.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Portable_import_accepts_legacy_archive_without_topic_kinds()
+    {
+        using var baseArchive = await ExportFixtureAsync();
+        var entries = await ReadEntriesAsync(baseArchive);
+
+        MutateJsonEntry(entries, "data/library.json", root =>
+        {
+            root.Remove("topicKinds");
+            foreach (var topic in root["concepts"]!.AsArray())
+            {
+                topic!.AsObject().Remove("kindId");
+                topic.AsObject().Remove("kindSource");
+            }
+        });
+        RehashDataDescriptor(entries);
+
+        using var legacyArchive = await BuildArchiveAsync(entries);
+        await using var destination = await LocalPortableTestLibrary.CreateAsync();
+
+        var imported = await destination.Portability().ImportAsync(legacyArchive);
+
+        imported.IntegrityVerified.Should().BeTrue();
+        imported.SkippedTopicKinds.Should().BeNull();
+
+        destination.Db.ChangeTracker.Clear();
+        var kinds = await destination.Db.TopicKinds.AsNoTracking().ToListAsync();
+        TopicKindModel.MatchesBuiltInDefaults(kinds).Should().BeTrue();
+        (await destination.Db.Topics.AsNoTracking().ToListAsync())
+            .Should().OnlyContain(t => t.KindId == null && t.KindSource == null);
+    }
+
+    [Fact]
+    public async Task Exported_archive_with_topic_kinds_is_readable_when_new_fields_are_ignored()
+    {
+        await using var source = await LocalPortableTestLibrary.CreateAsync();
+        var ids = await PortableArchiveTestSupport.PopulateRepresentativeAsync(source.Db, source.Storage);
+        var topic = await source.Db.Topics.SingleAsync(t => t.Id == ids.TopicId);
+        topic.KindId = TopicKindModel.IdeaId;
+        topic.KindSource = TopicKindSources.Reader;
+        await source.Db.SaveChangesAsync();
+
+        using var archive = new MemoryStream();
+        await source.Portability().ExportAsync(archive);
+
+        var entries = await ReadEntriesAsync(archive);
+        var dataBytes = entries.Single(e => e.Name == "data/library.json").Bytes;
+
+        // Models an older reader whose payload contracts pre-date topicKinds/kindId/kindSource.
+        var legacy = JsonSerializer.Deserialize<PreTopicKindsLibraryData>(
+            dataBytes,
+            PortableArchiveJson.Options);
+
+        legacy.Should().NotBeNull();
+        legacy!.Books.Should().HaveCount(4);
+        legacy.Topics.Should().ContainSingle(t => t.Id == ids.TopicId && t.Topic == "Portability");
+    }
+
+    private sealed record PreTopicKindsTopic(
+        Guid Id,
+        [property: System.Text.Json.Serialization.JsonPropertyName("concept")] string Topic,
+        [property: System.Text.Json.Serialization.JsonPropertyName("description")] string? Description = null);
+
+    private sealed record PreTopicKindsLibraryData(
+        int Version,
+        List<PortableWork> Works,
+        List<PortableBook> Books,
+        [property: System.Text.Json.Serialization.JsonPropertyName("concepts")] List<PreTopicKindsTopic> Topics);
+
+    [Fact]
     public async Task Export_to_non_seekable_stream_avoids_synchronous_io()
     {
         // Regression for #554: Kestrel's response stream is non-seekable and
