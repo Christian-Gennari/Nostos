@@ -29,7 +29,7 @@ public class TopicRepository : ITopicRepository
         CancellationToken cancellationToken = default)
     {
         var safePage = Math.Max(1, page);
-        var safeSize = Math.Clamp(pageSize, 1, 200);
+        var safeSize = Math.Clamp(pageSize, 1, 250);
         var query = _db.Topics.AsQueryable();
 
         if (unkindedOnly)
@@ -43,20 +43,36 @@ public class TopicRepository : ITopicRepository
             .Skip((safePage - 1) * safeSize)
             .Take(safeSize)
             .ToListAsync(cancellationToken);
+        var totalPages = total == 0 ? 0 : (int)Math.Ceiling(total / (double)safeSize);
 
         return new TopicPageDto(
             items,
             safePage,
             safeSize,
             total,
-            total == 0 ? 0 : (int)Math.Ceiling(total / (double)safeSize),
-            unkindedTotal);
+            totalPages,
+            unkindedTotal,
+            safePage < totalPages ? safePage + 1 : null);
+    }
+
+    public async Task<List<TopicDto>> GetByIdsAsync(
+        IReadOnlyList<Guid> ids,
+        CancellationToken cancellationToken = default)
+    {
+        var wanted = ids.Distinct().ToList();
+        return wanted.Count == 0
+            ? []
+            : await QueryTopics(_db.Topics.Where(topic => wanted.Contains(topic.Id)))
+                .ToListAsync(cancellationToken);
     }
 
     private static IQueryable<TopicDto> QueryTopics(IQueryable<TopicModel> topics) =>
         topics
             .OrderByDescending(c => c.NoteTopics.Count())
             .ThenBy(c => c.Topic)
+            // A deterministic tie-break, so a page boundary can never repeat or
+            // skip a topic when two topics have the same usage and name.
+            .ThenBy(c => c.Id)
             .Select(c => new TopicDto(
                 c.Id,
                 c.Topic,

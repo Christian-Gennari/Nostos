@@ -276,6 +276,9 @@ public sealed class AssistantOrchestrator(
         var reviewedNoteIds = new HashSet<Guid>();
         var inspectedTopicIds = new HashSet<Guid>();
         var topicsInspected = false;
+        // The library's own count of topics with no kind, as of the last
+        // topics_list answer, so a turn cut short can say what is left.
+        int? unkindedTopics = null;
         var executedCapabilities = new List<string>();
         var successfulCapabilities = new HashSet<string>(StringComparer.Ordinal);
         var sourceReferences = new List<AssistantSourceReferenceDto>();
@@ -581,6 +584,8 @@ public sealed class AssistantOrchestrator(
                     {
                         topicsInspected = true;
                         inspectedTopicIds.UnionWith(AssistantCapabilityPayloads.ReadTopicIds(result.Data));
+                        if (AssistantCapabilityPayloads.ReadUnkindedTotal(result.Data) is { } unkinded)
+                            unkindedTopics = unkinded;
                     }
 
                     if (string.Equals(
@@ -684,7 +689,8 @@ public sealed class AssistantOrchestrator(
                 terminalError,
                 successfulCapabilities,
                 evidenceReferences.Count,
-                execution),
+                execution,
+                unkindedTopics),
             ct);
 
         var finalMetrics = executionMeter.Finish(final.StopReason);

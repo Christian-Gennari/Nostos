@@ -28,13 +28,22 @@ These are deterministic, provider-neutral payload measurements. They deliberatel
 > | Writing | 3 |
 > | **Total** | **39** |
 >
-> - serialized structured tool catalogue: **29,864 UTF-8 bytes**
-> - tool descriptions alone: **6,985 UTF-8 bytes**
-> - duplicate legacy `Available abilities...` prose: **8,654 UTF-8 bytes**
+> - serialized structured tool catalogue: **30,389 UTF-8 bytes**
+> - tool descriptions alone: **7,154 UTF-8 bytes**
+> - duplicate legacy `Available abilities...` prose: **8,823 UTF-8 bytes**
 >
 > The 2026-11 slice adds `topics_list_kinds`, `topics_create_kind` and
-> `topics_set_kind`, and gives `topics_list` paging. The numbers below are the
-> original #563 baseline and are kept as the measurement it was taken from.
+> `topics_set_kind`, and gives `topics_list` paging (up to 250 topics, a
+> `nextPage`, and an `untyped` projection of only `{id, name}` — 71 bytes against
+> 172 for a full topic row, measured on the 149-topic live seed). The #1770
+> review added the `namedTopicIds` argument to `topics_set_kind` and made the
+> `topics_list` summary explain the compact read; that is the +525 bytes over
+> the first count of this slice. A per-turn pruned catalogue was considered and
+> **not** shipped: see "Contextual grouping candidate" below — pruning needs a
+> router and an expansion path to keep every legitimate capability reachable,
+> which is not a contained change, and the deterministic evidence still does not
+> justify it. The numbers below are the original #563 baseline and are kept as
+> the measurement it was taken from.
 
 The normal core catalogue contains 25 capabilities:
 

@@ -15,12 +15,49 @@ public interface ITopicRepository
     /// topics with no kind or only one kind. The assistant's large-library
     /// classification reads the library in pages rather than all at once.
     /// </summary>
-    Task<TopicPageDto> GetPageWithUsageAsync(
+    async Task<TopicPageDto> GetPageWithUsageAsync(
         int page,
         int pageSize,
         bool unkindedOnly,
         Guid? kindId,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default)
+    {
+        // A host or test double that does not page still answers: the whole
+        // library is one list, sliced here. The product repository overrides
+        // this with a real query page.
+        var all = await GetAllWithUsageCountAsync(cancellationToken);
+        if (unkindedOnly)
+            all = all.Where(topic => topic.KindId is null).ToList();
+        else if (kindId is { } only)
+            all = all.Where(topic => topic.KindId == only).ToList();
+
+        var safePage = Math.Max(1, page);
+        var safeSize = Math.Clamp(pageSize, 1, 250);
+        var total = all.Count;
+        var totalPages = total == 0 ? 0 : (int)Math.Ceiling(total / (double)safeSize);
+        return new TopicPageDto(
+            all.Skip((safePage - 1) * safeSize).Take(safeSize).ToList(),
+            safePage,
+            safeSize,
+            total,
+            totalPages,
+            unkindedOnly ? total : all.Count(topic => topic.KindId is null),
+            safePage < totalPages ? safePage + 1 : null);
+    }
+
+    /// <summary>
+    /// The topics with these ids, with their usage count; ids that do not exist
+    /// are absent. Used to classify a batch without reading the whole library.
+    /// </summary>
+    async Task<List<TopicDto>> GetByIdsAsync(
+        IReadOnlyList<Guid> ids,
+        CancellationToken cancellationToken = default)
+    {
+        var wanted = ids.Distinct().ToHashSet();
+        return (await GetAllWithUsageCountAsync(cancellationToken))
+            .Where(topic => wanted.Contains(topic.Id))
+            .ToList();
+    }
 
     /// <summary>
     /// Returns topics whose linked notes match the given term in Content, SelectedText, or Book Title.

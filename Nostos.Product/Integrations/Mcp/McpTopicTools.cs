@@ -1,9 +1,11 @@
 using System.ComponentModel;
+using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol;
 using ModelContextProtocol.Server;
 using Nostos.Backend.Data.Interfaces;
+using Nostos.Backend.Integrations.Assistant;
 using Nostos.Backend.Data.Models;
 using Nostos.Backend.Services.Notes;
 using Nostos.Shared.Dtos;
@@ -32,18 +34,23 @@ public sealed class McpTopicTools(IHttpContextAccessor http) : NostosMcpTool(htt
         if (string.IsNullOrWhiteSpace(search))
         {
             // The capability pages a large library; a connected app listing
-            // topics still sees every topic, so read each page in turn.
+            // topics still sees every topic, so read each page in turn. An older
+            // host answers topics_list with a bare array, so read both shapes.
             topics = [];
-            const int pageSize = 200;
+            const int pageSize = 250;
             var page = 1;
             while (true)
             {
-                var result = await RunAsync<TopicPageDto>(
+                var payload = await RunAsync<JsonElement>(
                     "topics_list",
                     new { page, pageSize },
                     cancellationToken);
-                topics.AddRange(result.Items);
-                if (result.TotalPages == 0 || page >= result.TotalPages)
+                var paged = AssistantCapabilityPayloads.Read<TopicPageDto>(payload);
+                var items = paged?.Items
+                    ?? AssistantCapabilityPayloads.Read<List<TopicDto>>(payload)
+                    ?? [];
+                topics.AddRange(items);
+                if (paged is null || paged.TotalPages == 0 || page >= paged.TotalPages)
                     break;
                 page++;
             }

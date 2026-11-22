@@ -65,7 +65,7 @@ public static class AssistantChangePolicy
         }
 
         if (counts.TopicKindChanges > options.AutoApplyTopicKinds)
-            reasons.Add($"Gives a kind to {counts.TopicKindChanges} topics.");
+            reasons.Add(TopicKindReason(counts));
 
         if (readUntrustedContent)
             reasons.Add("It was worked out from book text or notes, so you decide.");
@@ -77,4 +77,32 @@ public static class AssistantChangePolicy
     }
 
     private static string Books(int count) => count == 1 ? "1 book" : $"{count} books";
+
+    private static string Topics(int count) => count == 1 ? "1 topic" : $"{count} topics";
+
+    /// <summary>
+    /// What the kind changes do, in their own words: giving a kind, changing
+    /// one and removing one are three different acts, and a clear is not a gift.
+    /// A host that predates the split (no per-kind counts) falls back to the
+    /// neutral "changes the kind of N topics".
+    /// </summary>
+    private static string TopicKindReason(LibraryChangesetCountsDto counts)
+    {
+        var parts = new List<string>();
+        if (counts.TopicKindsGiven > 0)
+            parts.Add($"gives {Topics(counts.TopicKindsGiven)} a kind");
+        if (counts.TopicKindsChanged > 0)
+            parts.Add($"changes the kind of {Topics(counts.TopicKindsChanged)}");
+        if (counts.TopicKindsCleared > 0)
+            parts.Add($"removes the kind from {Topics(counts.TopicKindsCleared)}");
+
+        var sentence = parts.Count switch
+        {
+            0 => $"changes the kind of {Topics(counts.TopicKindChanges)}",
+            1 => parts[0],
+            2 => $"{parts[0]} and {parts[1]}",
+            _ => $"{string.Join(", ", parts.Take(parts.Count - 1))} and {parts[^1]}",
+        };
+        return char.ToUpperInvariant(sentence[0]) + sentence[1..] + ".";
+    }
 }

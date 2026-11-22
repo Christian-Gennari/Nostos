@@ -99,6 +99,14 @@ internal static class AssistantCapabilityPayloads
     public static IEnumerable<Guid> ReadTopicIds(JsonElement? data) =>
         ReadTopics(data)?.Select(topic => topic.Id).Where(id => id != Guid.Empty) ?? [];
 
+    /// <summary>
+    /// How many topics still had no kind when <c>topics_list</c> answered, for
+    /// the sentence a turn cut short adds above its review card. Null when the
+    /// shape does not say.
+    /// </summary>
+    public static int? ReadUnkindedTotal(JsonElement? data) =>
+        Read<TopicPageDto>(data)?.UnkindedTotal;
+
     /// <summary>The <c>noteId</c> a read capability was called with.</summary>
     public static Guid? ReadNoteId(JsonElement args) =>
         Read<AssistantNoteTarget>(args) is { NoteId: { } noteId }

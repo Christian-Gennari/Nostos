@@ -20,7 +20,10 @@ public record TopicPageDto(
     int PageSize,
     int Total,
     int TotalPages,
-    int UnkindedTotal);
+    int UnkindedTotal,
+    // APPENDED (issue #1770 review): the next page to ask for, or null on the
+    // last one, so a reader never has to compute it from the totals.
+    int? NextPage = null);
 
 // For the detail view
 public record TopicDetailDto(Guid Id, string Name, List<NoteContextDto> Notes);

@@ -195,6 +195,19 @@ public sealed class AssistantChangesetDraft(ILibraryChangesetService changesets,
         var canonicalPreview = await changesets.PreviewAsync(plan.Ops, ct);
         if (!canonicalPreview.Success)
         {
+            // The raw sequence is a last resort for a genuinely irregular plan
+            // (a staged name swap, say), not a scaling path: it is a second full
+            // preview plus a second step build. A turn classifies at most a few
+            // pages of 250 topics per call, so a canonical plan over 1,000 ops
+            // is already beyond what one request should stage; refuse it rather
+            // than pay for the fallback twice.
+            if (plan.Ops.Count > 1_000)
+            {
+                return AssistantToolResult.Fail(
+                    "changeset_too_large",
+                    "This change is too large to stage in one go. Split it into a few requests and stage each one.");
+            }
+
             var fallbackDepends = ComputeSimpleDependsOn(rawCandidate);
             return await CommitAsync(rawCandidate, nextRefId, previewState, rawCandidate, fallbackDepends, new Dictionary<Guid, int>(), rawPreview, ct);
         }
@@ -298,7 +311,13 @@ public sealed class AssistantChangesetDraft(ILibraryChangesetService changesets,
         AssistantToolResult.Ok(JsonSerializer.SerializeToElement(new
         {
             status = "staged",
-            steps = steps.Select(s => s.Summary).ToList(),
+            // The step count and the latest sentence, not every summary: a
+            // classification stages hundreds of steps in a few calls, and
+            // echoing the whole list back after each one made the turn's prompt
+            // grow quadratically (measured: 142k prompt tokens for 144 topics
+            // before this was trimmed).
+            stepCount = steps.Count,
+            latestStep = steps.Count == 0 ? null : steps[^1].Summary,
             note = "Staged, not applied. Stage every change the request needs; Nostos applies or presents them together when you finish.",
             changesetSoFar = counts,
         }, Json));

@@ -235,14 +235,14 @@ public static partial class AssistantCapabilities
             "topics_list",
             AssistantTrustClass.Suggest,
             AssistantCapabilityCategory.KnowledgeRetrieval,
-            "Lists topics ordered by usage, one page at a time, each with its kind and who set it. Use untyped to find topics that have no kind yet, and page through a large library rather than asking for all of it at once.",
+            "Lists topics ordered by usage, one page at a time, each with its kind and who set it. Use untyped to classify: it lists only topics with no kind yet as id and name, which is all classifying needs. nextPage says which page to ask for next; a large library is a few pages, not one huge answer.",
             """
             {
               "type": "object",
               "properties": {
                 "page": { "type": "integer", "minimum": 1, "description": "The 1-based page of topics to return. Defaults to 1." },
-                "pageSize": { "type": "integer", "minimum": 1, "maximum": 200, "description": "How many topics per page. Defaults to 50." },
-                "untyped": { "type": "boolean", "description": "True to list only topics that have no kind yet." },
+                "pageSize": { "type": "integer", "minimum": 1, "maximum": 250, "description": "How many topics per page, up to 250. Defaults to 250 with untyped and 50 otherwise." },
+                "untyped": { "type": "boolean", "description": "True to list only topics that have no kind yet, as {id, name} only." },
                 "kindId": { "type": "string", "format": "uuid", "description": "Only topics with this kind. Omit it for every kind." }
               },
               "required": [],
@@ -252,18 +252,39 @@ public static partial class AssistantCapabilities
             async (context, args, ct) =>
             {
                 var page = Num(args, "page") ?? 1;
-                var pageSize = Num(args, "pageSize") ?? 50;
+                var untyped = Bool(args, "untyped") ?? false;
+                // Classifying reads the whole unkinded set; a full page by
+                // default means a 150-topic library is one call, not three.
+                var pageSize = Num(args, "pageSize") ?? (untyped ? 250 : 50);
                 if (page < 1)
                     return Invalid("'page' must be at least 1.");
-                if (pageSize is < 1 or > 200)
-                    return Invalid("'pageSize' must be between 1 and 200.");
-
+                if (pageSize is < 1 or > 250)
+                    return Invalid("'pageSize' must be between 1 and 250.");
                 var result = await topics.GetPageWithUsageAsync(
                     page,
                     pageSize,
-                    Bool(args, "untyped") ?? false,
+                    untyped,
                     Id(args, "kindId"),
                     ct);
+
+                // Classifying a topic only needs its id and name. Measured on a
+                // 149-topic library, the full row is 172 bytes against 71 for
+                // this projection, so a 250-topic page spends about 59% less of
+                // the turn's token budget.
+                if (untyped)
+                {
+                    return AssistantToolResult.Ok(Element(new
+                    {
+                        items = result.Items.Select(topic => new { id = topic.Id, name = topic.Name }).ToList(),
+                        result.Page,
+                        result.PageSize,
+                        result.Total,
+                        result.TotalPages,
+                        result.UnkindedTotal,
+                        result.NextPage,
+                    }));
+                }
+
                 return AssistantToolResult.Ok(Element(result));
             }),
 
