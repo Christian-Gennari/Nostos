@@ -118,6 +118,14 @@
 .map-sheet-row {
   display: grid;
   gap: 0.45rem;
+  min-width: 0;
+}
+
+/* The kind rows are shared with the map's wide legend; in the sheet they must
+   wrap inside the row rather than widen the panel. */
+.map-sheet-row app-map-kind-legend {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .map-sheet-head {

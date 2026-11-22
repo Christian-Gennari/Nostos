@@ -15,6 +15,7 @@ import { TopicChipComponent } from '../ui/topic-chip/topic-chip.component';
 import { rankTopicChoices, thoughtForDisplay, topicChoices } from '../ui/note-item/note-item.helpers';
 import { noteWikilinksToText } from '../ui/pipes/note-format.pipe';
 import { TopicMapComponent, type MapCamera, type MapScopeInfo } from './topic-map/topic-map.component';
+import { MapKindLegendComponent } from './topic-map/map-kind-legend.component';
 import {
   LOCAL_MAP_DEPTH_MAX,
   LOCAL_MAP_DEPTH_MIN,
@@ -65,6 +66,7 @@ function parseMin(raw: string | null, fallback: number | null = null): number | 
     SettingsPopoverComponent,
     TopicChipComponent,
     TopicMapComponent,
+    MapKindLegendComponent,
   ],
   templateUrl: './brain-map.page.html',
   styleUrls: ['./brain-map.page.css'],
@@ -161,6 +163,14 @@ export class BrainMapPage {
   });
 
   readonly controlsOpen = signal(false);
+
+  /**
+   * The kind legend the map computed, mirrored into the phone's Controls sheet.
+   * The map owns the scope-aware counts and visibility, so the sheet reads its
+   * entries rather than recounting them from a different set of topics.
+   */
+  readonly legendEntries = computed(() => this.map()?.kindLegend() ?? []);
+  readonly hiddenByKindCount = computed(() => this.scope().hiddenByKindCount);
 
   readonly finder = signal('');
   readonly finderOpen = signal(false);

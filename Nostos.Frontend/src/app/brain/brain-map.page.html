@@ -185,6 +185,20 @@
         />
       </div>
 
+      @if (legendEntries().length || hiddenByKindCount() > 0) {
+      <div class="map-sheet-row">
+        <div class="map-sheet-head">
+          <span id="map-sheet-kinds-label" class="map-control-label">Kinds</span>
+        </div>
+        <app-map-kind-legend
+          [entries]="legendEntries()"
+          [hiddenByKindCount]="hiddenByKindCount()"
+          (toggled)="onToggleKind($event)"
+          (cleared)="onClearKindFilter()"
+        />
+      </div>
+      }
+
       @if (aroundTopic(); as root) {
       <div class="map-sheet-row">
         <div class="map-sheet-head">

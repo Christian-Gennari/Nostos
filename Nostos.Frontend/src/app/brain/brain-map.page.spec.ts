@@ -1,4 +1,5 @@
 import { signal } from '@angular/core';
+import { BreakpointObserver } from '@angular/cdk/layout';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router, type ParamMap } from '@angular/router';
 import { BehaviorSubject, of } from 'rxjs';
@@ -131,6 +132,13 @@ describe('BrainMapPage', () => {
       providers: [
         provideRouter([]),
         {
+          provide: BreakpointObserver,
+          useValue: {
+            isMatched: () => false,
+            observe: () => of({ matches: false }),
+          },
+        },
+        {
           provide: ActivatedRoute,
           useValue: {
             queryParamMap: query.asObservable(),
@@ -183,6 +191,7 @@ describe('BrainMapPage', () => {
 
   afterEach(() => {
     fixture?.nativeElement.remove();
+    document.querySelectorAll('.cdk-overlay-container').forEach((node) => node.remove());
     TestBed.resetTestingModule();
   });
 
@@ -326,6 +335,49 @@ describe('BrainMapPage', () => {
     expect(fixture.componentInstance.effectiveColorMode()).toBe('cluster');
     expect(el().querySelector('.map-legend-kinds')).toBeNull();
     expect(el().textContent).not.toContain('No kind (');
+  });
+
+  it('puts the same kind legend in the Controls sheet, with the map a11y contract', async () => {
+    await mountPage({}, { colorMode: 'kind' });
+    fixture.componentInstance.controlsOpen.set(true);
+    fixture.detectChanges();
+    await Promise.resolve();
+
+    const sheet = document.querySelector('.map-controls-sheet') as HTMLElement;
+    expect(sheet).toBeTruthy();
+    const legend = sheet.querySelector('app-map-kind-legend') as HTMLElement;
+    expect(legend).toBeTruthy();
+
+    const chips = Array.from(legend.querySelectorAll('.map-legend-kind')) as HTMLButtonElement[];
+    expect(chips.map((chip) => chip.textContent?.replace(/\s+/g, ' ').trim())).toEqual([
+      'Concepts (75)',
+      'Methods (75)',
+      'No kind (0)',
+    ]);
+    expect(chips.every((chip) => chip.getAttribute('aria-pressed') === 'true')).toBe(true);
+    expect(chips[0].getAttribute('aria-label')).toContain('drawn on the map');
+
+    const sortLink = legend.querySelector('.map-legend-sort') as HTMLAnchorElement;
+    expect(sortLink.textContent?.trim()).toBe('Sort them');
+
+    const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+    chips[0].click();
+    expect(navigate).toHaveBeenCalledWith(
+      [],
+      expect.objectContaining({ queryParams: { kinds: 'k2,none' }, queryParamsHandling: 'merge' })
+    );
+
+    // The escape hatch is in the sheet too, next to the rows it relates to.
+    fixture.componentInstance.scope.set({
+      totalInScope: 20,
+      shownCount: 20,
+      maxShared: 1,
+      effectiveMin: 1,
+      capped: false,
+      hiddenByKindCount: 7,
+    });
+    fixture.detectChanges();
+    expect(legend.querySelector('.map-legend-clear')?.textContent?.trim()).toBe('Show all kinds');
   });
 
   it('states one in-scope total and the hidden-by-kind count separately', async () => {

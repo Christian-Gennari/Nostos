@@ -92,7 +92,7 @@
 
 /*
  * The legend: what size and line weight mean. Quiet metadata in the corner, on
- * a wash of the field so it stays legible when a node sits under it.
+ * a solid surface so an edge can never run through its words.
  */
 .map-legend {
   position: absolute;
@@ -104,13 +104,29 @@
   align-items: flex-start;
   gap: 0.35rem;
   max-width: calc(100% - 1.5rem);
-  padding: 0.3rem 0.5rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--bg-body) 84%, transparent);
+  background: var(--bg-surface);
   color: var(--color-text-muted);
   font-size: 0.7rem;
   line-height: 1.4;
   pointer-events: none;
+}
+
+.map-legend-full {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Only a phone shows this; on a wide screen the note lives in the legend. */
+.map-legend-compact {
+  display: none;
+  pointer-events: auto;
 }
 
 .map-legend-metrics {
@@ -158,121 +174,6 @@
 
 .map-limit-note {
   font-style: italic;
-}
-
-.map-legend-kinds {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.3rem;
-  pointer-events: auto;
-}
-
-.map-legend-untyped-group {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-}
-
-.map-legend-kind.nostos-chip {
-  max-width: 100%;
-  min-height: 22px;
-  padding: 0.14rem 0.5rem;
-  gap: 0.32rem;
-  border-color: var(--border-color);
-  background: var(--bg-surface);
-  color: var(--color-text-main);
-  font-size: 0.72rem;
-  line-height: 1.2;
-}
-
-.map-legend-kind-label {
-  max-width: 9rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.map-legend-kind.nostos-chip:hover:not(:disabled) {
-  background: var(--bg-hover);
-  border-color: var(--color-text-muted);
-}
-
-/*
- * The "off" state is carried by the swatch, border and strike-through — NOT by
- * fading the whole chip. At 0.52 opacity the label measured 2.38:1 on light and
- * 3.48:1 on dark; the full `--color-text-muted` ink is 7.30:1 on the light
- * hover surface and 9.39:1 on the dark one, so the reader can still read which
- * kind they just turned off.
- */
-.map-legend-kind.nostos-chip.is-hidden,
-.map-legend-kind.nostos-chip[aria-pressed='false'] {
-  border-color: var(--border-color);
-  border-style: dashed;
-  background: var(--bg-hover);
-  color: var(--color-text-muted);
-}
-
-.map-legend-kind.is-hidden .map-legend-kind-label {
-  text-decoration: line-through;
-  text-decoration-thickness: 1px;
-}
-
-.map-legend-kind.is-hidden .map-legend-swatch,
-.map-legend-kind[aria-pressed='false'] .map-legend-swatch {
-  opacity: 0.35;
-}
-
-.map-legend-clear.nostos-chip {
-  min-height: 22px;
-  padding: 0.14rem 0.5rem;
-  border-color: var(--border-color);
-  background: var(--bg-surface);
-  color: var(--color-text-main);
-  font-size: 0.72rem;
-  font-weight: var(--fw-medium);
-  pointer-events: auto;
-}
-
-.map-legend-clear.nostos-chip:hover:not(:disabled) {
-  background: var(--bg-hover);
-  border-color: var(--color-text-muted);
-}
-
-.map-legend-clear:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: 2px;
-  border-radius: var(--radius-sm);
-}
-
-.map-legend-swatch {
-  flex: 0 0 auto;
-  width: 8px;
-  height: 8px;
-  border-radius: var(--radius-round);
-}
-
-.map-legend-kind-count {
-  color: var(--color-text-light);
-  font-variant-numeric: tabular-nums;
-}
-
-.map-legend-sort {
-  color: var(--color-brand-accent);
-  font-size: 0.72rem;
-  font-weight: var(--fw-medium);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  white-space: nowrap;
-}
-
-.map-legend-sort:hover {
-  color: var(--color-text-main);
-}
-
-.map-legend-sort:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: 2px;
-  border-radius: var(--radius-sm);
 }
 
 .map-status {
@@ -567,21 +468,25 @@
     border-radius: 0;
   }
 
+  /* The legend lives in the Controls sheet here; only the one-line "N hidden
+     by kind" reminder stays on the map, and only while a filter hides nodes. */
   .map-legend {
     top: 0.5rem;
     left: 0.5rem;
     max-width: calc(100% - 1rem);
+    padding: 0;
+    border: 0;
+    background: transparent;
     font-size: 0.66rem;
   }
 
-  .map-legend-kind.nostos-chip {
-    min-height: 28px;
-    padding: 0.15rem 0.45rem;
-    font-size: 0.68rem;
+  .map-legend-full {
+    display: none;
   }
 
-  .map-legend-sort {
-    font-size: 0.68rem;
+  .map-legend-compact {
+    display: inline-flex;
+    max-width: 100%;
   }
 
   .map-hud {

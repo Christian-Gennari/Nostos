@@ -23,69 +23,41 @@
     <!--
       What the marks mean. Size and line weight carry the two numbers the map
       encodes; in Kind colour mode the legend also lets the user hide/show kinds.
+
+      On a phone the kind rows live in the Controls sheet instead (four rows of
+      chips covered the top of the map and the nodes under it); the map keeps
+      one compact line that only exists while kinds are filtered out.
     -->
     <div #mapLegend class="map-legend">
-      <div class="map-legend-metrics">
-        <span class="map-legend-item">
-          <span class="map-legend-dot" aria-hidden="true"></span>Size: references
-        </span>
-        <span class="map-legend-item">
-          <span class="map-legend-line" aria-hidden="true"></span>Line: shared notes
-        </span>
-        @if (isCapped()) {
-        <span class="map-limit-note">Showing {{ shownCount() }} of {{ scopeTotal() }} topics.</span>
-        }
-        @if (hiddenByKindCount() > 0) {
-        <span class="map-limit-note">{{ hiddenByKindCount() }} hidden by kind.</span>
-        <button
-          appChip
-          type="button"
-          class="map-legend-clear"
-          (click)="clearKindFilter.emit()"
-        >Show all kinds</button>
-        }
-      </div>
-      @if (kindsLoaded && colorMode === 'kind' && kindLegend().length) {
-      <div class="map-legend-kinds" role="group" aria-label="Filter by topic kind">
-        @for (entry of kindLegend(); track entry.key) {
-          @if (entry.isUntyped) {
-          <span class="map-legend-untyped-group">
-            <button
-              appChip
-              type="button"
-              class="map-legend-kind is-untyped"
-              [class.is-hidden]="!entry.visible"
-              [attr.aria-pressed]="entry.visible"
-              [attr.aria-label]="entry.label + ', ' + entry.count + (entry.visible ? ' drawn on the map, click to hide' : ' in scope, hidden, click to show')"
-              (click)="onToggleKind(entry.key)"
-            >
-              <span class="map-legend-swatch" aria-hidden="true" [style.background]="entry.color"></span>
-              <span class="map-legend-kind-label">{{ entry.label }}</span>
-              <span class="map-legend-kind-count"> ({{ entry.count }})</span>
-            </button>
-            <a
-              class="map-legend-sort"
-              routerLink="/brain/kinds"
-              [queryParams]="{ filter: 'untyped' }"
-            >Sort them</a>
+      <div class="map-legend-full">
+        <div class="map-legend-metrics">
+          <span class="map-legend-item">
+            <span class="map-legend-dot" aria-hidden="true"></span>Size: references
           </span>
-          } @else {
-          <button
-            appChip
-            type="button"
-            class="map-legend-kind"
-            [class.is-hidden]="!entry.visible"
-            [attr.aria-pressed]="entry.visible"
-            [attr.aria-label]="entry.label + ', ' + entry.count + (entry.visible ? ' drawn on the map, click to hide' : ' in scope, hidden, click to show')"
-            (click)="onToggleKind(entry.key)"
-          >
-            <span class="map-legend-swatch" aria-hidden="true" [style.background]="entry.color"></span>
-            <span class="map-legend-kind-label">{{ entry.label }}</span>
-            <span class="map-legend-kind-count"> ({{ entry.count }})</span>
-          </button>
+          <span class="map-legend-item">
+            <span class="map-legend-line" aria-hidden="true"></span>Line: shared notes
+          </span>
+          @if (isCapped()) {
+          <span class="map-limit-note">Showing {{ shownCount() }} of {{ scopeTotal() }} topics.</span>
           }
+        </div>
+        @if (kindsLoaded && colorMode === 'kind' && kindLegend().length || hiddenByKindCount() > 0) {
+        <app-map-kind-legend
+          [entries]="kindLegend()"
+          [hiddenByKindCount]="hiddenByKindCount()"
+          (toggled)="onToggleKind($event)"
+          (cleared)="clearKindFilter.emit()"
+        />
         }
       </div>
+      @if (hiddenByKindCount() > 0) {
+      <button
+        appChip
+        type="button"
+        class="map-legend-compact"
+        aria-label="Show all kinds"
+        (click)="clearKindFilter.emit()"
+      >{{ hiddenByKindCount() }} hidden by kind · Show all</button>
       }
     </div>
 

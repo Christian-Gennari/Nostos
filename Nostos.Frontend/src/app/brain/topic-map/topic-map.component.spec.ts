@@ -1839,11 +1839,67 @@ describe('TopicMapComponent', () => {
       buttonPill.click();
       expect(requested).toHaveBeenCalledWith({ topicId: 'gamma', kindId: null });
     });
+
+    it('leaves one compact line on the map when kinds are hidden', () => {
+      fixture.componentRef.setInput('colorMode', 'kind');
+      fixture.componentRef.setInput('topicKinds', kinds);
+      fixture.componentRef.setInput('visibleKindKeys', new Set(['k1']));
+      setTopics(kindTopics);
+      flushGraph(kindGraph);
+
+      const compact = fixture.nativeElement.querySelector(
+        '.map-legend-compact'
+      ) as HTMLButtonElement;
+      expect(compact).toBeTruthy();
+      expect(compact.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+        '2 hidden by kind · Show all'
+      );
+      expect(compact.getAttribute('aria-label')).toBe('Show all kinds');
+
+      const cleared = vi.fn();
+      component.clearKindFilter.subscribe(cleared);
+      compact.click();
+      expect(cleared).toHaveBeenCalledTimes(1);
+
+      // The full rows stay in the markup for the wide legend (and the sheet).
+      expect(fixture.nativeElement.querySelectorAll('.map-legend-kind')).toHaveLength(3);
+    });
+
+    it('shows no compact line while every kind is visible', () => {
+      fixture.componentRef.setInput('colorMode', 'kind');
+      fixture.componentRef.setInput('topicKinds', kinds);
+      setTopics(kindTopics);
+      flushGraph(kindGraph);
+
+      expect(component.hiddenByKindCount()).toBe(0);
+      expect(fixture.nativeElement.querySelector('.map-legend-compact')).toBeNull();
+    });
+  });
+
+  describe('phone legend placement', () => {
+    it('gives the desktop legend a solid surface and keeps the chip rows off a phone map', () => {
+      const css = readFileSync('src/app/brain/topic-map/topic-map.component.css', 'utf8');
+      const legendRule = css.match(/\.map-legend \{([\s\S]*?)\}/)?.[1] ?? '';
+      // Opaque: an edge must not run through the legend's words at 1280px.
+      expect(legendRule).toContain('background: var(--bg-surface)');
+      expect(legendRule).not.toMatch(/color-mix|transparent/);
+      expect(legendRule).toContain('border: 1px solid var(--glass-border)');
+
+      // The compact line is the phone's only map legend; the rows move into the
+      // Controls sheet (the breakpoint the HUD and the sheet already use).
+      expect(css).toMatch(/\.map-legend-compact \{\s*display: none;/);
+      expect(css).toMatch(
+        /@media \(max-width: 768px\)[\s\S]*\.map-legend-full \{\s*display: none;/
+      );
+      expect(css).toMatch(
+        /@media \(max-width: 768px\)[\s\S]*\.map-legend-compact \{\s*display: inline-flex;/
+      );
+    });
   });
 
   describe('legend legibility', () => {
     it('keeps a hidden kind label at full text contrast and dims only the swatch', () => {
-      const css = readFileSync('src/app/brain/topic-map/topic-map.component.css', 'utf8');
+      const css = readFileSync('src/app/brain/topic-map/map-kind-legend.component.css', 'utf8');
       const hiddenRule = css.match(
         /\.map-legend-kind\.nostos-chip\.is-hidden,[\s\S]*?\{([\s\S]*?)\}/
       );

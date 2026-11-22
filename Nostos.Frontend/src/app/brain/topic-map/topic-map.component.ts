@@ -18,7 +18,6 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { RouterLink } from '@angular/router';
 import type { Subscription } from 'rxjs';
 
 import { IconButtonComponent } from '../../ui/icon-button/icon-button.component';
@@ -49,6 +48,7 @@ import {
   type KindLegendEntry,
   type MapCamera,
 } from './topic-map.helpers';
+import { MapKindLegendComponent } from './map-kind-legend.component';
 import { TopicMapRenderer } from './topic-map-renderer';
 import { TopicMapSimulation } from './topic-map-simulation';
 import { TopicMapViewport } from './topic-map-viewport';
@@ -97,13 +97,13 @@ export interface MapSelection {
   standalone: true,
   imports: [
     CommonModule,
-    RouterLink,
     IconButtonComponent,
     ButtonComponent,
     ChipComponent,
     NostosIconComponent,
     LoadingIndicatorComponent,
     EmptyStateComponent,
+    MapKindLegendComponent,
   ],
   templateUrl: './topic-map.component.html',
   styleUrl: './topic-map.component.css',
@@ -685,10 +685,7 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
       this.renderer.sigmaInstance,
       this.renderer.graphInstance,
       this.sigmaContainer?.nativeElement,
-      {
-        legend: this.mapLegend?.nativeElement,
-        hud: this.mapHud?.nativeElement,
-      }
+      this.overlays()
     );
   }
 
@@ -698,6 +695,11 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
       this.renderer.refresh();
     }
     this.fitGraph();
+  }
+
+  /** The overlays that steal map area, measured from the live DOM. */
+  private overlays(): { legend: HTMLElement | undefined; hud: HTMLElement | undefined } {
+    return { legend: this.mapLegend?.nativeElement, hud: this.mapHud?.nativeElement };
   }
 
   /** Bring the selected node to the centre of the stage. */
