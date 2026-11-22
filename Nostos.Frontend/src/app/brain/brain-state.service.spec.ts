@@ -1,19 +1,21 @@
 import { TestBed } from '@angular/core/testing';
-import { Subject, of } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 
 import { AssistantService } from '../ui/assistant/assistant.service';
 import { NotesService } from '../core/services/notes.service';
-import { TopicsService } from '../core/services/topics.service';
+import { TopicsService, type TopicDto, type TopicKindDto } from '../core/services/topics.service';
+import { MAP_COLOR_MODE_KEY } from './brain.helpers';
 import { BrainStateService } from './brain-state.service';
 
 describe('BrainStateService loading', () => {
   const topicsList = vi.fn();
+  const listKinds = vi.fn();
   const summary = vi.fn();
 
   function create(): BrainStateService {
     TestBed.configureTestingModule({
       providers: [
-        { provide: TopicsService, useValue: { list: topicsList } },
+        { provide: TopicsService, useValue: { list: topicsList, listKinds } },
         { provide: NotesService, useValue: { summary } },
         { provide: AssistantService, useValue: { actionExecuted: new Subject() } },
       ],
@@ -22,8 +24,19 @@ describe('BrainStateService loading', () => {
   }
 
   beforeEach(() => {
-    topicsList.mockReset().mockReturnValue(of([{ id: 't1', name: 'Stoicism', usageCount: 1 }]));
+    try {
+      localStorage.removeItem(MAP_COLOR_MODE_KEY);
+    } catch {
+      // ignore
+    }
+    topicsList.mockReset().mockReturnValue(of([{ id: 't1', name: 'Stoicism', usageCount: 1 } as TopicDto]));
+    listKinds.mockReset().mockReturnValue(of([] as TopicKindDto[]));
     summary.mockReset().mockReturnValue(of({ total: 3 }));
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    TestBed.resetTestingModule();
   });
 
   it('ensureLoaded reads the topics and the counts once', () => {
@@ -67,5 +80,62 @@ describe('BrainStateService loading', () => {
 
     expect(summary).toHaveBeenCalledTimes(2);
     expect(topicsList).toHaveBeenCalledTimes(1);
+  });
+
+  it('loads kind metadata with the topics and tolerates a failing kinds call', () => {
+    const kind = {
+      id: 'k1', name: 'Schools', colorKey: 'kind-1', sortOrder: 1, createdAt: '2026-01-01T00:00:00Z', topicCount: 1,
+    } satisfies TopicKindDto;
+    listKinds.mockReturnValueOnce(of([kind]));
+    const brain = create();
+    brain.ensureLoaded();
+    expect(listKinds).not.toHaveBeenCalled();
+    brain.ensureKindsLoaded();
+    brain.ensureKindsLoaded();
+    expect(brain.topicKinds()).toEqual([kind]);
+    expect(listKinds).toHaveBeenCalledTimes(1);
+
+    // A failed kinds call leaves the map usable; the topics themselves still load.
+    listKinds.mockReturnValueOnce(throwError(() => new Error('kinds unavailable')));
+    expect(() => brain.refresh()).not.toThrow();
+    expect(brain.topicsLoaded()).toBe(true);
+    expect(brain.topicKinds()).toEqual([kind]);
+  });
+
+  it('defaults mapColorMode to kind if any topic has a kind, else cluster, and persists per viewer', () => {
+    const brain = create();
+    brain.ensureTopicsLoaded();
+    expect(brain.hasAnyTopicKind()).toBe(false);
+    expect(brain.mapColorMode()).toBe('cluster');
+
+    topicsList.mockReturnValue(of([{ id: 't1', name: 'Stoicism', usageCount: 1, kindId: 'k1' } as TopicDto]));
+    brain.refresh();
+    expect(brain.hasAnyTopicKind()).toBe(true);
+    expect(brain.mapColorMode()).toBe('kind');
+
+    // An explicit choice wins over the default rule and survives a reload.
+    brain.setMapColorMode('none');
+    expect(brain.mapColorMode()).toBe('none');
+    expect(localStorage.getItem(MAP_COLOR_MODE_KEY)).toBe('none');
+
+    TestBed.resetTestingModule();
+    topicsList.mockReturnValue(of([{ id: 't1', name: 'Stoicism', usageCount: 1, kindId: 'k1' } as TopicDto]));
+    const reloaded = create();
+    reloaded.ensureTopicsLoaded();
+    expect(reloaded.mapColorMode()).toBe('none');
+  });
+
+  it('tolerates blocked localStorage without throwing', () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('Blocked', 'SecurityError');
+    });
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('Blocked', 'SecurityError');
+    });
+
+    const brain = create();
+    expect(brain.mapColorMode()).toBe('cluster');
+    expect(() => brain.setMapColorMode('kind')).not.toThrow();
+    expect(brain.mapColorMode()).toBe('kind');
   });
 });

@@ -278,4 +278,56 @@ describe('TopicMapRenderer', () => {
     expect(renderer.getCameraState()).toBeNull();
     expect(() => renderer.refresh()).not.toThrow();
   });
+
+  it('colours nodes by topic kind in kind mode, neutral when untyped, and neutral in none mode', () => {
+    document.documentElement.style.setProperty('--map-kind-1', '#3b73a8');
+    document.documentElement.style.setProperty('--map-kind-2', '#b85c38');
+    document.documentElement.style.setProperty('--map-kind-none', '#807972');
+    document.documentElement.style.setProperty('--graph-edge', '#d4d0c8');
+
+    const renderer = new TopicMapRenderer();
+    const kinds = [
+      { id: 'k1', name: 'Books', colorKey: 'kind-1', sortOrder: 1, createdAt: '', topicCount: 2 },
+      { id: 'k2', name: 'Concepts', colorKey: 'kind-2', sortOrder: 2, createdAt: '', topicCount: 1 },
+    ];
+    const nodes = [
+      { id: 'a', name: 'A', usageCount: 10, kindId: 'k1' },
+      { id: 'b', name: 'B', usageCount: 8, kindId: 'k1' },
+      { id: 'c', name: 'C', usageCount: 5, kindId: 'k2' },
+      { id: 'd', name: 'D', usageCount: 2, kindId: null },
+    ];
+    const edges = [
+      { sourceId: 'a', targetId: 'b', sharedNotes: 3 },
+      { sourceId: 'b', targetId: 'c', sharedNotes: 3 },
+    ];
+
+    const kindBuilt = renderer.buildGraph(nodes, edges, { colorMode: 'kind', topicKinds: kinds });
+    expect(kindBuilt.graph.getNodeAttributes('a')['color']).toBe('#3b73a8');
+    expect(kindBuilt.graph.getNodeAttributes('c')['color']).toBe('#b85c38');
+    expect(kindBuilt.graph.getNodeAttributes('d')['color']).toBe('#807972');
+    expect(kindBuilt.hueById.get('a')).toBe('#3b73a8');
+    expect(kindBuilt.hueById.get('c')).toBe('#b85c38');
+    expect(kindBuilt.hueById.get('d')).toBeNull();
+
+    // Same-kind edge a->b is tinted toward k1; cross-kind edge b->c stays neutral.
+    const edgeAB = kindBuilt.graph.getEdgeAttributes('a', 'b')['color'];
+    const edgeBC = kindBuilt.graph.getEdgeAttributes('b', 'c')['color'];
+    expect(edgeAB).not.toBe(edgeBC);
+
+    // Cluster mode keeps the community hues; the untyped node stays neutral.
+    const clusterBuilt = renderer.buildGraph(nodes, edges, { colorMode: 'cluster', topicKinds: kinds });
+    expect(clusterBuilt.hueById.get('a')).not.toBe('#3b73a8');
+
+    // None mode paints the neutral node hierarchy (no kind or cluster hues).
+    const noneBuilt = renderer.buildGraph(nodes, edges, { colorMode: 'none', topicKinds: kinds });
+    expect(noneBuilt.hueById.get('a')).toBeNull();
+    expect(noneBuilt.hueById.get('c')).toBeNull();
+    expect(noneBuilt.graph.getNodeAttributes('a')['color']).not.toBe('#3b73a8');
+    expect(noneBuilt.graph.getNodeAttributes('c')['color']).not.toBe('#b85c38');
+
+    document.documentElement.style.removeProperty('--map-kind-1');
+    document.documentElement.style.removeProperty('--map-kind-2');
+    document.documentElement.style.removeProperty('--map-kind-none');
+    document.documentElement.style.removeProperty('--graph-edge');
+  });
 });

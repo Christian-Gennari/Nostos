@@ -1,6 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { provideRouter } from '@angular/router';
 
 // Mock Sigma and graphology before importing the component.
 // Sigma requires WebGL2 which is not available in jsdom/Node.
@@ -315,7 +316,7 @@ import {
   TopicMapComponent,
   MAX_MAP_TOPICS,
 } from './topic-map.component';
-import { TopicDto, TopicGraphDto } from '../../core/services/topics.service';
+import { TopicDto, TopicGraphDto, TopicKindDto } from '../../core/services/topics.service';
 
 const topics: TopicDto[] = [
   { id: 'alpha', name: 'Alpha', usageCount: 12 },
@@ -343,7 +344,7 @@ describe('TopicMapComponent', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [TopicMapComponent],
-      providers: [provideHttpClient(), provideHttpClientTesting()],
+      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
     }).compileComponents();
 
     fixture = TestBed.createComponent(TopicMapComponent);
@@ -1580,6 +1581,155 @@ describe('TopicMapComponent', () => {
       fixture.componentRef.setInput('rootId', 'beta');
       fixture.detectChanges();
       expect(fixture.nativeElement.querySelector('.map-card-around')).toBeNull();
+    });
+  });
+
+  describe('topic kind colour mode & interactive legend', () => {
+    const kinds: TopicKindDto[] = [
+      { id: 'k1', name: 'Concepts', colorKey: 'kind-1', sortOrder: 1, createdAt: '', topicCount: 1 },
+      { id: 'k2', name: 'People', colorKey: 'kind-2', sortOrder: 2, createdAt: '', topicCount: 1 },
+    ];
+
+    const kindTopics: TopicDto[] = [
+      { id: 'alpha', name: 'Alpha', usageCount: 12, kindId: 'k1' },
+      { id: 'beta', name: 'Beta', usageCount: 5, kindId: 'k2' },
+      { id: 'gamma', name: 'Gamma', usageCount: 2, kindId: null },
+    ];
+
+    const kindGraph: TopicGraphDto = {
+      nodes: kindTopics.map((t) => ({ id: t.id, name: t.name, usageCount: t.usageCount, kindId: t.kindId ?? null })),
+      edges: [
+        { sourceId: 'alpha', targetId: 'beta', sharedNotes: 3 },
+        { sourceId: 'beta', targetId: 'gamma', sharedNotes: 2 },
+      ],
+    };
+
+    it('renders the interactive kind legend in kind mode with counts, No kind (n), and Sort them link', () => {
+      fixture.componentRef.setInput('colorMode', 'kind');
+      fixture.componentRef.setInput('topicKinds', kinds);
+      setTopics(kindTopics);
+      flushGraph(kindGraph);
+
+      const legendButtons = Array.from(
+        fixture.nativeElement.querySelectorAll('.map-legend-kind')
+      ) as HTMLButtonElement[];
+      expect(legendButtons).toHaveLength(3);
+      expect(legendButtons.map((b) => b.textContent?.replace(/\s+/g, ' ').trim())).toEqual([
+        'Concepts (1)',
+        'People (1)',
+        'No kind (1)',
+      ]);
+      expect(legendButtons.map((b) => b.getAttribute('aria-pressed'))).toEqual(['true', 'true', 'true']);
+
+      const sortLink = fixture.nativeElement.querySelector('.map-legend-sort') as HTMLAnchorElement;
+      expect(sortLink).toBeTruthy();
+      expect(sortLink.textContent?.trim()).toBe('Sort them');
+      expect(sortLink.getAttribute('href')).toBe('/brain/kinds?filter=untyped');
+
+      const toggled = vi.fn();
+      component.kindToggled.subscribe(toggled);
+      legendButtons[1].click();
+      expect(toggled).toHaveBeenCalledWith('k2');
+
+      // A hidden kind stays in the legend (so it can be shown again) but reads as off.
+      fixture.componentRef.setInput('visibleKindKeys', new Set(['k1', 'none']));
+      fixture.detectChanges();
+      const afterHide = Array.from(
+        fixture.nativeElement.querySelectorAll('.map-legend-kind')
+      ) as HTMLButtonElement[];
+      expect(afterHide[1].getAttribute('aria-pressed')).toBe('false');
+      expect(afterHide[1].textContent?.replace(/\s+/g, ' ').trim()).toBe('People (1)');
+
+      // Cluster and None modes have no kind legend to filter by.
+      fixture.componentRef.setInput('colorMode', 'cluster');
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.map-legend-kinds')).toBeNull();
+    });
+
+    it('applies the kind filter before the 150-topic cap and removes hidden edges on both maps', () => {
+      const bulkHidden: TopicDto[] = Array.from({ length: MAX_MAP_TOPICS + 10 }, (_, i) => ({
+        id: `big-${i}`,
+        name: `Big ${i}`,
+        usageCount: 1000 + i,
+        kindId: 'k1',
+      }));
+      const kept: TopicDto[] = [
+        { id: 'small-1', name: 'Small 1', usageCount: 2, kindId: 'k2' },
+        { id: 'small-2', name: 'Small 2', usageCount: 1, kindId: 'k2' },
+      ];
+      const all = [...bulkHidden, ...kept];
+      const graph: TopicGraphDto = {
+        nodes: all.map((t) => ({ id: t.id, name: t.name, usageCount: t.usageCount, kindId: t.kindId ?? null })),
+        edges: [
+          { sourceId: 'small-1', targetId: 'small-2', sharedNotes: 2 },
+          { sourceId: 'small-1', targetId: 'big-0', sharedNotes: 3 },
+        ],
+      };
+
+      fixture.componentRef.setInput('colorMode', 'kind');
+      fixture.componentRef.setInput('topicKinds', kinds);
+      fixture.componentRef.setInput('visibleKindKeys', new Set(['k2']));
+      setTopics(all);
+      flushGraph(graph);
+
+      // Even though Big-* outrank Small-* by usageCount, filtering before the
+      // cap keeps the visible kind's topics.
+      expect(component.accessibleNodes().map((n) => n.id).sort()).toEqual(['small-1', 'small-2']);
+      expect(component.hiddenByKindCount()).toBe(MAX_MAP_TOPICS + 10);
+      // The edge to the hidden topic is gone, not merely invisible.
+      expect(component.accessibleNodes().find((n) => n.id === 'small-1')?.connectionCount).toBe(1);
+
+      // The same pre-cap behaviour on a local map. big-0 was a depth-1
+      // neighbour before filtering.
+      fixture.componentRef.setInput('rootId', 'small-1');
+      fixture.componentRef.setInput('depth', 1);
+      fixture.detectChanges();
+      expect(component.accessibleNodes().map((n) => n.id).sort()).toEqual(['small-1', 'small-2']);
+      expect(component.hiddenByKindCount()).toBe(1);
+    });
+
+    it('shows an empty state with Show all kinds when every kind is hidden', () => {
+      fixture.componentRef.setInput('colorMode', 'kind');
+      fixture.componentRef.setInput('topicKinds', kinds);
+      fixture.componentRef.setInput('visibleKindKeys', new Set<string>());
+      setTopics(kindTopics);
+      flushGraph(kindGraph);
+
+      expect(component.allHiddenByKind()).toBe(true);
+      expect(fixture.nativeElement.textContent).toContain('All topics are hidden by the kind filter.');
+
+      const cleared = vi.fn();
+      component.clearKindFilter.subscribe(cleared);
+      const resetBtn = fixture.nativeElement.querySelector('.map-status button') as HTMLButtonElement;
+      expect(resetBtn.textContent?.trim()).toBe('Show all kinds');
+      resetBtn.click();
+      expect(cleared).toHaveBeenCalledTimes(1);
+    });
+
+    it('renders the selected topic kind pill non-interactively, and requests the picker only when enabled', () => {
+      fixture.componentRef.setInput('colorMode', 'kind');
+      fixture.componentRef.setInput('topicKinds', kinds);
+      setTopics(kindTopics);
+      flushGraph(kindGraph);
+
+      component.selectAccessibleNode('alpha');
+      fixture.detectChanges();
+      const staticPill = fixture.nativeElement.querySelector('.map-card-kind-pill') as HTMLElement;
+      expect(staticPill.tagName).toBe('SPAN');
+      expect(staticPill.textContent?.trim()).toBe('Concepts');
+
+      component.selectAccessibleNode('gamma');
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.map-card-kind-pill')?.textContent?.trim()).toBe('No kind');
+
+      fixture.componentRef.setInput('kindPickerEnabled', true);
+      fixture.detectChanges();
+      const buttonPill = fixture.nativeElement.querySelector('.map-card-kind-pill') as HTMLButtonElement;
+      expect(buttonPill.tagName).toBe('BUTTON');
+      const requested = vi.fn();
+      component.kindPickerRequested.subscribe(requested);
+      buttonPill.click();
+      expect(requested).toHaveBeenCalledWith({ topicId: 'gamma', kindId: null });
     });
   });
 });

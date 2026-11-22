@@ -1,16 +1,27 @@
 import {
   LABEL_PRIORITY,
+  MAP_KIND_TOKEN_COUNT,
   MAX_MAP_TOPICS,
+  UNTYPED_KIND_KEY,
   alignmentRotation,
+  buildKindLegendEntries,
   centerStrengths,
   detectCommunities,
   drawThemeNodeHover,
+  filterScopedGraphByKind,
+  filterTopicsByKind,
+  kindIndexFromColorKey,
   logicalCanvasWidth,
+  parseKindsParam,
   pickHubs,
   placeLabels,
+  readTheme,
+  resolveKindColor,
   scopeGraph,
   selectLabelCandidates,
+  serializeKindsParam,
   shelfPositions,
+  toggleKindFilter,
   type LabelCandidate,
   type LabelSource,
   type PlacedLabel,
@@ -422,5 +433,167 @@ describe('scopeGraph', () => {
     expect(scoped.edges).toEqual([]);
     expect(scoped.totalInScope).toBe(0);
     expect(scoped.hops.size).toBe(0);
+  });
+});
+
+describe('topic kind map helpers', () => {
+  afterEach(() => {
+    for (let i = 1; i <= MAP_KIND_TOKEN_COUNT; i += 1) {
+      document.documentElement.style.removeProperty(`--map-kind-${i}`);
+    }
+    document.documentElement.style.removeProperty('--map-kind-none');
+  });
+
+  it('reads all 12 --map-kind-* tokens and --map-kind-none from theme styles', () => {
+    for (let i = 1; i <= MAP_KIND_TOKEN_COUNT; i += 1) {
+      document.documentElement.style.setProperty(`--map-kind-${i}`, `#0000${i.toString(16).padStart(2, '0')}`);
+    }
+    document.documentElement.style.setProperty('--map-kind-none', '#807972');
+    const theme = readTheme();
+    expect(theme.kinds).toHaveLength(MAP_KIND_TOKEN_COUNT);
+    expect(theme.kinds[0]).toBe('#000001');
+    expect(theme.kinds[11]).toBe('#00000c');
+    expect(theme.kindNone).toBe('#807972');
+  });
+
+  it('resolves kind colour tokens from the colorKey slots the API stores', () => {
+    const theme = { kinds: Array.from({ length: 12 }, (_, i) => `token-${i + 1}`), kindNone: 'token-none' };
+    expect(kindIndexFromColorKey('kind-1')).toBe(0);
+    expect(kindIndexFromColorKey('kind-12')).toBe(11);
+    expect(kindIndexFromColorKey('map-kind-5')).toBe(4);
+    expect(kindIndexFromColorKey('kind-13')).toBeNull();
+    expect(kindIndexFromColorKey(null)).toBeNull();
+    expect(resolveKindColor('kind-3', theme)).toBe('token-3');
+    expect(resolveKindColor(null, theme)).toBe('token-none');
+  });
+
+  it('parses, serializes, and toggles ?kinds= URL filter parameters', () => {
+    expect(parseKindsParam(null)).toBeNull();
+    expect(parseKindsParam('')?.size).toBe(0);
+    expect([...(parseKindsParam('k1, none ,k1') ?? [])]).toEqual(['k1', UNTYPED_KIND_KEY]);
+    expect(serializeKindsParam(new Set(['none', 'k1']), ['k1', 'none'])).toBeNull();
+    expect(serializeKindsParam(new Set(['k1']), ['k1', 'none'])).toBe('k1');
+    expect(serializeKindsParam(null, ['k1'])).toBeNull();
+
+    // Everything visible (no param) -> hiding k1 keeps k2 + none.
+    expect(toggleKindFilter(null, 'k1', ['k1', 'k2', 'none'])).toBe('k2,none');
+    // Hiding the last remaining key writes '' (all hidden).
+    expect(toggleKindFilter(new Set(['k1']), 'k1', ['k1', 'k2'])).toBe('');
+    // Re-enabling all keys clears the parameter back to null.
+    expect(toggleKindFilter(new Set(['k1']), 'k2', ['k1', 'k2'])).toBeNull();
+    // From all hidden, clicking k1 shows only k1.
+    expect(toggleKindFilter(new Set(), 'k1', ['k1', 'k2'])).toBe('k1');
+  });
+
+  it('filters topics and graphs by visible kind keys, untyped included', () => {
+    const topics = [
+      { id: 't1', name: 'One', usageCount: 10, kindId: 'k1' },
+      { id: 't2', name: 'Two', usageCount: 8, kindId: 'k2' },
+      { id: 't3', name: 'Three', usageCount: 5, kindId: null },
+    ];
+    expect(filterTopicsByKind(topics, null)).toHaveLength(3);
+    expect(filterTopicsByKind(topics, new Set(['k2', 'none'])).map((t) => t.id)).toEqual(['t2', 't3']);
+    expect(filterTopicsByKind(topics, new Set())).toEqual([]);
+
+    const graph = {
+      nodes: topics,
+      edges: [
+        { sourceId: 't1', targetId: 't2', sharedNotes: 2 },
+        { sourceId: 't2', targetId: 't3', sharedNotes: 1 },
+      ],
+    };
+    const scoped = scopeGraph(graph, 't2', 1, 1, Number.MAX_SAFE_INTEGER);
+    const filtered = filterScopedGraphByKind(scoped, new Set(['k2', 'none']), 't2');
+    expect(filtered.nodes.map((n) => n.id).sort()).toEqual(['t2', 't3']);
+  });
+
+  it('scopes first, then filters, then caps, so hidden kinds free cap room', () => {
+    const nodes = [
+      { id: 'root', name: 'Root', usageCount: 100, kindId: 'k1' },
+      ...Array.from({ length: MAX_MAP_TOPICS + 5 }, (_, i) => ({
+        id: `busy-${i}`,
+        name: `Busy ${i}`,
+        usageCount: 1000 + i,
+        kindId: 'k1',
+      })),
+      { id: 'quiet-1', name: 'Quiet 1', usageCount: 2, kindId: 'k2' },
+      { id: 'quiet-2', name: 'Quiet 2', usageCount: 1, kindId: 'k2' },
+    ];
+    const edges = [
+      ...Array.from({ length: MAX_MAP_TOPICS + 5 }, (_, i) => ({
+        sourceId: 'root',
+        targetId: `busy-${i}`,
+        sharedNotes: 3,
+      })),
+      { sourceId: 'quiet-1', targetId: 'quiet-2', sharedNotes: 2 },
+      { sourceId: 'root', targetId: 'quiet-1', sharedNotes: 2 },
+    ];
+    // Depth 2 so quiet-2 (two steps away through quiet-1) is in scope too.
+    const full = scopeGraph({ nodes, edges }, 'root', 2, 1, Number.MAX_SAFE_INTEGER);
+    expect(full.totalInScope).toBe(nodes.length);
+
+    const filtered = filterScopedGraphByKind(full, new Set(['k2']), 'root');
+    expect(filtered.nodes.map((n) => n.id).sort()).toEqual(['quiet-1', 'quiet-2', 'root']);
+    // Capped after filtering: the two quiet topics survive although every
+    // busy topic outranks them by usageCount.
+    expect(filtered.totalInScope).toBe(3);
+    expect(filtered.hiddenByKind).toBe(MAX_MAP_TOPICS + 5);
+    expect(filtered.edges.every((e) => e.sourceId !== 'busy-0')).toBe(true);
+
+    // Without a filter the helper still applies the cap and hides nothing.
+    const unfiltered = filterScopedGraphByKind(full, null, 'root');
+    expect(unfiltered.nodes).toHaveLength(MAX_MAP_TOPICS);
+    expect(unfiltered.hiddenByKind).toBe(0);
+  });
+
+  it('keeps the root even when its own kind is hidden', () => {
+    const nodes = [
+      { id: 'root', name: 'Root', usageCount: 10, kindId: 'k1' },
+      { id: 'a', name: 'A', usageCount: 5, kindId: 'k2' },
+    ];
+    const full = scopeGraph({ nodes, edges: [{ sourceId: 'root', targetId: 'a', sharedNotes: 2 }] }, 'root', 1, 1);
+    const filtered = filterScopedGraphByKind(full, new Set(['k2']), 'root');
+    expect(filtered.nodes.map((n) => n.id)).toEqual(['root', 'a']);
+    expect(filtered.hiddenByKind).toBe(0);
+  });
+
+  it('builds sorted kind legend entries with counts and No kind (n) at the end', () => {
+    const kinds = [
+      { id: 'k1', name: 'Books', colorKey: 'kind-1', sortOrder: 1, createdAt: '', topicCount: 1 },
+      { id: 'k2', name: 'Concepts', colorKey: 'kind-2', sortOrder: 2, createdAt: '', topicCount: 2 },
+      { id: 'k3', name: 'Unused', colorKey: 'kind-3', sortOrder: 3, createdAt: '', topicCount: 0 },
+    ];
+    const items = [{ kindId: 'k2' }, { kindId: 'k2' }, { kindId: 'k1' }, { kindId: null }];
+    const entries = buildKindLegendEntries(items, kinds, new Set(['k2', 'none']));
+    expect(entries).toEqual([
+      {
+        key: 'k1',
+        label: 'Books',
+        color: 'var(--map-kind-1)',
+        count: 1,
+        visible: false,
+        isUntyped: false,
+      },
+      {
+        key: 'k2',
+        label: 'Concepts',
+        color: 'var(--map-kind-2)',
+        count: 2,
+        visible: true,
+        isUntyped: false,
+      },
+      {
+        key: 'none',
+        label: 'No kind',
+        color: 'var(--map-kind-none)',
+        count: 1,
+        visible: true,
+        isUntyped: true,
+      },
+    ]);
+
+    // A topic whose kind row is missing counts as untyped, so it cannot vanish.
+    const unknown = buildKindLegendEntries([{ kindId: 'gone' }], kinds, null);
+    expect(unknown.map((entry) => [entry.key, entry.count])).toEqual([['none', 1]]);
   });
 });
