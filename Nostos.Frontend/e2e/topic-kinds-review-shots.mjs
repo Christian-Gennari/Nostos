@@ -13,6 +13,10 @@
  * per deployment (SelfHosted, and Cloud simulated — see that script's header).
  *
  *   node e2e/topic-kinds-review-shots.mjs --api http://127.0.0.1:PORT --out DIR
+ *   node e2e/topic-kinds-review-shots.mjs … --only kinds-failed,map-failed
+ *
+ * `--only` re-shoots part of the set (the failed-kind state, say) without
+ * touching the rest of the folder.
  *
  * `--side before|after` only names the files. The failure state is produced in
  * the browser with `page.route`, so the read-only preview server is untouched.
@@ -27,6 +31,11 @@ for (let i = 2; i < process.argv.length; i += 2) args[process.argv[i].replace(/^
 const api = args.api;
 const out = args.out;
 const side = args.side ?? 'after';
+const ONLY = new Set(
+  (typeof args.only === 'string' ? args.only : 'phone,hidden-kind,select-all,kinds-failed,map-failed,picker-failed')
+    .split(',')
+    .filter(Boolean),
+);
 if (!api || !out) {
   console.error('usage: --api <url> --out <dir> [--side before|after]');
   process.exit(2);
@@ -203,7 +212,7 @@ async function capture(browser, base, cloud, width, theme, seed) {
   page.on('pageerror', (error) => failures.push(String(error)));
 
   // 1. The phone map, zoomed in, after "Center on selection".
-  if (width < 600) {
+  if (width < 600 && ONLY.has('phone')) {
     await page.goto(`${base}/brain/map?focus=${seed.personTopicId}`, { waitUntil: 'networkidle' });
     await page.waitForTimeout(1500);
     for (let i = 0; i < 2; i += 1) {
@@ -228,57 +237,87 @@ async function capture(browser, base, cloud, width, theme, seed) {
   }
 
   // 2. The selected topic's kind hidden: the map must keep its colours.
-  await page.goto(
-    `${base}/brain/map?focus=${seed.personTopicId}&kinds=${seed.ideaKindId},none`,
-    { waitUntil: 'networkidle' },
-  );
-  await page.waitForTimeout(1500);
-  await page.locator('.map-stage').screenshot({ path: path.join(out, `${side}-${slug}-map-hidden-kind.png`) });
+  if (ONLY.has('hidden-kind')) {
+    await page.goto(
+      `${base}/brain/map?focus=${seed.personTopicId}&kinds=${seed.ideaKindId},none`,
+      { waitUntil: 'networkidle' },
+    );
+    await page.waitForTimeout(1500);
+    await page
+      .locator('.map-stage')
+      .screenshot({ path: path.join(out, `${side}-${slug}-map-hidden-kind.png`) });
+  }
 
   // 3. Select all over more than the bulk cap.
-  await page.goto(`${base}/brain/kinds`, { waitUntil: 'networkidle' });
-  await page.waitForTimeout(800);
-  await page.locator('.sorter-tools button').first().click();
-  await page.waitForTimeout(300);
-  const selectAllLabel = (await page.locator('.sorter-tools button').first().textContent())?.trim();
-  const selectionCount = await page.locator('.selection-bar, nostos-selection-bar').first().textContent();
-  console.log(`${side} ${slug} select-all label="${selectAllLabel}" bar="${String(selectionCount).replace(/\s+/g, ' ').trim()}"`);
-  await shot(page, `${slug}-kinds-select-all.png`, { fullPage: true });
+  if (ONLY.has('select-all')) {
+    await page.goto(`${base}/brain/kinds`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(800);
+    await page.locator('.sorter-tools button').first().click();
+    await page.waitForTimeout(300);
+    const selectAllLabel = (await page.locator('.sorter-tools button').first().textContent())?.trim();
+    const selectionCount = await page
+      .locator('.selection-bar, nostos-selection-bar')
+      .first()
+      .textContent();
+    console.log(
+      `${side} ${slug} select-all label="${selectAllLabel}" ` +
+        `bar="${String(selectionCount).replace(/\s+/g, ' ').trim()}"`,
+    );
+    await shot(page, `${slug}-kinds-select-all.png`, { fullPage: true });
+  }
 
   // 4. `/api/topic-kinds` failing: the map, the kinds page and the picker.
   await page.route('**/api/topic-kinds', (route) =>
     route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"unavailable"}' }),
   );
-  await page.goto(`${base}/brain/map?focus=${seed.personTopicId}`, { waitUntil: 'networkidle' });
-  await page.waitForTimeout(1500);
-  const colourMode = await page.evaluate(() => {
-    const options = [...document.querySelectorAll('.map-controls nostos-segmented button[role="radio"]')];
-    const checked = options.find((button) => button.getAttribute('aria-checked') === 'true');
-    return { checked: checked?.textContent?.trim() ?? null, cardPill: !!document.querySelector('.map-card-kind-pill') };
-  });
-  console.log(`${side} ${slug} failed-kinds map: colour="${colourMode.checked}" cardPill=${colourMode.cardPill}`);
-  // The whole place, so the Colour control and the card are in the same frame.
-  await page.locator('.brain-map').screenshot({ path: path.join(out, `${side}-${slug}-map-failed-kinds.png`) });
 
-  await page.goto(`${base}/brain/kinds`, { waitUntil: 'networkidle' });
-  await page.waitForTimeout(800);
-  const kindsError = await page.evaluate(() => ({
-    error: !!document.querySelector('.kinds-failed'),
-    newKindDisabled: document.querySelector('.new-kind')?.disabled ?? null,
-  }));
-  console.log(`${side} ${slug} failed-kinds page: error=${kindsError.error} newKindDisabled=${kindsError.newKindDisabled}`);
-  await shot(page, `${slug}-kinds-failed.png`, { fullPage: true });
+  if (ONLY.has('map-failed')) {
+    await page.goto(`${base}/brain/map?focus=${seed.personTopicId}`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(1500);
+    const colourMode = await page.evaluate(() => {
+      const options = [...document.querySelectorAll('.map-controls nostos-segmented button[role="radio"]')];
+      const checked = options.find((button) => button.getAttribute('aria-checked') === 'true');
+      return {
+        checked: checked?.textContent?.trim() ?? null,
+        cardPill: !!document.querySelector('.map-card-kind-pill'),
+      };
+    });
+    console.log(`${side} ${slug} failed-kinds map: colour="${colourMode.checked}" cardPill=${colourMode.cardPill}`);
+    // The whole place, so the Colour control and the card are in the same frame.
+    await page
+      .locator('.brain-map')
+      .screenshot({ path: path.join(out, `${side}-${slug}-map-failed-kinds.png`) });
+  }
 
-  await page.goto(`${base}/brain/topics/${seed.personTopicId}`, { waitUntil: 'networkidle' });
-  await page.waitForTimeout(800);
-  await page.locator('.kind-trigger').click();
-  await page.waitForTimeout(500);
-  const pickerError = await page.evaluate(() => ({
-    error: !!document.querySelector('.kind-picker-failed'),
-    newKind: !!document.querySelector('.kind-picker-action'),
-  }));
-  console.log(`${side} ${slug} failed-kinds picker: error=${pickerError.error} newKind=${pickerError.newKind}`);
-  await shot(page, `${slug}-picker-failed.png`);
+  if (ONLY.has('kinds-failed')) {
+    await page.goto(`${base}/brain/kinds`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(800);
+    const kindsError = await page.evaluate(() => ({
+      error: !!document.querySelector('.kinds-failed'),
+      newKindDisabled: document.querySelector('.new-kind')?.disabled ?? null,
+      rowPills: [...document.querySelectorAll('.topic-row app-topic-kind-pill')]
+        .slice(0, 3)
+        .map((pill) => pill.textContent?.trim()),
+    }));
+    console.log(
+      `${side} ${slug} failed-kinds page: error=${kindsError.error} ` +
+        `newKindDisabled=${kindsError.newKindDisabled} rows=${JSON.stringify(kindsError.rowPills)}`,
+    );
+    await shot(page, `${slug}-kinds-failed.png`, { fullPage: true });
+  }
+
+  if (ONLY.has('picker-failed')) {
+    await page.goto(`${base}/brain/topics/${seed.personTopicId}`, { waitUntil: 'networkidle' });
+    await page.waitForTimeout(800);
+    await page.locator('.kind-trigger').click();
+    await page.waitForTimeout(500);
+    const pickerError = await page.evaluate(() => ({
+      error: !!document.querySelector('.kind-picker-failed'),
+      newKind: !!document.querySelector('.kind-picker-action'),
+    }));
+    console.log(`${side} ${slug} failed-kinds picker: error=${pickerError.error} newKind=${pickerError.newKind}`);
+    await shot(page, `${slug}-picker-failed.png`);
+  }
 
   await context.close();
   if (failures.length) console.log(`${side} ${slug} page errors: ${failures.join(' | ')}`);
