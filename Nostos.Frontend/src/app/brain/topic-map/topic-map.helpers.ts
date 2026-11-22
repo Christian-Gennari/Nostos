@@ -1224,48 +1224,94 @@ export function filterScopedGraphByKind(
   };
 }
 
+/** Options for the legend counts. */
+export interface KindLegendOptions {
+  /**
+   * The topics the map actually drew (after the cap). A visible kind shows this
+   * count; a hidden kind shows its in-scope count instead, so the reader knows
+   * how many topics come back when they show it.
+   */
+  drawnItems?: ReadonlyArray<{ kindId?: string | null }>;
+  /**
+   * Whether the kind list itself is available. A topic with an unknown kind id
+   * is untyped only when the list loaded and does not contain that id; before
+   * then it is simply not counted as "No kind".
+   */
+  kindsLoaded?: boolean;
+}
+
 /**
- * Build legend rows for the kinds actually present in the current scope, in
- * `sortOrder`, followed by `"No kind"` when untyped topics are present.
+ * The legend key for one item: a known kind id, `'none'`, or null when the kind
+ * list is unavailable and the id cannot be resolved.
+ */
+function legendKeyOf(
+  item: { kindId?: string | null },
+  kindById: ReadonlyMap<string, TopicKindDto>,
+  kindsLoaded: boolean
+): string | null {
+  const id = item.kindId?.trim();
+  if (!id) return UNTYPED_KIND_KEY;
+  if (kindById.has(id)) return id;
+  return kindsLoaded ? UNTYPED_KIND_KEY : null;
+}
+
+function countLegendKeys(
+  items: ReadonlyArray<{ kindId?: string | null }>,
+  kindById: ReadonlyMap<string, TopicKindDto>,
+  kindsLoaded: boolean
+): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const item of items) {
+    const key = legendKeyOf(item, kindById, kindsLoaded);
+    if (key === null) continue;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/**
+ * Build legend rows for the kinds present in the current scope, in `sortOrder`,
+ * followed by `"No kind"` when untyped topics are present.
+ *
+ * Counts differ by state: a VISIBLE kind reports how many of its topics are
+ * drawn on the map (after the cap), while a HIDDEN kind reports its in-scope
+ * count, so the reader knows how many topics return when it is shown again.
  */
 export function buildKindLegendEntries(
   items: ReadonlyArray<{ kindId?: string | null }>,
   kinds: readonly TopicKindDto[],
-  visibleKindKeys: ReadonlySet<string> | null
+  visibleKindKeys: ReadonlySet<string> | null,
+  options: KindLegendOptions = {}
 ): KindLegendEntry[] {
   const kindById = new Map(kinds.map((kind) => [kind.id, kind]));
-  const counts = new Map<string, number>();
-  let untypedCount = 0;
+  const kindsLoaded = options.kindsLoaded ?? true;
+  const drawnItems = options.drawnItems ?? items;
+  const inScopeCounts = countLegendKeys(items, kindById, kindsLoaded);
+  const drawnCounts = countLegendKeys(drawnItems, kindById, kindsLoaded);
 
-  for (const item of items) {
-    const id = item.kindId?.trim();
-    if (id && kindById.has(id)) {
-      counts.set(id, (counts.get(id) ?? 0) + 1);
-    } else {
-      untypedCount += 1;
-    }
-  }
+  const isVisible = (key: string) => (visibleKindKeys ? visibleKindKeys.has(key) : true);
+  const countFor = (key: string) => (isVisible(key) ? drawnCounts.get(key) ?? 0 : inScopeCounts.get(key) ?? 0);
 
   const orderedKinds = [...kinds]
-    .filter((kind) => (counts.get(kind.id) ?? 0) > 0)
+    .filter((kind) => (inScopeCounts.get(kind.id) ?? 0) > 0)
     .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
 
   const entries: KindLegendEntry[] = orderedKinds.map((kind) => ({
     key: kind.id,
     label: kind.name,
     color: kindCssVar(kind.colorKey),
-    count: counts.get(kind.id) ?? 0,
-    visible: visibleKindKeys ? visibleKindKeys.has(kind.id) : true,
+    count: countFor(kind.id),
+    visible: isVisible(kind.id),
     isUntyped: false,
   }));
 
-  if (untypedCount > 0) {
+  if ((inScopeCounts.get(UNTYPED_KIND_KEY) ?? 0) > 0) {
     entries.push({
       key: UNTYPED_KIND_KEY,
       label: 'No kind',
       color: kindCssVar(null),
-      count: untypedCount,
-      visible: visibleKindKeys ? visibleKindKeys.has(UNTYPED_KIND_KEY) : true,
+      count: countFor(UNTYPED_KIND_KEY),
+      visible: isVisible(UNTYPED_KIND_KEY),
       isUntyped: true,
     });
   }

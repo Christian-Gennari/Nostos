@@ -56,6 +56,12 @@ export class BrainStateService {
   readonly topicKinds = signal<TopicKindDto[]>([], { equal: sameKinds });
   readonly topicsLoaded = signal(false);
   readonly topicsFailed = signal(false);
+  /**
+   * True once the kind list actually arrived. A failure leaves it false, which
+   * tells the map to hide kind colouring and the legend rather than counting
+   * every typed topic as untyped.
+   */
+  readonly kindsLoaded = signal(false);
   readonly summary = signal<NoteSummary | null>(null);
   readonly topicSort = signal<TopicSort>(readStored(TOPIC_SORT_KEY, isTopicSort, 'usage'));
   private readonly mapColorModeChoice = signal<MapColorMode | null>(
@@ -88,7 +94,8 @@ export class BrainStateService {
   private refreshSeq = 0;
   /** The counts were asked for and have not failed; they are not asked for twice. */
   private summaryRequested = false;
-  private kindsLoaded = false;
+  /** A screen asked for kinds, so a later refresh may retry a failed load. */
+  private kindsRequested = false;
   private kindsLoading = false;
 
   /** Loads the topics and counts the first time anything asks. */
@@ -103,7 +110,8 @@ export class BrainStateService {
    * reader opening a book does not pay for a request only the map reads.
    */
   ensureKindsLoaded(): void {
-    if (this.kindsLoaded) return;
+    this.kindsRequested = true;
+    if (this.kindsLoaded()) return;
     this.loadKinds();
   }
 
@@ -123,8 +131,9 @@ export class BrainStateService {
   refresh(): void {
     this.dataVersion.update((version) => version + 1);
     // A screen that never asked for kinds keeps its request count unchanged;
-    // one that did (the map) sees a renamed kind without a reload.
-    this.load({ summary: true, kinds: this.kindsLoaded });
+    // one whose kinds call failed asks again on the next refresh, because an
+    // empty list would be indistinguishable from a library with no kinds.
+    this.load({ summary: true, kinds: this.kindsRequested && !this.kindsLoaded() });
   }
 
   /** A topic was renamed, merged or deleted: refresh, and have lists reread their notes. */
@@ -162,7 +171,7 @@ export class BrainStateService {
     this.topicsService.listKinds().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (kinds) => {
         this.topicKinds.set(kinds);
-        this.kindsLoaded = true;
+        this.kindsLoaded.set(true);
         this.kindsLoading = false;
       },
       // Kind metadata decorates the map and topic views; tolerate transient errors

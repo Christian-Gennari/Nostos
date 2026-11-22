@@ -126,10 +126,14 @@ The **Colour** control switches between **Kind** (topic kind tokens
 (co-occurrence clusters), and **None** (uniform neutral colour). It defaults
 to **Kind** once any topic has a kind, otherwise **Cluster**, and is
 remembered per viewer. In **Kind** mode the stage legend lists every kind in
-scope with its count and a **No kind (n)** pill (with a **Sort them** link to
-`/brain/kinds?filter=untyped`). Clicking any legend pill hides or shows that
-kind, storing the filter in `?kinds=<id>,<id>` (`none` for untyped), so a
-filtered map can be shared and Back returns to it. The filter applies before
+scope with a **No kind (n)** pill (with a **Sort them** link to
+`/brain/kinds?filter=untyped`). A visible kind's count is what is actually
+drawn after the cap; a hidden kind shows how many topics come back when it is
+shown. Clicking any legend pill hides or shows that kind, storing the filter in
+`?kinds=<id>,<id>` (`none` for untyped), so a filtered map can be shared and
+Back returns to it; **Show all kinds** clears it from any colour mode. If the
+kind list cannot be loaded, the map paints **Cluster** and hides the kind
+legend rather than presenting typed topics as untyped. The filter applies before
 the 150-topic cap, freeing room for the topics that remain, and a local map is
 scoped on the whole graph first, so hiding a kind never shortens the path that
 makes a topic "within N steps" — the root stays even when its own kind is

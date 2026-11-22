@@ -596,4 +596,50 @@ describe('topic kind map helpers', () => {
     const unknown = buildKindLegendEntries([{ kindId: 'gone' }], kinds, null);
     expect(unknown.map((entry) => [entry.key, entry.count])).toEqual([['none', 1]]);
   });
+
+  it('counts drawn topics for a visible kind and in-scope topics for a hidden one', () => {
+    const kinds = [
+      { id: 'k1', name: 'Books', colorKey: 'kind-1', sortOrder: 1, createdAt: '', topicCount: 3 },
+      { id: 'k2', name: 'Concepts', colorKey: 'kind-2', sortOrder: 2, createdAt: '', topicCount: 2 },
+    ];
+    const drawn = [{ kindId: 'k1' }, { kindId: 'k1' }];
+    const scope = [...drawn, { kindId: 'k1' }, { kindId: 'k2' }, { kindId: 'k2' }];
+
+    // Visible: Books reports the 2 actually drawn, not the 3 in scope.
+    const allVisible = buildKindLegendEntries(scope, kinds, null, { drawnItems: drawn });
+    expect(allVisible.map((entry) => [entry.key, entry.count])).toEqual([
+      ['k1', 2],
+      ['k2', 0],
+    ]);
+
+    // Hidden: Concepts reports the 2 that come back when it is shown again.
+    const booksOnly = buildKindLegendEntries(scope, kinds, new Set(['k1']), {
+      drawnItems: drawn,
+    });
+    expect(booksOnly.map((entry) => [entry.key, entry.count, entry.visible])).toEqual([
+      ['k1', 2, true],
+      ['k2', 2, false],
+    ]);
+  });
+
+  it('does not count an unknown kind id as untyped before the kind list has loaded', () => {
+    const kinds = [
+      { id: 'k1', name: 'Books', colorKey: 'kind-1', sortOrder: 1, createdAt: '', topicCount: 1 },
+    ];
+    const items = [{ kindId: 'k1' }, { kindId: null }];
+
+    // Unavailable: k1 is typed but unnamed; only the truly untyped row appears.
+    const unavailable = buildKindLegendEntries(items, [], null, { kindsLoaded: false });
+    expect(unavailable.map((entry) => [entry.key, entry.count])).toEqual([['none', 1]]);
+
+    // Loaded, but the id is gone from the list: it is untyped, not invisible.
+    const loadedWithoutK1 = buildKindLegendEntries(items, [], null, { kindsLoaded: true });
+    expect(loadedWithoutK1.map((entry) => [entry.key, entry.count])).toEqual([['none', 2]]);
+
+    const loaded = buildKindLegendEntries(items, kinds, null, { kindsLoaded: true });
+    expect(loaded.map((entry) => [entry.key, entry.count])).toEqual([
+      ['k1', 1],
+      ['none', 1],
+    ]);
+  });
 });

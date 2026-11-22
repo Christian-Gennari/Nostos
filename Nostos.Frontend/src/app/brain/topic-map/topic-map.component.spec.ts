@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
@@ -19,6 +20,7 @@ vi.mock('sigma', () => {
     zoomIn: vi.fn(() => Promise.resolve()),
     zoomOut: vi.fn(() => Promise.resolve()),
     animate: vi.fn(() => Promise.resolve()),
+    isAnimating: vi.fn(() => false),
     setState: vi.fn(),
     getState: vi.fn(() => ({ x: camera.x, y: camera.y, angle: 0, ratio: camera.ratio })),
   };
@@ -181,6 +183,10 @@ vi.mock('graphology', () => {
     }
     setNodeAttribute(node: string, attribute: string, value: unknown) {
       this.nodes.get(node)![attribute] = value;
+    }
+    setEdgeAttribute(edge: string, attribute: string, value: unknown) {
+      const found = this.edges.find((e) => e.key === edge);
+      if (found) found.attrs[attribute] = value;
     }
     /**
      * Added for the drag-physics path. Sigma's own graph has this; the hand-rolled
@@ -449,8 +455,8 @@ describe('TopicMapComponent', () => {
     });
 
     expect(component.isCapped()).toBe(true);
-    expect(fixture.nativeElement.querySelector('.map-limit-note')?.textContent).toContain(
-      '150 most-referenced topics'
+    expect(fixture.nativeElement.querySelector('.map-limit-note')?.textContent?.trim()).toBe(
+      `Showing 150 of ${MAX_MAP_TOPICS + 1} topics.`
     );
   });
 
@@ -1706,6 +1712,108 @@ describe('TopicMapComponent', () => {
       expect(cleared).toHaveBeenCalledTimes(1);
     });
 
+    it('recolours in place when kinds arrive during the mount camera animation', () => {
+      document.documentElement.style.setProperty('--map-kind-1', '#3b73a8');
+      fixture.componentRef.setInput('colorMode', 'kind');
+      fixture.componentRef.setInput('centerOnLoad', true);
+      fixture.componentRef.setInput('selectedId', 'alpha');
+      setTopics(kindTopics);
+      flushGraph(kindGraph);
+
+      const globals = globalThis as unknown as {
+        __camera: { animate: ReturnType<typeof vi.fn>; setState: ReturnType<typeof vi.fn>; isAnimating: ReturnType<typeof vi.fn> };
+        __nostosSigma: unknown;
+        __nostosGraph: { getNodeAttributes: (node: string) => Record<string, unknown> };
+      };
+      const sigmaBefore = globals.__nostosSigma;
+      const graphBefore = globals.__nostosGraph;
+      const animateCalls = globals.__camera.animate.mock.calls.length;
+      const focusTarget = globals.__camera.animate.mock.calls.at(-1)?.[0];
+      globals.__camera.setState.mockClear();
+      globals.__camera.isAnimating.mockReturnValue(true); // the 350 ms mount animation
+
+      fixture.componentRef.setInput('topicKinds', kinds);
+      fixture.detectChanges();
+
+      // No disposal, no re-frame, no carried camera: only the colour changed,
+      // and the map stays at the fit/focus target it had.
+      expect(globals.__nostosSigma).toBe(sigmaBefore);
+      expect(globals.__nostosGraph).toBe(graphBefore);
+      expect(globals.__camera.setState).not.toHaveBeenCalled();
+      expect(globals.__camera.animate).toHaveBeenCalledTimes(animateCalls);
+      expect(globals.__camera.animate.mock.calls.at(-1)?.[0]).toEqual(focusTarget);
+      expect(graphBefore.getNodeAttributes('alpha')['color']).toBe('#3b73a8');
+
+      globals.__camera.isAnimating.mockReturnValue(false);
+      document.documentElement.style.removeProperty('--map-kind-1');
+    });
+
+    it('hides the kind legend and paints Cluster while the kind list is unavailable', () => {
+      fixture.componentRef.setInput('colorMode', 'kind');
+      fixture.componentRef.setInput('kindsLoaded', false);
+      fixture.componentRef.setInput('topicKinds', []);
+      setTopics(kindTopics);
+      flushGraph(kindGraph);
+
+      expect(fixture.nativeElement.querySelector('.map-legend-kinds')).toBeNull();
+      expect(fixture.nativeElement.textContent).not.toContain('No kind (');
+      expect(component.kindLegend()).toEqual([]);
+    });
+
+    it('offers Show all kinds in every colour mode when a kind filter is active', () => {
+      fixture.componentRef.setInput('colorMode', 'cluster');
+      fixture.componentRef.setInput('topicKinds', kinds);
+      fixture.componentRef.setInput('visibleKindKeys', new Set(['k1']));
+      setTopics(kindTopics);
+      flushGraph(kindGraph);
+
+      expect(component.hiddenByKindCount()).toBe(2);
+      const clear = fixture.nativeElement.querySelector('.map-legend-clear') as HTMLButtonElement;
+      expect(clear?.textContent?.trim()).toBe('Show all kinds');
+      const cleared = vi.fn();
+      component.clearKindFilter.subscribe(cleared);
+      clear.click();
+      expect(cleared).toHaveBeenCalledTimes(1);
+
+      // None mode keeps the escape hatch too.
+      fixture.componentRef.setInput('colorMode', 'none');
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.map-legend-clear')).toBeTruthy();
+    });
+
+    it('counts drawn topics for a visible kind and in-scope topics for a hidden one', () => {
+      const high = Array.from({ length: MAX_MAP_TOPICS }, (_, i) => ({
+        id: `high-${i}`,
+        name: `High ${i}`,
+        usageCount: 1000 + i,
+        kindId: 'k1',
+      }));
+      const hiddenKinds = [
+        { id: 'h1', name: 'Hidden One', usageCount: 2, kindId: 'k2' },
+        { id: 'h2', name: 'Hidden Two', usageCount: 1, kindId: 'k2' },
+      ];
+      const all = [...high, ...hiddenKinds];
+
+      fixture.componentRef.setInput('colorMode', 'kind');
+      fixture.componentRef.setInput('topicKinds', kinds);
+      fixture.componentRef.setInput('visibleKindKeys', new Set(['k1']));
+      setTopics(all);
+      flushGraph({
+        nodes: all.map((t) => ({ id: t.id, name: t.name, usageCount: t.usageCount, kindId: t.kindId })),
+        edges: [],
+      });
+
+      const buttons = Array.from(
+        fixture.nativeElement.querySelectorAll('.map-legend-kind')
+      ) as HTMLButtonElement[];
+      expect(buttons.map((b) => b.textContent?.replace(/\s+/g, ' ').trim())).toEqual([
+        'Concepts (150)',
+        'People (2)',
+      ]);
+      expect(buttons[0].getAttribute('aria-label')).toContain('drawn on the map');
+      expect(buttons[1].getAttribute('aria-label')).toContain('in scope, hidden');
+    });
+
     it('renders the selected topic kind pill non-interactively, and requests the picker only when enabled', () => {
       fixture.componentRef.setInput('colorMode', 'kind');
       fixture.componentRef.setInput('topicKinds', kinds);
@@ -1730,6 +1838,22 @@ describe('TopicMapComponent', () => {
       component.kindPickerRequested.subscribe(requested);
       buttonPill.click();
       expect(requested).toHaveBeenCalledWith({ topicId: 'gamma', kindId: null });
+    });
+  });
+
+  describe('legend legibility', () => {
+    it('keeps a hidden kind label at full text contrast and dims only the swatch', () => {
+      const css = readFileSync('src/app/brain/topic-map/topic-map.component.css', 'utf8');
+      const hiddenRule = css.match(
+        /\.map-legend-kind\.nostos-chip\.is-hidden,[\s\S]*?\{([\s\S]*?)\}/
+      );
+      expect(hiddenRule).toBeTruthy();
+      const body = hiddenRule![1];
+
+      // At 0.52 opacity the label measured 2.38:1 (light) and 3.48:1 (dark).
+      expect(body).not.toMatch(/opacity\s*:/);
+      expect(body).toMatch(/color:\s*var\(--color-text-muted\)/);
+      expect(css).toMatch(/\.map-legend-kind\.is-hidden \.map-legend-swatch[\s\S]*?\{[^}]*opacity/);
     });
   });
 });

@@ -122,6 +122,12 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
   @Input() minShared: number | null = null;
   @Input() colorMode: MapColorMode = 'cluster';
   @Input() topicKinds: TopicKindDto[] = [];
+  /**
+   * Whether the kind list itself arrived. When it did not, the map cannot
+   * colour or name kinds, so it falls back to Cluster and hides the legend
+   * rather than presenting every typed topic as "No kind".
+   */
+  @Input() kindsLoaded = true;
   /** Visible kind keys (UUIDs or `'none'` for untyped); null means all kinds are shown. */
   @Input() visibleKindKeys: ReadonlySet<string> | null = null;
   /**
@@ -165,6 +171,9 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
   private lastDepth = LOCAL_MAP_DEPTH_MIN;
   private lastEffectiveMin = 1;
   private activeRootId: string | null = null;
+  /** The scope before the cap, and the topics actually drawn, for legend counts. */
+  private lastLegendItems: ReadonlyArray<{ kindId?: string | null }> = [];
+  private lastDrawnItems: ReadonlyArray<{ kindId?: string | null }> = [];
 
   /* State signals for the template. */
   readonly loading = signal(true);
@@ -194,10 +203,12 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
   private readonly kindView = signal<{
     colorMode: MapColorMode;
     topicKinds: TopicKindDto[];
+    kindsLoaded: boolean;
     kindPickerEnabled: boolean;
   }>({
     colorMode: 'cluster',
     topicKinds: [],
+    kindsLoaded: true,
     kindPickerEnabled: false,
   });
 
@@ -231,8 +242,8 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
 
   /** In Kind mode an untyped topic still says so; other modes show no pill for it. */
   readonly showUntypedCardPill = computed(() => {
-    const { colorMode, kindPickerEnabled } = this.kindView();
-    return colorMode === 'kind' || kindPickerEnabled;
+    const { colorMode, kindsLoaded, kindPickerEnabled } = this.kindView();
+    return (kindsLoaded && colorMode === 'kind') || kindPickerEnabled;
   });
 
   @HostListener('document:keydown', ['$event'])
@@ -245,10 +256,16 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
   /* ── Lifecycle ── */
 
   ngOnChanges(changes: SimpleChanges): void {
-    if (changes['colorMode'] || changes['topicKinds'] || changes['kindPickerEnabled']) {
+    const colourChanged = !!(
+      changes['colorMode'] ||
+      changes['topicKinds'] ||
+      changes['kindsLoaded']
+    );
+    if (colourChanged || changes['kindPickerEnabled']) {
       this.kindView.set({
         colorMode: this.colorMode,
         topicKinds: this.topicKinds ?? [],
+        kindsLoaded: this.kindsLoaded,
         kindPickerEnabled: this.kindPickerEnabled,
       });
     }
@@ -261,12 +278,16 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
       this.loadGraphData();
       return;
     }
+    // Colour and kind metadata change how the graph LOOKS, not which graph it
+    // is. Rebuilding Sigma for them disposed a renderer mid-mount-animation and
+    // the carried camera stranded the map at its default or half-zoomed view.
+    if (colourChanged && this.graphData && !this.loading() && this.lastBuilt) {
+      this.applyKindAppearance();
+    }
     if (
       (changes['rootId'] ||
         changes['depth'] ||
         changes['minShared'] ||
-        changes['colorMode'] ||
-        changes['topicKinds'] ||
         changes['visibleKindKeys']) &&
       this.graphData &&
       !this.loading()
@@ -339,6 +360,37 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
   }
 
   /* ── Graph construction ── */
+
+  /**
+   * The colour mode the map can actually paint. Without the kind list, Kind
+   * mode would paint every typed topic with the untyped neutral, so Cluster is
+   * the honest fallback.
+   */
+  private effectiveColorMode(): MapColorMode {
+    return this.kindsLoaded ? this.colorMode : 'cluster';
+  }
+
+  /** Recolour the mounted graph after kind metadata or the colour mode changed. */
+  private applyKindAppearance(): void {
+    if (!this.lastBuilt || !this.renderer.graphInstance) return;
+    const hueById = this.renderer.recolor(this.effectiveColorMode(), this.topicKinds ?? []);
+    this.updateKindLegend();
+    this.model.update((model) => (model ? { ...model, hue: hueById } : model));
+    this.renderer.refresh();
+  }
+
+  /** Recompute the legend from the scope and the topics actually drawn. */
+  private updateKindLegend(): void {
+    const showLegend = this.kindsLoaded && this.effectiveColorMode() === 'kind';
+    this.kindLegend.set(
+      showLegend
+        ? buildKindLegendEntries(this.lastLegendItems, this.topicKinds ?? [], this.visibleKindKeys, {
+            drawnItems: this.lastDrawnItems,
+            kindsLoaded: this.kindsLoaded,
+          })
+        : []
+    );
+  }
 
   private rebuildSigma(): void {
     if (!this.graphData || !this.sigmaContainer?.nativeElement) {
@@ -436,11 +488,9 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
       totalInScope = filteredSourceTotal;
     }
 
-    this.kindLegend.set(
-      this.colorMode === 'kind'
-        ? buildKindLegendEntries(legendItems, this.topicKinds ?? [], this.visibleKindKeys)
-        : []
-    );
+    this.lastLegendItems = legendItems;
+    this.lastDrawnItems = visibleNodes;
+    this.updateKindLegend();
 
     const scopeChanged =
       this.lastBuilt &&
@@ -462,7 +512,8 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
       });
     }
 
-    const keepsView = !scopeChanged && (this.camera !== null || this.centerOnLoad);
+    const keepsView =
+      this.lastBuilt && !scopeChanged && (this.camera !== null || this.centerOnLoad);
     this.viewport.captureCarriedCamera(this.renderer.sigmaInstance, keepsView);
     this.disposeSigma();
 
@@ -496,7 +547,7 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
     const { graph, hueById } = this.renderer.buildGraph(visibleNodes, visibleEdges, {
       rootId: normalizedRootId,
       initialPositions: previousPositions,
-      colorMode: this.colorMode,
+      colorMode: this.effectiveColorMode(),
       topicKinds: this.topicKinds ?? [],
     });
 

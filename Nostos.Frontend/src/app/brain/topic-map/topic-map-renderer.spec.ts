@@ -330,4 +330,37 @@ describe('TopicMapRenderer', () => {
     document.documentElement.style.removeProperty('--map-kind-none');
     document.documentElement.style.removeProperty('--graph-edge');
   });
+
+  it('recolours the existing graph in place when kind metadata arrives', () => {
+    document.documentElement.style.setProperty('--map-kind-1', '#3b73a8');
+    document.documentElement.style.setProperty('--map-kind-none', '#807972');
+    document.documentElement.style.setProperty('--graph-edge', '#d4d0c8');
+
+    const renderer = new TopicMapRenderer();
+    const nodes = [
+      { id: 'a', name: 'A', usageCount: 10, kindId: 'k1' },
+      { id: 'b', name: 'B', usageCount: 5, kindId: null },
+    ];
+    const edges = [{ sourceId: 'a', targetId: 'b', sharedNotes: 2 }];
+
+    // The graph is built before the kind list arrives: Cluster paints it, and
+    // the graph object must survive the later Kind recolour untouched.
+    const built = renderer.buildGraph(nodes, edges, { colorMode: 'cluster', topicKinds: [] });
+    const before = built.graph.getNodeAttributes('a')['color'];
+    const hueById = renderer.recolor(
+      'kind',
+      [{ id: 'k1', name: 'Books', colorKey: 'kind-1', sortOrder: 1, createdAt: '', topicCount: 1 }],
+      built.graph
+    );
+
+    expect(built.graph.getNodeAttributes('a')['color']).toBe('#3b73a8');
+    expect(built.graph.getNodeAttributes('b')['color']).toBe('#807972');
+    expect(built.graph.getNodeAttributes('a')['color']).not.toBe(before);
+    expect(hueById.get('a')).toBe('#3b73a8');
+    expect(hueById.get('b')).toBeNull();
+
+    document.documentElement.style.removeProperty('--map-kind-1');
+    document.documentElement.style.removeProperty('--map-kind-none');
+    document.documentElement.style.removeProperty('--graph-edge');
+  });
 });

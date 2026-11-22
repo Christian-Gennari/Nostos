@@ -14,6 +14,7 @@ function createMockSigma(overrides: Partial<Record<string, unknown>> = {}) {
     zoomIn: vi.fn(() => Promise.resolve()),
     zoomOut: vi.fn(() => Promise.resolve()),
     animate: vi.fn(() => Promise.resolve()),
+    isAnimating: vi.fn(() => false),
     setState: vi.fn((next: Record<string, number>) => {
       Object.assign(camera, next);
     }),
@@ -170,6 +171,32 @@ describe('TopicMapViewport', () => {
       centerOnLoad: false,
     });
     expect(camera.setState).toHaveBeenCalledWith({ x: 0.4, y: 0.6, angle: 0, ratio: 0.8 });
+  });
+
+  it('does not carry an animating camera into a rebuild', () => {
+    const viewport = new TopicMapViewport();
+    const { sigma, camera } = createMockSigma();
+    camera.ratio = 0.5;
+    camera.isAnimating.mockReturnValue(true);
+
+    viewport.captureCarriedCamera(sigma, true);
+
+    // The next build must frame itself: the captured state was a mid-animation
+    // frame, not the reader's view.
+    const graph = new Graph();
+    graph.addNode('a', { x: 0, y: 0 });
+    graph.addNode('b', { x: 100, y: 100 });
+    camera.setState.mockClear();
+    camera.animate.mockClear();
+    viewport.frameOnLoad({
+      sigma,
+      graph,
+      selectedId: null,
+      cameraInput: null,
+      centerOnLoad: false,
+    });
+    expect(camera.setState).not.toHaveBeenCalled();
+    expect(camera.animate).toHaveBeenCalled();
   });
 
   it('observes stage resizes, schedules initial frame, and cleans up RAF/ResizeObserver on disposeRebuildObservers', () => {

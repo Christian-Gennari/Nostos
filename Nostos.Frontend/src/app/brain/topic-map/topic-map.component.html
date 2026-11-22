@@ -33,17 +33,19 @@
           <span class="map-legend-line" aria-hidden="true"></span>Line: shared notes
         </span>
         @if (isCapped()) {
-          @if (isLocal()) {
-          <span class="map-limit-note">Showing {{ shownCount() }} of {{ scopeTotal() }} topics.</span>
-          } @else {
-          <span class="map-limit-note">Showing the 150 most-referenced topics.</span>
-          }
+        <span class="map-limit-note">Showing {{ shownCount() }} of {{ scopeTotal() }} topics.</span>
         }
         @if (hiddenByKindCount() > 0) {
         <span class="map-limit-note">{{ hiddenByKindCount() }} hidden by kind.</span>
+        <button
+          appChip
+          type="button"
+          class="map-legend-clear"
+          (click)="clearKindFilter.emit()"
+        >Show all kinds</button>
         }
       </div>
-      @if (colorMode === 'kind' && kindLegend().length) {
+      @if (kindsLoaded && colorMode === 'kind' && kindLegend().length) {
       <div class="map-legend-kinds" role="group" aria-label="Filter by topic kind">
         @for (entry of kindLegend(); track entry.key) {
           @if (entry.isUntyped) {
@@ -54,7 +56,7 @@
               class="map-legend-kind is-untyped"
               [class.is-hidden]="!entry.visible"
               [attr.aria-pressed]="entry.visible"
-              [attr.aria-label]="entry.label + ' (' + entry.count + '), ' + (entry.visible ? 'shown, click to hide' : 'hidden, click to show')"
+              [attr.aria-label]="entry.label + ', ' + entry.count + (entry.visible ? ' drawn on the map, click to hide' : ' in scope, hidden, click to show')"
               (click)="onToggleKind(entry.key)"
             >
               <span class="map-legend-swatch" aria-hidden="true" [style.background]="entry.color"></span>
@@ -74,7 +76,7 @@
             class="map-legend-kind"
             [class.is-hidden]="!entry.visible"
             [attr.aria-pressed]="entry.visible"
-            [attr.aria-label]="entry.label + ' (' + entry.count + '), ' + (entry.visible ? 'shown, click to hide' : 'hidden, click to show')"
+            [attr.aria-label]="entry.label + ', ' + entry.count + (entry.visible ? ' drawn on the map, click to hide' : ' in scope, hidden, click to show')"
             (click)="onToggleKind(entry.key)"
           >
             <span class="map-legend-swatch" aria-hidden="true" [style.background]="entry.color"></span>

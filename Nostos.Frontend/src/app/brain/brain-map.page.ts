@@ -124,6 +124,13 @@ export class BrainMapPage {
   readonly min = computed(() => parseMin(this.queryParams().get('min'), this.restoredMin));
 
   readonly topics = this.state.topics;
+  /**
+   * The colour mode the map can paint. Kind mode without the kind list would
+   * paint every typed topic as untyped, so Cluster stands in until it arrives.
+   */
+  readonly effectiveColorMode = computed<MapColorMode>(() =>
+    this.state.kindsLoaded() ? this.state.mapColorMode() : 'cluster'
+  );
   readonly aroundTopic = computed(() => this.state.topicById(this.around()));
   /** The selected topic's own words, which the card shows before a line from its notes. */
   readonly focusedWords = computed(() => this.state.topicById(this.focus())?.description?.trim() || null);
@@ -146,8 +153,9 @@ export class BrainMapPage {
     const hiddenSuffix =
       info.hiddenByKindCount > 0 ? ` (${info.hiddenByKindCount} hidden by kind)` : '';
     if (info.capped) {
-      const total = info.totalInScope + info.hiddenByKindCount;
-      return `Showing ${info.shownCount} of ${total} topics${hiddenSuffix}`;
+      // One total everywhere: the scope AFTER the kind filter. Hidden topics
+      // are stated separately, never added back into the denominator.
+      return `Showing ${info.shownCount} of ${info.totalInScope} topics${hiddenSuffix}`;
     }
     return `${plural(info.shownCount, 'topic')}${hiddenSuffix}`;
   });

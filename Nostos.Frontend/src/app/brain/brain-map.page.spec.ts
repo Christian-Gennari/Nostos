@@ -78,6 +78,7 @@ describe('BrainMapPage', () => {
   let mapView: ReturnType<typeof signal<BrainMapView | null>>;
   let topicsSignal: ReturnType<typeof signal<TopicDto[]>>;
   let topicKindsSignal: ReturnType<typeof signal<TopicKindDto[]>>;
+  let kindsLoadedSignal: ReturnType<typeof signal<boolean>>;
   let mapColorModeSignal: ReturnType<typeof signal<MapColorMode>>;
   let setMapColorModeSpy: ReturnType<typeof vi.fn>;
   let graphData: TopicGraphDto;
@@ -109,12 +110,18 @@ describe('BrainMapPage', () => {
 
   async function mountPage(
     initialParams: Record<string, string>,
-    options: { back?: boolean; savedView?: BrainMapView | null; colorMode?: MapColorMode } = {}
+    options: {
+      back?: boolean;
+      savedView?: BrainMapView | null;
+      colorMode?: MapColorMode;
+      kindsLoaded?: boolean;
+    } = {}
   ): Promise<void> {
     query = new BehaviorSubject<ParamMap>(convertToParamMap(initialParams));
     mapView = signal<BrainMapView | null>(options.savedView ?? null);
     topicsSignal = signal<TopicDto[]>(baseTopics);
     topicKindsSignal = signal<TopicKindDto[]>(baseKinds);
+    kindsLoadedSignal = signal<boolean>(options.kindsLoaded ?? true);
     mapColorModeSignal = signal<MapColorMode>(options.colorMode ?? 'kind');
     setMapColorModeSpy = vi.fn((mode: MapColorMode) => mapColorModeSignal.set(mode));
     graphData = baseGraph;
@@ -148,6 +155,7 @@ describe('BrainMapPage', () => {
             ensureKindsLoaded: vi.fn(),
             topics: topicsSignal,
             topicKinds: topicKindsSignal,
+            kindsLoaded: kindsLoadedSignal,
             topicsLoaded: signal(true),
             sidebarTopics: topicsSignal,
             drawerOpen: signal(false),
@@ -309,6 +317,32 @@ describe('BrainMapPage', () => {
         queryParams: { kinds: null },
         queryParamsHandling: 'merge',
       })
+    );
+  });
+
+  it('falls back to Cluster while the kind list is unavailable', async () => {
+    await mountPage({}, { colorMode: 'kind', kindsLoaded: false });
+
+    expect(fixture.componentInstance.effectiveColorMode()).toBe('cluster');
+    expect(el().querySelector('.map-legend-kinds')).toBeNull();
+    expect(el().textContent).not.toContain('No kind (');
+  });
+
+  it('states one in-scope total and the hidden-by-kind count separately', async () => {
+    await mountPage({ kinds: 'k1' });
+
+    fixture.componentInstance.scope.set({
+      totalInScope: 150,
+      shownCount: 150,
+      maxShared: 1,
+      effectiveMin: 1,
+      capped: true,
+      hiddenByKindCount: 7,
+    });
+    fixture.detectChanges();
+
+    expect(el().querySelector('.map-controls-count')?.textContent?.trim()).toBe(
+      'Showing 150 of 150 topics (7 hidden by kind)'
     );
   });
 });

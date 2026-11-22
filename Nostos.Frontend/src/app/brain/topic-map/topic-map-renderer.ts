@@ -132,7 +132,6 @@ export class TopicMapRenderer {
     const rootId = options.rootId ?? null;
     const initialPositions = options.initialPositions ?? null;
     const colorMode: MapColorMode = options.colorMode ?? 'cluster';
-    const kindById = new Map((options.topicKinds ?? []).map((kind) => [kind.id, kind]));
 
     const usages = visibleNodes.map((n) => Math.max(0, n.usageCount));
     const minUsage = Math.min(...usages);
@@ -144,13 +143,86 @@ export class TopicMapRenderer {
 
     const hubs = pickHubs([...visibleNodes]);
 
-    const clusterRank =
-      colorMode === 'cluster'
-        ? detectCommunities(
-            visibleNodes.map((n) => n.id),
-            [...visibleEdges]
-          )
-        : null;
+    for (const node of visibleNodes) {
+      const ratio = (Math.max(0, node.usageCount) - minUsage) / usageRange;
+      const size = NODE_SIZE_MIN + (NODE_SIZE_MAX - NODE_SIZE_MIN) * Math.sqrt(ratio);
+
+      const seeded = seedById.get(node.id)!;
+      const isRoot = rootId !== null && node.id === rootId;
+      const hub = hubs.has(node.id);
+
+      graph.addNode(node.id, {
+        label: node.name,
+        size,
+        // The colour is written by `recolor`, so an in-place kind or mode
+        // change goes through exactly the same path as the first build.
+        color: this.theme.node,
+        hue: null,
+        kindId: node.kindId ?? null,
+        labelColor: isRoot || hub ? this.theme.labelActive : hexToRgba(this.theme.label, 0.8 + ratio * 0.16),
+        labelWeight: isRoot || hub ? '600' : '400',
+        labelPriority: isRoot ? LABEL_PRIORITY.active : hub ? LABEL_PRIORITY.hub : LABEL_PRIORITY.normal,
+        forceLabel: isRoot || hub,
+        x: seeded.x,
+        y: seeded.y,
+        usageCount: node.usageCount,
+      });
+    }
+
+    for (const edge of visibleEdges) {
+      const strength = edge.sharedNotes / maxShared;
+      const edgeSize = EDGE_SIZE_MIN + strength * (EDGE_SIZE_MAX - EDGE_SIZE_MIN);
+      const alpha = EDGE_ALPHA_MIN + strength * EDGE_ALPHA_RANGE;
+      try {
+        graph.addEdge(edge.sourceId, edge.targetId, {
+          size: edgeSize,
+          color: hexToRgba(this.theme.edge, alpha),
+          sharedNotes: edge.sharedNotes,
+        });
+      } catch {
+        // Duplicate edge or missing node — skip silently.
+      }
+    }
+
+    const hueById = this.recolor(colorMode, options.topicKinds ?? [], graph);
+    return { graph, hueById };
+  }
+
+  /**
+   * Recompute node and edge colours for `graph` without rebuilding it.
+   *
+   * Arriving kind metadata changes what a topic looks like, not where it is:
+   * disposing Sigma for that rebuilds the graph and can carry an in-flight
+   * camera animation, leaving the map at the default or half-zoomed view.
+   * This writes the new colours into the existing graph attributes instead.
+   */
+  recolor(
+    colorMode: MapColorMode,
+    topicKinds: readonly TopicKindDto[] = [],
+    graph: Graph | null = this.graph
+  ): Map<string, string | null> {
+    this.theme = readTheme();
+    const hueById = new Map<string, string | null>();
+    if (!graph || graph.order === 0) return hueById;
+
+    const kindById = new Map(topicKinds.map((kind) => [kind.id, kind]));
+    const usages: number[] = [];
+    graph.forEachNode((_node, attrs) => usages.push(Math.max(0, Number(attrs['usageCount']) || 0)));
+    const minUsage = Math.min(...usages);
+    const maxUsage = Math.max(...usages);
+    const usageRange = Math.max(1, maxUsage - minUsage);
+
+    const ids: string[] = [];
+    const edgeList: Array<{ sourceId: string; targetId: string; sharedNotes: number }> = [];
+    let maxShared = 1;
+    graph.forEachNode((node) => ids.push(node));
+    graph.forEachEdge((_edge, attrs, source, target) => {
+      const sharedNotes = Math.max(1, Number(attrs['sharedNotes']) || 1);
+      edgeList.push({ sourceId: source, targetId: target, sharedNotes });
+      if (sharedNotes > maxShared) maxShared = sharedNotes;
+    });
+
+    const clusterRank = colorMode === 'cluster' ? detectCommunities(ids, edgeList) : null;
     const clusterSizes = new Map<number, number>();
     if (clusterRank) {
       for (const rank of clusterRank.values()) {
@@ -166,37 +238,36 @@ export class TopicMapRenderer {
       return this.theme.communities[rank] ?? null;
     };
 
-    const resolveNodeKind = (node: TopicGraphNodeDto): { key: string | null; hue: string | null } => {
-      const kindId = node.kindId?.trim();
-      if (!kindId) return { key: null, hue: null };
-      const kind = kindById.get(kindId);
+    const resolveNodeKind = (kindId: string | null): { key: string | null; hue: string | null } => {
+      const trimmed = kindId?.trim();
+      if (!trimmed) return { key: null, hue: null };
+      const kind = kindById.get(trimmed);
       if (kind) {
         return { key: kind.id, hue: resolveKindColor(kind.colorKey, this.theme) };
       }
-      if (kindIndexFromColorKey(kindId) !== null) {
-        return { key: kindId, hue: resolveKindColor(kindId, this.theme) };
+      if (kindIndexFromColorKey(trimmed) !== null) {
+        return { key: trimmed, hue: resolveKindColor(trimmed, this.theme) };
       }
       return { key: null, hue: null };
     };
 
-    const hueById = new Map<string, string | null>();
     const groupKeyById = new Map<string, string | null>();
 
-    for (const node of visibleNodes) {
-      const ratio = (Math.max(0, node.usageCount) - minUsage) / usageRange;
-      const size = NODE_SIZE_MIN + (NODE_SIZE_MAX - NODE_SIZE_MIN) * Math.sqrt(ratio);
-
+    graph.forEachNode((node, attrs) => {
+      const ratio = (Math.max(0, Number(attrs['usageCount']) || 0) - minUsage) / usageRange;
       let hue: string | null = null;
       let nodeColor: string;
       let groupKey: string | null = null;
 
       if (colorMode === 'kind') {
-        const resolved = resolveNodeKind(node);
+        const resolved = resolveNodeKind(
+          typeof attrs['kindId'] === 'string' ? (attrs['kindId'] as string) : null
+        );
         hue = resolved.hue;
         groupKey = resolved.key;
         nodeColor = resolved.hue ?? this.theme.kindNone;
       } else if (colorMode === 'cluster') {
-        hue = clusterHueOf(node.id);
+        hue = clusterHueOf(node);
         groupKey = hue;
         nodeColor = hue
           ? mixHex(this.theme.node, hue, 0.55 + ratio * 0.45)
@@ -207,50 +278,30 @@ export class TopicMapRenderer {
         nodeColor = mixHex(this.theme.node, this.theme.nodeHead, 0.18 + ratio * 0.42);
       }
 
-      hueById.set(node.id, hue);
-      groupKeyById.set(node.id, groupKey);
+      hueById.set(node, hue);
+      groupKeyById.set(node, groupKey);
+      graph.setNodeAttribute(node, 'hue', hue);
+      graph.setNodeAttribute(node, 'color', nodeColor);
+    });
 
-      const seeded = seedById.get(node.id)!;
-      const isRoot = rootId !== null && node.id === rootId;
-      const hub = hubs.has(node.id);
-
-      graph.addNode(node.id, {
-        label: node.name,
-        size,
-        color: nodeColor,
-        hue,
-        labelColor: isRoot || hub ? this.theme.labelActive : hexToRgba(this.theme.label, 0.8 + ratio * 0.16),
-        labelWeight: isRoot || hub ? '600' : '400',
-        labelPriority: isRoot ? LABEL_PRIORITY.active : hub ? LABEL_PRIORITY.hub : LABEL_PRIORITY.normal,
-        forceLabel: isRoot || hub,
-        x: seeded.x,
-        y: seeded.y,
-        usageCount: node.usageCount,
-      });
-    }
-
-    for (const edge of visibleEdges) {
-      const strength = edge.sharedNotes / maxShared;
-      const edgeSize = EDGE_SIZE_MIN + strength * (EDGE_SIZE_MAX - EDGE_SIZE_MIN);
+    graph.forEachEdge((edge, attrs, source, target) => {
+      const sharedNotes = Math.max(1, Number(attrs['sharedNotes']) || 1);
+      const strength = sharedNotes / maxShared;
       const alpha = EDGE_ALPHA_MIN + strength * EDGE_ALPHA_RANGE;
-      const sourceGroup = groupKeyById.get(edge.sourceId) ?? null;
-      const sourceHue = hueById.get(edge.sourceId) ?? null;
+      const sourceGroup = groupKeyById.get(source) ?? null;
+      const sourceHue = hueById.get(source) ?? null;
       const sameGroup =
-        sourceGroup !== null && sourceHue !== null && sourceGroup === (groupKeyById.get(edge.targetId) ?? null);
-      try {
-        graph.addEdge(edge.sourceId, edge.targetId, {
-          size: edgeSize,
-          color: sameGroup
-            ? hexToRgba(mixHex(this.theme.edge, sourceHue, 0.6), alpha)
-            : hexToRgba(this.theme.edge, alpha),
-          sharedNotes: edge.sharedNotes,
-        });
-      } catch {
-        // Duplicate edge or missing node — skip silently.
-      }
-    }
+        sourceGroup !== null && sourceHue !== null && sourceGroup === (groupKeyById.get(target) ?? null);
+      graph.setEdgeAttribute(
+        edge,
+        'color',
+        sameGroup
+          ? hexToRgba(mixHex(this.theme.edge, sourceHue, 0.6), alpha)
+          : hexToRgba(this.theme.edge, alpha)
+      );
+    });
 
-    return { graph, hueById };
+    return hueById;
   }
 
   private resolveInitialSeeds(

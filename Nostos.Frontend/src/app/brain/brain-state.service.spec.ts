@@ -102,6 +102,32 @@ describe('BrainStateService loading', () => {
     expect(brain.topicKinds()).toEqual([kind]);
   });
 
+  it('marks kinds unavailable after a failure and retries on refresh', () => {
+    const kind = {
+      id: 'k1', name: 'Schools', colorKey: 'kind-1', sortOrder: 1, createdAt: '2026-01-01T00:00:00Z', topicCount: 1,
+    } satisfies TopicKindDto;
+    listKinds
+      .mockReset()
+      .mockReturnValueOnce(throwError(() => new Error('kinds unavailable')))
+      .mockReturnValueOnce(of([kind]));
+
+    const brain = create();
+    brain.ensureKindsLoaded();
+    expect(listKinds).toHaveBeenCalledTimes(1);
+    expect(brain.kindsLoaded()).toBe(false);
+    expect(brain.topicKinds()).toEqual([]);
+
+    // The next refresh asks again rather than treating an empty list as "no kinds".
+    topicsList.mockReturnValue(
+      of([{ id: 't1', name: 'Stoicism', usageCount: 1, kindId: 'k1' } as TopicDto])
+    );
+    brain.refresh();
+    expect(listKinds).toHaveBeenCalledTimes(2);
+    expect(brain.kindsLoaded()).toBe(true);
+    expect(brain.topicKinds()).toEqual([kind]);
+    expect(brain.mapColorMode()).toBe('kind');
+  });
+
   it('defaults mapColorMode to kind if any topic has a kind, else cluster, and persists per viewer', () => {
     const brain = create();
     brain.ensureTopicsLoaded();

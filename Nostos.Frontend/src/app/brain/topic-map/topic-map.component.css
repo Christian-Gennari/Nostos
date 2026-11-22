@@ -197,15 +197,51 @@
   border-color: var(--color-text-muted);
 }
 
+/*
+ * The "off" state is carried by the swatch, border and strike-through — NOT by
+ * fading the whole chip. At 0.52 opacity the label measured 2.38:1 on light and
+ * 3.48:1 on dark; the full `--color-text-muted` ink is 7.30:1 on the light
+ * hover surface and 9.39:1 on the dark one, so the reader can still read which
+ * kind they just turned off.
+ */
 .map-legend-kind.nostos-chip.is-hidden,
 .map-legend-kind.nostos-chip[aria-pressed='false'] {
-  opacity: 0.52;
+  border-color: var(--border-color);
+  border-style: dashed;
   background: var(--bg-hover);
   color: var(--color-text-muted);
 }
 
 .map-legend-kind.is-hidden .map-legend-kind-label {
   text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.map-legend-kind.is-hidden .map-legend-swatch,
+.map-legend-kind[aria-pressed='false'] .map-legend-swatch {
+  opacity: 0.35;
+}
+
+.map-legend-clear.nostos-chip {
+  min-height: 22px;
+  padding: 0.14rem 0.5rem;
+  border-color: var(--border-color);
+  background: var(--bg-surface);
+  color: var(--color-text-main);
+  font-size: 0.72rem;
+  font-weight: var(--fw-medium);
+  pointer-events: auto;
+}
+
+.map-legend-clear.nostos-chip:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--color-text-muted);
+}
+
+.map-legend-clear:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
 }
 
 .map-legend-swatch {

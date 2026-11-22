@@ -145,9 +145,17 @@ export class TopicMapViewport {
     }
   }
 
-  /** Capture the current camera before a rebuild if the host preserves view state. */
+  /**
+   * Capture the current camera before a rebuild if the host preserves view state.
+   *
+   * An in-flight animation is deliberately not captured: its state is a frame
+   * part-way to the target, and carrying it forward froze the map at the
+   * default camera or half-zoomed while the mount animation was still running.
+   */
   captureCarriedCamera(sigma: Sigma | null, keepsView: boolean): void {
-    this.carriedCamera = sigma && keepsView ? { ...sigma.getCamera().getState() } : null;
+    const camera = sigma?.getCamera();
+    const animated = camera && typeof camera.isAnimating === 'function' && camera.isAnimating();
+    this.carriedCamera = sigma && camera && keepsView && !animated ? { ...camera.getState() } : null;
   }
 
   /**
