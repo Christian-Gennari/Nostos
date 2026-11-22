@@ -73,7 +73,7 @@ The baseline is in
 the 24 matrix PNGs and `painted-values.json`.
 
 Run the capture against an already-running app. The script defaults to
-`http://127.0.0.1:5214`; pass `--port` when the app uses another port. It does
+`http://127.0.0.1:5099`; pass `--port` when the app uses another port. It does
 not start the app.
 
 In an `agent-worktree`, check its generated `.agent/env.sh` for the assigned
