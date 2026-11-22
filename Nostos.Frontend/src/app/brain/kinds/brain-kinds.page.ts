@@ -618,7 +618,20 @@ export class BrainKindsPage {
     return id ? this.kinds().find((kind) => kind.id === id) ?? null : null;
   }
 
+  /**
+   * The topic has a kind, but the kind list did not arrive and cannot name it.
+   * The row must say that rather than "No kind": the topic's own `kindId` is
+   * what says it has one, and that is known whether or not the list loaded.
+   */
+  kindUnavailable(topic: TopicDto): boolean {
+    return !!topic.kindId && !this.kindsLoaded() && !this.kindOf(topic);
+  }
+
   personSuggestion(topic: TopicDto): TopicKindDto | null {
+    // "Person?" means "this topic is untyped and named after an author, so make
+    // it a Person". Without the kind list there is no Person kind to offer, and
+    // a failed read must not be mistaken for "no kind": offer nothing.
+    if (!this.kindsLoaded()) return null;
     return personSuggestionFor(topic, this.kinds(), this.authorIndex());
   }
 

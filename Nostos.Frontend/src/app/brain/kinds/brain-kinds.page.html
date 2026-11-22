@@ -241,6 +241,9 @@
               @if (showRowKind()) {
                 @if (kindOf(topic); as kind) {
                   <app-topic-kind-pill [name]="kind.name" [colorKey]="kind.colorKey" />
+                } @else if (kindUnavailable(topic)) {
+                  <!-- The list failed: say so, rather than claiming a typed topic has no kind. -->
+                  <app-topic-kind-pill untypedLabel="Kind unavailable" />
                 } @else {
                   <app-topic-kind-pill [name]="null" />
                 }

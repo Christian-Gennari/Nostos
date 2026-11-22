@@ -766,6 +766,42 @@ describe('BrainKindsPage', () => {
     expect((fixture.nativeElement.querySelector('.new-kind') as HTMLButtonElement).disabled).toBe(false);
   });
 
+  it('does not call a typed topic untyped while the kinds are unavailable', async () => {
+    kindsFail = true;
+    await remount();
+
+    // A–Z: Education (Person), Story (Idea), Tolkien, Ursula (no kind). The
+    // first two have a kind the failed list cannot name.
+    const rows = Array.from(fixture.nativeElement.querySelectorAll('.topic-row')) as HTMLElement[];
+    const pills = rows.map(
+      (row) => row.querySelector('app-topic-kind-pill')?.textContent?.trim() ?? null,
+    );
+    expect(pills).toEqual(['Kind unavailable', 'Kind unavailable', 'No kind', 'No kind']);
+    for (const row of rows.slice(0, 2)) {
+      expect(row.querySelector('app-topic-kind-pill')?.textContent).not.toContain('No kind');
+    }
+  });
+
+  it('keeps the No kind filter to topics that really have none while the kinds are unavailable', async () => {
+    kindsFail = true;
+    await remount();
+
+    // The filter reads the topic's own kindId, not the missing list: a typed
+    // topic is not swept into "No kind".
+    setQuery({ filter: 'untyped' });
+
+    expect(component().topics().map((item) => item.id)).toEqual(['t3', 't1']);
+  });
+
+  it('offers no Person? while the kinds are unavailable', async () => {
+    kindsFail = true;
+    await remount();
+
+    // "Tolkien" and "Ursula K. Le Guin" are both library authors and untyped.
+    expect(component().personSuggestion(topic('t9', 'Tolkien'))).toBeNull();
+    expect(fixture.nativeElement.querySelector('.person-suggestion')).toBeNull();
+  });
+
   it('returns focus to the kind card when a rename closes', async () => {
     component().startRename(person);
     fixture.detectChanges();
