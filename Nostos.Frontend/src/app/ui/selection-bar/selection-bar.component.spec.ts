@@ -135,6 +135,42 @@ describe('SelectionBarComponent', () => {
     expect(bar().children).toHaveLength(1);
   });
 
+  it('lifts the toasts above itself while it is on screen', () => {
+    const rect = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
+      width: 320,
+      height: 48,
+      top: 700,
+      left: 40,
+      right: 360,
+      bottom: 748,
+      x: 40,
+      y: 700,
+      toJSON: () => ({}),
+    } as DOMRect);
+    const lift = () => document.documentElement.style.getPropertyValue('--selection-bar-lift');
+
+    // The bar is painted after measurement, so a fresh mount is what publishes.
+    fixture.destroy();
+    fixture = TestBed.createComponent(SelectionBarHarnessComponent);
+    host = fixture.componentInstance;
+    fixture.detectChanges();
+
+    // The bar's own height plus a gap: a toast must not sit on the actions.
+    expect(lift()).toBe('56px');
+
+    fixture.destroy();
+    expect(lift()).toBe('');
+    rect.mockRestore();
+
+    // The one end of the contract the bar cannot assert alone: the toast reads
+    // the value it publishes.
+    const toasts = readFileSync(
+      path.resolve(process.cwd(), 'src/app/ui/toast-container/toast-container.component.ts'),
+      'utf8',
+    );
+    expect(toasts).toContain('var(--selection-bar-lift');
+  });
+
   it('sits above navigation and below modal backdrops in the stacking contract', () => {
     const appCss = readFileSync(path.resolve(process.cwd(), 'src/app/app.component.css'), 'utf8');
     const barTs = barSource();

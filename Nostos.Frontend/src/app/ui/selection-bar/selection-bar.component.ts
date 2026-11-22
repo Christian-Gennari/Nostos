@@ -2,7 +2,17 @@
  * Copyright (C) 2026 Christian Gennari
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
-import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
+import {
+  AfterViewInit,
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  OnDestroy,
+  computed,
+  input,
+  output,
+  viewChild,
+} from '@angular/core';
 import { IconButtonComponent } from '../icon-button/icon-button.component';
 
 /**
@@ -53,7 +63,7 @@ import { IconButtonComponent } from '../icon-button/icon-button.component';
   imports: [IconButtonComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div class="selection-bar" role="toolbar" [attr.aria-label]="label()">
+    <div #bar class="selection-bar" role="toolbar" [attr.aria-label]="label()">
       <div class="selection-primary">
         <span class="selection-count" role="status" aria-live="polite">{{ countText() }}</span>
         <div class="selection-actions">
@@ -190,7 +200,7 @@ import { IconButtonComponent } from '../icon-button/icon-button.component';
     `,
   ],
 })
-export class SelectionBarComponent {
+export class SelectionBarComponent implements AfterViewInit, OnDestroy {
   /** How many rows are ticked. Drives the live count and the empty state. */
   readonly count = input.required<number>();
 
@@ -213,4 +223,37 @@ export class SelectionBarComponent {
    * no "Select items" hint precedent, so the honest count stays.
    */
   readonly countText = computed(() => `${this.count()} selected`);
+
+  private readonly bar = viewChild.required<ElementRef<HTMLElement>>('bar');
+  private resizeObserver: ResizeObserver | null = null;
+
+  /**
+   * Toasts are fixed to the bottom of the viewport, the same band this bar
+   * occupies. While the bar is on screen it publishes the room it needs as
+   * `--selection-bar-lift` on the document, and the toast container adds it to
+   * its own bottom offset: a phone toast used to land on top of the bar and
+   * hide the actions the reader was about to press.
+   */
+  ngAfterViewInit(): void {
+    this.publishLift();
+    if (typeof ResizeObserver !== 'undefined') {
+      this.resizeObserver = new ResizeObserver(() => this.publishLift());
+      this.resizeObserver.observe(this.bar().nativeElement);
+    }
+  }
+
+  ngOnDestroy(): void {
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
+    if (typeof document !== 'undefined') {
+      document.documentElement.style.removeProperty('--selection-bar-lift');
+    }
+  }
+
+  private publishLift(): void {
+    if (typeof document === 'undefined') return;
+    const height = this.bar().nativeElement.getBoundingClientRect().height;
+    const lift = height > 0 ? `${Math.round(height) + 8}px` : '0px';
+    document.documentElement.style.setProperty('--selection-bar-lift', lift);
+  }
 }
