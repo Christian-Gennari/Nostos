@@ -1333,8 +1333,10 @@ A host may also pass `NostosProductEndpointPolicies.McpRateLimitPolicy`.
 (`NostosMcp.ScopeClaimType`): space-separated OAuth scopes, matched ordinally,
 read across every `scope` claim (and the type ASP.NET's JWT handler maps it to).
 `nostos:read` (`NostosMcp.ReadScope`) is needed for every tool;
-`nostos:write` (`NostosMcp.WriteScope`) also for `save_note`, `save_passage`, `create_draft`,
-`add_to_reading_list`, `add_book` and `update_book`. A caller with no scope
+`nostos:write` (`NostosMcp.WriteScope`) also for `save_note`, `save_passage`,
+`update_note`, `update_passage`, `delete_note`, `delete_passage`,
+`create_draft`, `add_to_reading_list`, `add_book`, `update_book`,
+`set_topic_kinds` and `create_topic_kind`. A caller with no scope
 claim at all counts as read-only. A tool the scopes do not cover answers with a tool error
 (`isError: true`, e.g. "This connection to Nostos is read-only, so nothing was
 saved…") and never runs; a tool without a `readOnlyHint` counts as a write.
@@ -1512,6 +1514,10 @@ so validation and limits are the same; only the result shape differs.
 | `reading_list` | read | `reading_list_list` |
 | `save_note` | creates a note | `notes_capture` |
 | `save_passage` | creates a passage (a titled stretch of a book) | `notes_save_passage` (MCP only) |
+| `update_note` | changes a note's or highlight's words and/or topics | `INoteService.UpdateAsync` (the `PUT /api/notes/{id}` path) |
+| `update_passage` | changes a passage's own words and/or topics | `INoteService.UpdateAsync` (the `PUT /api/notes/{id}` path) |
+| `delete_note` | removes a note or highlight | `INoteService.DeleteAsync` (the `DELETE /api/notes/{id}` path) |
+| `delete_passage` | removes a passage | `INoteService.DeleteAsync` (the `DELETE /api/notes/{id}` path) |
 | `create_draft` | creates a Studio document | `writings_create` |
 | `add_to_reading_list` | creates a To read entry | `reading_list_add` |
 | `add_book` | creates a book (paper, or an ebook/audiobook without its file) | `library_create_or_match_book` |
@@ -1520,8 +1526,10 @@ so validation and limits are the same; only the result shape differs.
 | `create_topic_kind` | creates one of at most 12 kinds | `ITopicRepository.CreateKindAsync` (MCP only) |
 
 Most tools wrap Ask Nostos capabilities through the registry; the topic-kind
-tools write through `ITopicRepository` so the reader-kind rule and the 12-kind
-limit live in one place. Writes still need `nostos:write`.
+tools write through `ITopicRepository`, and the note edit and delete tools
+through `INoteService` (the same service the app's note editor and delete
+button call), so their rules live in one place. Writes still need
+`nostos:write`.
 
 Tools call the registry with `AssistantSurface.Mcp`, so a capability that is
 not marked for MCP cannot be reached from `/mcp` even by name. App links in
@@ -1550,6 +1558,17 @@ block's text offset, checked against the quote's words) or as the first and
 last PDF page. It needs the book's own file and text; a quote found in another
 edition (a paper book's) is refused, with `save_note` as the way to keep it.
 Same idempotency as `save_note`, with the title in the key.
+`update_note` and `update_passage` take the note id (`note:<id>` or the bare
+id) and only what changes: `thought` (the note's own words), `topics` (the
+whole list of topic names the note keeps, so one left out is removed) or both.
+They call `INoteService.UpdateAsync` with the pill-topic list, exactly as the
+app's editor does, so the quote, its page or time, a passage's title and both
+of its ends stay where they are. The result carries the new `note` and
+`topics`, and `undo`: the same tool's arguments with the previous words and
+topics, empty when nothing changed. `delete_note` and `delete_passage` call
+`INoteService.DeleteAsync` and answer with what was removed (`quote`, `note`,
+`topics`, and a passage's `title`), so the user can keep it again. All four are
+annotated destructive, so a client asks the user to confirm before calling one.
 `create_draft` never changes an existing document; a resend with the same
 name, folder and words within ten minutes returns the document it already
 made (`duplicate: true`). `add_to_reading_list` returns an existing entry

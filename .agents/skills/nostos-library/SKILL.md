@@ -25,7 +25,9 @@ asked, and tell the user what you did with the book title and its collections.
 If your tools include the Nostos MCP server (tools named `search`, `fetch`,
 `find_quote`, `list_books`, `save_note`, `create_draft` and so on, usually as
 `mcp__nostos__…`), use them instead of this API to find books, search and quote
-notes and book text, save a note or a titled passage (`save_passage`), write a
+notes and book text, save a note or a titled passage (`save_passage`), change a
+note's or passage's words and topics (`update_note`, `update_passage`), remove
+one (`delete_note`, `delete_passage`), write a
 draft, add a book to To read, add a book to the library (`add_book`) or fill in
 its details (`update_book`). They
 return citations and follow the same rules as Ask Nostos.
@@ -39,9 +41,12 @@ claude mcp add --transport http nostos "$B/mcp" --header "Authorization: Bearer 
 
 Never ask the user to paste a token into the conversation; they run that
 command themselves. A read-only token refuses `save_note`, `save_passage`,
+`update_note`, `update_passage`, `delete_note`, `delete_passage`,
 `create_draft`, `add_to_reading_list`, `add_book` and `update_book` with a clear
 error: say so, do not retry. `update_book` keeps a detail a book already has
-unless you pass `replace: true`, and returns the old values. MCP does not upload
+unless you pass `replace: true`, and returns the old values. `update_note` and
+`update_passage` also return `undo` (the previous words and topics); the delete
+tools are destructive, so ask the user before you call one. MCP does not upload
 book files or change collections; for those, use the endpoints below.
 
 ## Rules
@@ -51,8 +56,9 @@ book files or change collections; for those, use the endpoints below.
 2. **Find books and collections by ID.** Never guess an ID. Get it from a
    search or the collection list.
 3. **Never delete without the user saying so in this conversation.** That goes
-   for books and collections. Deleting a book also deletes its files, notes
-   and reading progress, and it cannot be undone.
+   for books, collections, and the notes and passages a connected app can remove
+   (`delete_note`, `delete_passage`). Deleting a book also deletes its files,
+   notes and reading progress, and it cannot be undone.
 4. **To change collections, use `PUT /api/books/{id}/collections`** with the
    full list you want. Do not send `collectionId` in a book update: it
    *replaces* every collection the book is in with that one.

@@ -174,19 +174,24 @@ public sealed class McpHttpTests : IAsyncLifetime
         tools.Select(t => t.Name).Should().BeEquivalentTo(
             "search", "fetch", "find_quote", "overview", "list_books", "get_book", "list_notes", "list_topics",
             "get_topic", "list_topic_kinds", "list_drafts", "read_draft", "reading_list",
-            "save_note", "save_passage", "create_draft", "add_to_reading_list", "add_book", "update_book",
+            "save_note", "save_passage", "update_note", "update_passage", "delete_note", "delete_passage",
+            "create_draft", "add_to_reading_list", "add_book", "update_book",
             "set_topic_kinds", "create_topic_kind");
-        string[] writes = ["save_note", "save_passage", "create_draft", "add_to_reading_list", "add_book", "update_book", "set_topic_kinds", "create_topic_kind"];
+        string[] writes = ["save_note", "save_passage", "update_note", "update_passage", "delete_note", "delete_passage", "create_draft", "add_to_reading_list", "add_book", "update_book", "set_topic_kinds", "create_topic_kind"];
         foreach (var tool in tools.Where(t => !writes.Contains(t.Name)))
             tool.ProtocolTool.Annotations!.ReadOnlyHint.Should().BeTrue(tool.Name);
         foreach (var tool in tools.Where(t => writes.Contains(t.Name)))
         {
             tool.ProtocolTool.Annotations!.ReadOnlyHint.Should().BeFalse(tool.Name);
-            // update_book can replace a detail (with replace: true) and
-            // set_topic_kinds can clear a kind, so they say so.
-            tool.ProtocolTool.Annotations!.DestructiveHint.Should().Be(tool.Name is "update_book" or "set_topic_kinds", tool.Name);
+            // update_book can replace a detail (with replace: true), the note
+            // and passage edits replace words or topics, and the deletes remove
+            // what the user kept, so they all say so.
+            tool.ProtocolTool.Annotations!.DestructiveHint.Should().Be(
+                tool.Name is "update_book" or "set_topic_kinds" or "update_note" or "update_passage" or "delete_note" or "delete_passage",
+                tool.Name);
         }
         _mcp.ServerInstructions.Should().Contain("Quote only words a Nostos tool returned");
+        _mcp.ServerInstructions.Should().Contain("Edit or delete a note, highlight or passage only when the user asks");
     }
 
     [Fact]
@@ -450,6 +455,192 @@ public sealed class McpHttpTests : IAsyncLifetime
         restored!.Title.Should().Be("The Rings of Saturn");
         restored.Author.Should().Be("W. G. Sebald");
         restored.Description.Should().Be("A walk along the Suffolk coast.");
+    }
+
+    [Fact]
+    public async Task An_app_changes_a_notes_words_and_topics_and_undo_puts_them_back()
+    {
+        var bookId = await CreateBookAsync("Moby-Dick", "Herman Melville", "1851");
+        var noteId = await CreateNoteAsync(bookId, new CreateNoteDto(
+            Content: "Ishmael's restlessness",
+            SelectedText: "Call me Ishmael.",
+            SourceAnchorKind: "physical_page",
+            SourceAnchorValue: "3",
+            Topics: ["Whiteness"]));
+
+        var updated = await CallAsync("update_note", new()
+        {
+            ["noteId"] = $"note:{noteId:D}",
+            ["thought"] = "Ishmael cannot settle anywhere.",
+            ["topics"] = new[] { "Restlessness" },
+        });
+
+        updated.GetProperty("id").GetString().Should().Be($"note:{noteId:D}");
+        updated.GetProperty("kind").GetString().Should().Be("note");
+        updated.GetProperty("note").GetString().Should().Be("Ishmael cannot settle anywhere.");
+        updated.GetProperty("quote").GetString().Should().Be("Call me Ishmael.");
+        updated.GetProperty("topics").EnumerateArray().Select(t => t.GetString()).Should().Equal("Restlessness");
+        updated.GetProperty("url").GetString().Should().EndWith($"/brain/notes/{noteId:D}");
+
+        var undo = updated.GetProperty("undo");
+        undo.GetProperty("noteId").GetString().Should().Be($"note:{noteId:D}");
+        undo.GetProperty("thought").GetString().Should().Be("Ishmael's restlessness");
+        undo.GetProperty("topics").EnumerateArray().Select(t => t.GetString()).Should().Equal("Whiteness");
+
+        // The edit changed the words and the topics, and nothing else: the
+        // quote and its page are exactly where they were.
+        var stored = await _http.GetFromJsonAsync<NoteSearchHitDto>($"/api/notes/{noteId}");
+        stored!.Content.Should().Be("Ishmael cannot settle anywhere.\n\n[[Restlessness]]");
+        stored.SelectedText.Should().Be("Call me Ishmael.");
+        stored.SourceAnchorKind.Should().Be("physical_page");
+        stored.SourceAnchorValue.Should().Be("3");
+        stored.TopicNames.Should().Equal("Restlessness");
+
+        // `undo`, passed back as it came, restores the previous words and topics.
+        await CallAsync("update_note", new Dictionary<string, object?>
+        {
+            ["noteId"] = undo.GetProperty("noteId").GetString(),
+            ["thought"] = undo.GetProperty("thought").GetString(),
+            ["topics"] = undo.GetProperty("topics").EnumerateArray().Select(t => t.GetString()).ToArray(),
+        });
+        var restored = await _http.GetFromJsonAsync<NoteSearchHitDto>($"/api/notes/{noteId}");
+        restored!.Content.Should().Be("Ishmael's restlessness\n\n[[Whiteness]]");
+        restored.SelectedText.Should().Be("Call me Ishmael.");
+        restored.TopicNames.Should().Equal("Whiteness");
+    }
+
+    [Fact]
+    public async Task Changing_only_the_topics_keeps_the_notes_words_and_leaves_nothing_else_changed()
+    {
+        var bookId = await CreateBookAsync("Middlemarch", "George Eliot", "1871");
+        var noteId = await CreateNoteAsync(bookId, new CreateNoteDto("Dorothea's choice", Topics: ["Vocation"]));
+
+        var updated = await CallAsync("update_note", new()
+        {
+            ["noteId"] = noteId.ToString("D"),
+            ["topics"] = new[] { "Marriage" },
+        });
+        var stored = await _http.GetFromJsonAsync<NoteSearchHitDto>($"/api/notes/{noteId}");
+
+        updated.GetProperty("note").GetString().Should().Be("Dorothea's choice");
+        updated.GetProperty("topics").EnumerateArray().Select(t => t.GetString()).Should().Equal("Marriage");
+        updated.GetProperty("undo").GetProperty("thought").GetString().Should().Be("Dorothea's choice");
+        stored!.Content.Should().Be("Dorothea's choice\n\n[[Marriage]]");
+        stored.TopicNames.Should().Equal("Marriage");
+    }
+
+    [Fact]
+    public async Task An_app_removes_a_note_and_gets_back_what_it_held()
+    {
+        var bookId = await CreateBookAsync("Walden", "Henry David Thoreau", "1854");
+        var noteId = await CreateNoteAsync(bookId, new CreateNoteDto(
+            Content: "Simplicity as a discipline.",
+            SelectedText: "Simplify, simplify.",
+            SourceAnchorKind: "physical_page",
+            SourceAnchorValue: "97",
+            Topics: ["Simplicity"]));
+
+        var deleted = await CallAsync("delete_note", new() { ["noteId"] = $"note:{noteId:D}" });
+
+        deleted.GetProperty("id").GetString().Should().Be($"note:{noteId:D}");
+        deleted.GetProperty("kind").GetString().Should().Be("note");
+        deleted.GetProperty("book").GetString().Should().Be("Walden");
+        deleted.GetProperty("quote").GetString().Should().Be("Simplify, simplify.");
+        deleted.GetProperty("note").GetString().Should().Be("Simplicity as a discipline.");
+        deleted.GetProperty("topics").EnumerateArray().Select(t => t.GetString()).Should().Equal("Simplicity");
+        deleted.GetProperty("message").GetString().Should().Contain("Removed").And.Contain("save_note");
+
+        (await _http.GetAsync($"/api/notes/{noteId}")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        await using var db = await Contexts().CreateDbContextAsync();
+        (await db.Notes.CountAsync(n => n.Id == noteId)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task An_edited_or_removed_passage_goes_through_its_own_tools_and_keeps_its_title_and_ends()
+    {
+        var bookId = await CreateBookAsync("The Ring of Bright Water", "Gavin Maxwell", "1960");
+        var passageId = await CreateNoteAsync(bookId, new CreateNoteDto(
+            Content: "The otters made the house theirs.",
+            SelectedText: "There were otters in the burn.",
+            SourceAnchorKind: "pdf_page",
+            SourceAnchorValue: "10",
+            PassageEnd: "12",
+            Kind: "passage",
+            PassageTitle: "Otters",
+            Topics: ["Otters"]));
+
+        var updated = await CallAsync("update_passage", new()
+        {
+            ["passageId"] = $"note:{passageId:D}",
+            ["thought"] = "They took over the whole house.",
+            ["topics"] = new[] { "Home" },
+        });
+        var stored = await _http.GetFromJsonAsync<NoteSearchHitDto>($"/api/notes/{passageId}");
+
+        updated.GetProperty("kind").GetString().Should().Be("passage");
+        updated.GetProperty("note").GetString().Should().Be("They took over the whole house.");
+        updated.GetProperty("passageTitle").GetString().Should().Be("Otters");
+        updated.GetProperty("undo").GetProperty("passageId").GetString().Should().Be($"note:{passageId:D}");
+        stored!.Kind.Should().Be("passage");
+        stored.PassageTitle.Should().Be("Otters");
+        stored.SelectedText.Should().Be("There were otters in the burn.");
+        stored.SourceAnchorKind.Should().Be("pdf_page");
+        stored.SourceAnchorValue.Should().Be("10");
+        stored.PassageEnd.Should().Be("12");
+        stored.TopicNames.Should().Equal("Home");
+
+        var deleted = await CallAsync("delete_passage", new() { ["passageId"] = $"note:{passageId:D}" });
+
+        deleted.GetProperty("kind").GetString().Should().Be("passage");
+        deleted.GetProperty("passageTitle").GetString().Should().Be("Otters");
+        deleted.GetProperty("quote").GetString().Should().Be("There were otters in the burn.");
+        deleted.GetProperty("note").GetString().Should().Be("They took over the whole house.");
+        deleted.GetProperty("topics").EnumerateArray().Select(t => t.GetString()).Should().Equal("Home");
+        (await _http.GetAsync($"/api/notes/{passageId}")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task An_unknown_id_and_the_wrong_kind_are_tool_errors_the_model_can_act_on()
+    {
+        var bookId = await CreateBookAsync("Moby-Dick", "Herman Melville", "1851");
+        var noteId = await CreateNoteAsync(bookId, new CreateNoteDto("A note."));
+        var passageId = await CreateNoteAsync(bookId, new CreateNoteDto(
+            Content: "",
+            SelectedText: "The whale is a symbol.",
+            SourceAnchorKind: "pdf_page",
+            SourceAnchorValue: "4",
+            PassageEnd: "6",
+            Kind: "passage",
+            PassageTitle: "The whale"));
+
+        var missing = await _mcp.CallToolAsync("update_note", new Dictionary<string, object?>
+        {
+            ["noteId"] = $"note:{Guid.NewGuid():D}",
+            ["thought"] = "Words for no note.",
+        });
+        var notAnId = await _mcp.CallToolAsync("delete_note", new Dictionary<string, object?> { ["noteId"] = "nonsense" });
+        var notAPassage = await _mcp.CallToolAsync("update_passage", new Dictionary<string, object?>
+        {
+            ["passageId"] = $"note:{noteId:D}",
+            ["thought"] = "Words for the wrong kind.",
+        });
+        var notANote = await _mcp.CallToolAsync("delete_note", new Dictionary<string, object?> { ["noteId"] = passageId.ToString("D") });
+        var nothing = await _mcp.CallToolAsync("update_note", new Dictionary<string, object?> { ["noteId"] = noteId.ToString("D") });
+
+        missing.IsError.Should().BeTrue();
+        Text(missing).Should().Contain("No note in this library has that id").And.Contain("list_notes");
+        notAnId.IsError.Should().BeTrue();
+        Text(notAnId).Should().Contain("not a note id");
+        notAPassage.IsError.Should().BeTrue();
+        Text(notAPassage).Should().Contain("is a note or highlight, not a passage").And.Contain("update_note");
+        notANote.IsError.Should().BeTrue();
+        Text(notANote).Should().Contain("is a passage").And.Contain("delete_passage");
+        nothing.IsError.Should().BeTrue();
+        Text(nothing).Should().Contain("thought").And.Contain("topics");
+
+        // Nothing was removed by a refused call.
+        (await _http.GetAsync($"/api/notes/{noteId}")).EnsureSuccessStatusCode();
+        (await _http.GetAsync($"/api/notes/{passageId}")).EnsureSuccessStatusCode();
     }
 
     [Fact]

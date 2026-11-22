@@ -90,6 +90,20 @@ public static partial class TopicReferences
     }
 
     /// <summary>
+    /// A note's own words: its text without the lines that carry references
+    /// alone, which the composer shows as pills. A reference inside a sentence
+    /// stays in the words, exactly as typed. This is the <c>split</c> half of
+    /// the composer's rules (<c>topic-text.ts</c>).
+    /// </summary>
+    public static string Words(string? content)
+    {
+        var kept = (content ?? string.Empty)
+            .Split('\n')
+            .Where(line => !IsReferenceLine(line));
+        return Regex.Replace(string.Join('\n', kept), @"\n{3,}", "\n\n").Trim();
+    }
+
+    /// <summary>
     /// <paramref name="content"/> with a reference to <paramref name="name"/>
     /// as its last paragraph, or unchanged when it already declares the topic.
     /// </summary>

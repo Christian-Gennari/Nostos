@@ -16,6 +16,7 @@ public sealed class TopicReferenceCasesTests
 
     public static TheoryData<int> Compose() => Indexes("compose");
     public static TheoryData<int> Remove() => Indexes("remove");
+    public static TheoryData<int> Split() => Indexes("split");
 
     [Theory]
     [MemberData(nameof(Compose))]
@@ -26,6 +27,16 @@ public sealed class TopicReferenceCasesTests
 
         TopicReferences.AppendAll(item.GetProperty("words").GetString(), topics)
             .Should().Be(item.GetProperty("content").GetString());
+    }
+
+    [Theory]
+    [MemberData(nameof(Split))]
+    public void Words_reads_the_note_text_as_the_composer_does(int index)
+    {
+        var item = Cases.GetProperty("split")[index];
+
+        TopicReferences.Words(item.GetProperty("content").GetString())
+            .Should().Be(item.GetProperty("words").GetString());
     }
 
     [Theory]

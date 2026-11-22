@@ -1,5 +1,5 @@
 {
-  "instructions": "Nostos is the user's own library: the books they read (EPUB, PDF, audiobooks and paper books), the highlights, notes and passages they kept from them, the topics that connect those notes, their To read list, and their drafts in the Writing Studio.\n\nRules:\n- Quote only words a Nostos tool returned. Never quote a book from memory: use `search` or `find_quote` first, and say so when Nostos has no evidence.\n- Cite every quotation and every claim about what a book or note says. Each result carries a `citation` with the book, author, year, a location when Nostos knows it, and a `url` that opens it in Nostos.\n- When you write a draft for the Writing Studio, put quotations in as the `citation.markdown` link (a `nostos:cite/` link). The Studio shows it as a live citation and exports it as a footnote. Replace the link text only with the exact words you quote.\n- `search` looks across notes, highlights, passages, topics and the text of the user's books. `fetch` reads one result in full.\n- Save a note only when the user asks you to keep something. Keep their own words; do not rewrite them unless asked.\n- Add a book or change a book's details only when the user asks. `update_book` keeps a detail the book already has unless the user asked to change it (`replace: true`).\n- Books on paper have notes but no searchable text. A book that is still being indexed may return no passages yet.",
+  "instructions": "Nostos is the user's own library: the books they read (EPUB, PDF, audiobooks and paper books), the highlights, notes and passages they kept from them, the topics that connect those notes, their To read list, and their drafts in the Writing Studio.\n\nRules:\n- Quote only words a Nostos tool returned. Never quote a book from memory: use `search` or `find_quote` first, and say so when Nostos has no evidence.\n- Cite every quotation and every claim about what a book or note says. Each result carries a `citation` with the book, author, year, a location when Nostos knows it, and a `url` that opens it in Nostos.\n- When you write a draft for the Writing Studio, put quotations in as the `citation.markdown` link (a `nostos:cite/` link). The Studio shows it as a live citation and exports it as a footnote. Replace the link text only with the exact words you quote.\n- `search` looks across notes, highlights, passages, topics and the text of the user's books. `fetch` reads one result in full.\n- Save a note only when the user asks you to keep something. Keep their own words; do not rewrite them unless asked.\n- Edit or delete a note, highlight or passage only when the user asks. `update_note` and `update_passage` change only what you pass and return an `undo` that puts the previous words and topics back; `delete_note` and `delete_passage` remove it after the user confirms, and answer with what was removed.\n- Add a book or change a book's details only when the user asks. `update_book` keeps a detail the book already has unless the user asked to change it (`replace: true`).\n- Books on paper have notes but no searchable text. A book that is still being indexed may return no passages yet.",
   "tools": [
     {
       "name": "add_book",
@@ -274,6 +274,54 @@
         },
         "required": [
           "name"
+        ]
+      }
+    },
+    {
+      "name": "delete_note",
+      "title": "Remove a note or highlight",
+      "description": "Removes a note or highlight from the user's library. Use it only when the user asks, and confirm with them first: Nostos keeps no copy. The result carries what was removed (its quote, words and topics) so it can be kept again with `save_note`. A passage has its own tool, `delete_passage`.",
+      "annotations": {
+        "title": "Remove a note or highlight",
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "noteId": {
+            "description": "The note's id (`note:<id>` or the bare id) from `list_notes`, `search` or `save_note`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "noteId"
+        ]
+      }
+    },
+    {
+      "name": "delete_passage",
+      "title": "Remove a passage",
+      "description": "Removes a passage from the user's library. Use it only when the user asks, and confirm with them first: Nostos keeps no copy. The result carries the passage's title, opening and the user's words so it can be found again with `find_quote` and kept with `save_passage`. A note or highlight has its own tool, `delete_note`.",
+      "annotations": {
+        "title": "Remove a passage",
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "passageId": {
+            "description": "The passage's id (`note:<id>` or the bare id) from `list_notes`, `search` or `save_passage`.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "passageId"
         ]
       }
     },
@@ -1014,6 +1062,98 @@
         },
         "required": [
           "bookId"
+        ]
+      }
+    },
+    {
+      "name": "update_note",
+      "title": "Change a note or highlight",
+      "description": "Changes what the user kept from a book: a note's or highlight's own words and/or its topics. Use it only when the user asks to change one. Pass only what changes: the quote and where it sits in the book stay as they are. The result carries `undo`, the arguments that put the previous words and topics back. A passage has its own tool, `update_passage`.",
+      "annotations": {
+        "title": "Change a note or highlight",
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "noteId": {
+            "description": "The note's id (`note:<id>` or the bare id) from `list_notes`, `search` or `save_note`.",
+            "type": "string"
+          },
+          "thought": {
+            "description": "The user's own words to replace the note's text with. Leave out to keep them.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "topics": {
+            "description": "The topic names the note keeps, replacing the ones it has. Existing names are reused; an empty list removes them all. Leave out to keep them.",
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "default": null
+          }
+        },
+        "required": [
+          "noteId"
+        ]
+      }
+    },
+    {
+      "name": "update_passage",
+      "title": "Change a passage",
+      "description": "Changes a passage's own words (the user's note on it) and/or its topics. Use it only when the user asks to change one. Pass only what changes: the passage's title, quoted words and place in the book stay as they are. The result carries `undo`, the arguments that put the previous words and topics back. A note or highlight has its own tool, `update_note`.",
+      "annotations": {
+        "title": "Change a passage",
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "passageId": {
+            "description": "The passage's id (`note:<id>` or the bare id) from `list_notes`, `search` or `save_passage`.",
+            "type": "string"
+          },
+          "thought": {
+            "description": "The user's own words to replace the passage's note with. Leave out to keep them.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "topics": {
+            "description": "The topic names the passage keeps, replacing the ones it has. Existing names are reused; an empty list removes them all. Leave out to keep them.",
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "default": null
+          }
+        },
+        "required": [
+          "passageId"
         ]
       }
     }
