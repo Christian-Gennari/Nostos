@@ -128,6 +128,29 @@ describe('BrainStateService loading', () => {
     expect(brain.mapColorMode()).toBe('kind');
   });
 
+  it('rereads the kinds a screen asked for on every refresh, so their counts do not age', () => {
+    const kind = {
+      id: 'k1', name: 'Schools', colorKey: 'kind-1', sortOrder: 1, createdAt: '2026-01-01T00:00:00Z', topicCount: 3,
+    } satisfies TopicKindDto;
+    listKinds.mockReturnValue(of([kind]));
+    const brain = create();
+    brain.ensureLoaded();
+    expect(brain.topicsLoaded()).toBe(true);
+    // Nothing asked for kinds, so refresh leaves the request count alone.
+    brain.refresh();
+    expect(listKinds).not.toHaveBeenCalled();
+
+    brain.ensureKindsLoaded();
+    expect(brain.topicKinds()[0].topicCount).toBe(3);
+
+    // A topic-kind write calls refresh(); the counts must follow the write, or
+    // the delete confirm says "3 topics" while 13 will have no kind.
+    listKinds.mockReturnValue(of([{ ...kind, topicCount: 13 }]));
+    brain.refresh();
+    expect(listKinds).toHaveBeenCalledTimes(2);
+    expect(brain.topicKinds()[0].topicCount).toBe(13);
+  });
+
   it('defaults mapColorMode to kind if any topic has a kind, else cluster, and persists per viewer', () => {
     const brain = create();
     brain.ensureTopicsLoaded();

@@ -10,7 +10,7 @@
       <span class="eyebrow"><nostos-icon concept="kinds" [size]="12" />Brain</span>
       <h1 class="page-title">Kinds</h1>
       @if (topicsLoaded()) {
-      <span class="page-count" role="status">{{ plural(topics().length, 'topic') }}</span>
+      <span class="page-count" role="status">{{ headerCount() }}</span>
       }
     </div>
 
@@ -81,11 +81,12 @@
       @if (kinds().length) {
         <ul class="kind-list" aria-label="Kinds">
           @for (kind of kinds(); track kind.id; let first = $first; let last = $last) {
-            <li class="kind-card" [class.is-selected]="filter() === kind.id">
+            <li class="kind-card" data-rename-row tabindex="-1" [class.is-selected]="filter() === kind.id">
               <button type="button" class="kind-swatch" [style.--kind-color]="kindColor(kind)"
                 [attr.aria-expanded]="colorPickId() === kind.id" aria-haspopup="true"
-                [attr.aria-label]="'Change the colour of ' + kind.name" (click)="toggleColor(kind)">
-                <nostos-icon name="palette" [size]="12" />
+                [attr.aria-label]="'Change the colour of ' + kind.name" [attr.title]="'Change the colour of ' + kind.name"
+                (click)="toggleColor(kind)">
+                <span class="kind-swatch-dot" aria-hidden="true"></span>
               </button>
 
               @if (renamingKind(); as current) {
@@ -98,7 +99,7 @@
                     requiredMessage="A kind needs a name."
                     [error]="renameError()"
                     [busy]="renaming()"
-                    (committed)="commitRename($event)"
+                    (committed)="commitRename(current.id, $event)"
                     (cancelled)="cancelRename()"
                   />
                 } @else {
@@ -141,7 +142,7 @@
                       </button>
                     }
                   </div>
-                  <p class="color-hint">Free colours are offered; one another kind holds offers a swap.</p>
+                  <p class="color-hint">Colours no other kind holds are free. Picking a colour another kind holds offers a swap.</p>
                   @if (pendingSwap(); as swap) {
                     @if (swap.kind.id === kind.id) {
                       <div class="swap-row" role="alert">
@@ -163,7 +164,7 @@
     <section class="kind-sorter" aria-labelledby="kinds-sorter-title">
       <header class="section-head">
         <div class="section-title">
-          <h2 id="kinds-sorter-title">Topics</h2>
+          <h2 #sorterHeading id="kinds-sorter-title" tabindex="-1">Topics</h2>
           <p class="section-lead">Tick topics to set or clear their kind at once. Shift-click selects a range.</p>
         </div>
       </header>
@@ -196,7 +197,12 @@
         <span class="sorter-count" role="status">{{ plural(topics().length, 'topic') }}</span>
       </div>
 
-      @if (!topicsLoaded()) {
+      @if (topicsFailed()) {
+        <div class="sorter-failed" role="alert">
+          <p>Could not load the topics. They are not lost.</p>
+          <button appButton variant="secondary" size="sm" type="button" (click)="retryTopics()">Try again</button>
+        </div>
+      } @else if (!topicsLoaded()) {
         <nostos-loading-indicator class="sorter-loading" label="Loading topics" />
       } @else if (!topics().length) {
         <nostos-empty-state concept="topic" [message]="q() || filter() !== 'all' ? 'No topics match.' : 'Topics appear here when a note carries one.'">
@@ -208,21 +214,25 @@
         <ul class="topic-rows" aria-label="Topics">
           @for (topic of topics(); track topic.id; let i = $index) {
             <li class="topic-row" [class.is-selected]="isSelected(topic.id)">
-              <input
-                type="checkbox"
-                class="row-check"
-                [checked]="isSelected(topic.id)"
-                [attr.aria-label]="'Select ' + topic.name"
-                (click)="onCheckboxClick(i, $event)"
-              />
+              <label class="row-check-hit">
+                <input
+                  type="checkbox"
+                  class="row-check"
+                  [checked]="isSelected(topic.id)"
+                  [attr.aria-label]="'Select ' + topic.name"
+                  (click)="onCheckboxClick(i, $event)"
+                />
+              </label>
               <span class="topic-main">
                 <a class="topic-name" [routerLink]="['/brain/topics', topic.id]">{{ topic.name }}</a>
                 <span class="topic-meta">{{ plural(topic.usageCount, 'note') }}</span>
               </span>
-              @if (kindOf(topic); as kind) {
-                <app-topic-kind-pill [name]="kind.name" [colorKey]="kind.colorKey" />
-              } @else {
-                <app-topic-kind-pill [name]="null" />
+              @if (showRowKind()) {
+                @if (kindOf(topic); as kind) {
+                  <app-topic-kind-pill [name]="kind.name" [colorKey]="kind.colorKey" />
+                } @else {
+                  <app-topic-kind-pill [name]="null" />
+                }
               }
               @if (sourceLabel(topic); as source) {
                 <span class="source-marker">{{ source }}</span>
@@ -243,18 +253,22 @@
 </div>
 
 @if (selectedCount() > 0) {
-  <nostos-selection-bar [count]="selectedCount()" label="Selected topics" (closed)="clearSelection()">
+  <nostos-selection-bar [count]="selectedCount()" label="Selected topics"
+    [note]="bulkLimitNote()" noteId="kinds-bulk-limit" (closed)="clearSelection()">
     <button #setKindTrigger appButton variant="ghost" size="sm" type="button" class="selection-action"
       [disabled]="busy() || overBulkLimit()" [attr.aria-expanded]="setKindOpen()" aria-haspopup="dialog"
-      aria-label="Set kind…" (click)="setKindOpen.set(!setKindOpen())">
+      [attr.aria-describedby]="overBulkLimit() ? 'kinds-bulk-limit' : null"
+      aria-label="Set kind…" title="Set kind…" (click)="setKindOpen.set(!setKindOpen())">
       <nostos-icon concept="kinds" [size]="14" /><span class="selection-label">Set kind…</span>
     </button>
     <button appButton variant="ghost" size="sm" type="button" class="selection-action"
-      [disabled]="busy() || overBulkLimit()" aria-label="Clear kind" (click)="clearKind()">
-      <nostos-icon name="x" [size]="14" /><span class="selection-label">Clear kind</span>
+      [disabled]="busy() || overBulkLimit()" aria-label="Clear kind" title="Clear kind"
+      [attr.aria-describedby]="overBulkLimit() ? 'kinds-bulk-limit' : null" (click)="clearKind()">
+      <nostos-icon name="minus" [size]="14" /><span class="selection-label">Clear kind</span>
     </button>
     <button appButton variant="ghost" size="sm" type="button" class="selection-action"
-      [disabled]="busy() || overBulkLimit()" aria-label="Keep as mine" (click)="keepSelection()">
+      [disabled]="busy() || overBulkLimit()" aria-label="Keep as mine" title="Keep as mine"
+      [attr.aria-describedby]="overBulkLimit() ? 'kinds-bulk-limit' : null" (click)="keepSelection()">
       <nostos-icon name="check" [size]="14" /><span class="selection-label">Keep</span>
     </button>
   </nostos-selection-bar>

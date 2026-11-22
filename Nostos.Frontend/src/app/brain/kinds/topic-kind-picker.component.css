@@ -3,10 +3,12 @@
   min-width: 0;
 }
 
-/* The current kind as a capsule; a click opens the picker. */
+/* The current kind as a capsule; a click opens the picker. One element for
+   both states (pill and quiet line), so closing the panel returns focus here. */
 .kind-trigger {
   display: inline-flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 0.35rem;
   margin: 0;
   padding: 1px 0.1rem 1px 0;
@@ -22,8 +24,7 @@
   filter: brightness(0.98);
 }
 
-.kind-trigger:focus-visible,
-.kind-add:focus-visible {
+.kind-trigger:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: 2px;
 }
@@ -33,22 +34,17 @@
 }
 
 /* The quiet line, like "Add your own words…": an invitation, not chrome. */
-.kind-add {
-  margin: 0;
-  padding: 0.35rem 0.5rem;
+.kind-trigger.is-add {
   margin-inline: -0.5rem;
-  border: 0;
+  padding: 0.35rem 0.5rem;
   border-radius: var(--radius-sm);
-  background: none;
   color: var(--color-text-light);
-  font: inherit;
   font-size: var(--text-sm);
   font-style: italic;
-  text-align: left;
-  cursor: pointer;
 }
 
-.kind-add:hover {
+.kind-trigger.is-add:hover {
+  filter: none;
   background: var(--bg-hover);
 }
 
@@ -122,7 +118,6 @@
 }
 
 @media (max-width: 768px) {
-  .kind-add,
   .kind-trigger {
     min-height: var(--control-h-touch);
   }

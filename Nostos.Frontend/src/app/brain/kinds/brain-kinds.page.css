@@ -94,6 +94,14 @@
   font-weight: var(--fw-medium);
 }
 
+/* The sorter's heading takes focus after a bulk action (the bar it lived in
+   closed); the ring says where the reader is. */
+.section-title h2:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 4px;
+  border-radius: var(--radius-sm);
+}
+
 .section-lead {
   margin: 0.2rem 0 0;
   max-width: 34rem;
@@ -147,6 +155,9 @@
 /* --- The kind cards ------------------------------------------------------- */
 .kind-list {
   display: grid;
+  /* Each card is its own height: an open palette must not stretch the card
+     beside it in the same row. */
+  align-items: start;
   grid-template-columns: repeat(auto-fill, minmax(15.5rem, 1fr));
   gap: 0.55rem;
   margin: 0 0 1.5rem;
@@ -165,29 +176,43 @@
   background: var(--bg-surface);
 }
 
+/* The rename field hands focus back to this card when it closes (inline-rename
+   finds the nearest `[data-rename-row]`); the ring says where focus went. */
+.kind-card:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
 .kind-card.is-selected {
   border-color: color-mix(in srgb, var(--color-brand-accent) 45%, var(--border-color));
   box-shadow: inset 3px 0 0 var(--color-brand-accent);
 }
 
+/* The colour, and only the colour: the swatch is what opens the palette. */
 .kind-swatch {
-  position: relative;
   display: inline-grid;
   flex: 0 0 auto;
   place-items: center;
   width: 26px;
   height: 26px;
   padding: 0;
-  border: 1px solid color-mix(in srgb, var(--kind-color) 55%, var(--border-color));
+  border: 0;
   border-radius: var(--radius-round);
-  background: color-mix(in srgb, var(--kind-color) 22%, transparent);
-  color: var(--color-text-muted);
+  background: none;
   cursor: pointer;
 }
 
-.kind-swatch:hover,
-.kind-swatch[aria-expanded='true'] {
-  background: color-mix(in srgb, var(--kind-color) 40%, transparent);
+.kind-swatch-dot {
+  width: 26px;
+  height: 26px;
+  border: 1px solid color-mix(in srgb, var(--kind-color) 55%, var(--border-color));
+  border-radius: var(--radius-round);
+  background: var(--kind-color);
+}
+
+.kind-swatch:hover .kind-swatch-dot,
+.kind-swatch[aria-expanded='true'] .kind-swatch-dot {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--kind-color) 22%, transparent);
 }
 
 .kind-swatch:focus-visible,
@@ -195,6 +220,10 @@
 .color-option:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: 2px;
+}
+
+.kind-swatch:focus-visible {
+  outline-offset: 0;
 }
 
 .kind-name {
@@ -350,6 +379,20 @@
   padding: 3rem 0;
 }
 
+.sorter-failed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.85rem;
+  padding: 2rem 0;
+  color: var(--color-text-light);
+  font-size: var(--text-sm);
+}
+
+.sorter-failed p {
+  margin: 0;
+}
+
 .topic-rows {
   display: flex;
   flex-direction: column;
@@ -359,6 +402,7 @@
 }
 
 .topic-row {
+  --row-check-size: 17px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -369,6 +413,18 @@
 
 .topic-row.is-selected {
   background: color-mix(in srgb, var(--color-brand-accent) 7%, transparent);
+}
+
+/* The checkbox's hit area, not the checkbox: the box stays 17px, the target
+   grows to 44px under a finger. */
+.row-check-hit {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: var(--row-check-size);
+  height: var(--row-check-size);
+  cursor: pointer;
 }
 
 .row-check {
@@ -415,9 +471,37 @@
 
 .person-suggestion {
   flex: 0 0 auto;
-  min-height: 26px;
+  min-height: 24px;
   padding: 2px 9px;
   font-size: 0.75rem;
+}
+
+/* --- Touch ---------------------------------------------------------------- */
+/* A finger needs 44px, not a 17px checkbox or a 26px swatch, but the visible
+   controls stay the size the design gives them. */
+@media (pointer: coarse), (hover: none) {
+  .topic-row {
+    --row-check-size: var(--control-h-touch);
+  }
+
+  .kind-swatch {
+    width: var(--control-h-touch);
+    height: var(--control-h-touch);
+  }
+
+  /* The suggestion keeps the kind pill's height and grows an invisible target
+     above and below it, instead of becoming a second, taller control. */
+  .topic-row button.person-suggestion {
+    position: relative;
+    min-height: 24px;
+  }
+
+  .topic-row button.person-suggestion::after {
+    content: '';
+    position: absolute;
+    inset: -10px 0;
+    border-radius: inherit;
+  }
 }
 
 .bulk-kind-panel {
@@ -492,7 +576,6 @@
   .color-grid {
     grid-template-columns: repeat(6, 1fr);
     gap: 6px;
-    max-width: 15rem;
   }
 
   .color-option {
@@ -500,17 +583,18 @@
   }
 
   /* The sorter is one column: the name on its own line, then the kind, source
-     and suggestion under it. */
+     and suggestion under it. The name starts after the checkbox's hit area,
+     which is 17px here and 44px under a finger. */
   .topic-main {
-    flex: 1 1 calc(100% - 2rem);
+    flex: 1 1 calc(100% - var(--row-check-size) - 0.65rem - 1px);
   }
 
   .topic-row app-topic-kind-pill,
   .source-marker {
-    margin-left: calc(17px + 0.65rem);
+    margin-left: calc(var(--row-check-size) + 0.65rem);
   }
 
   .person-suggestion {
-    min-height: var(--control-h-touch);
+    min-height: 24px;
   }
 }

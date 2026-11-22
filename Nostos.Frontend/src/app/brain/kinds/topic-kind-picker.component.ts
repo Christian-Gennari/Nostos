@@ -13,7 +13,6 @@ import {
 } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
-import { map, switchMap } from 'rxjs';
 
 import type { TopicDto, TopicKindDto } from '../../core/services/topics.service';
 import { TopicsService } from '../../core/services/topics.service';
@@ -78,6 +77,12 @@ export class TopicKindPickerComponent {
   });
   readonly isOpen = computed(() => (this.showTrigger() ? this.localOpen() : this.open()));
   readonly anchor = computed(() => this.origin() ?? this.trigger()?.nativeElement ?? null);
+  readonly triggerLabel = computed(() => {
+    const kind = this.currentKind();
+    return kind
+      ? `Change kind for ${this.topic().name}: ${kind.name}`
+      : `Add a kind to ${this.topic().name}`;
+  });
   readonly maxKinds = MAX_TOPIC_KINDS;
   readonly atKindLimit = computed(() => this.kinds().length >= MAX_TOPIC_KINDS);
   readonly nextColor = computed(() => firstFreeKindColor(this.kinds()));
@@ -162,17 +167,24 @@ export class TopicKindPickerComponent {
     const topic = this.topic();
     this.busy.set(true);
     this.error.set(null);
-    this.topics.createKind({ name, colorKey }).pipe(
-      switchMap((created) => this.topics.setTopicsKind([topic.id], created.id).pipe(
-        map((result) => ({ created, result })),
-      )),
-    ).subscribe({
-      next: ({ created, result }) => {
-        this.busy.set(false);
-        this.state.replaceTopic({ ...topic, kindId: result.kindId, kindSource: result.kindSource });
+    // Two writes: the kind exists first, then it is set on this topic. If the
+    // second fails, the kind is still real and must be visible to choose.
+    this.topics.createKind({ name, colorKey }).subscribe({
+      next: (created) => {
         this.state.reloadKinds();
-        this.toast.success(`Added “${created.name}”`);
-        this.close();
+        this.topics.setTopicsKind([topic.id], created.id).subscribe({
+          next: (result) => {
+            this.busy.set(false);
+            this.state.replaceTopic({ ...topic, kindId: result.kindId, kindSource: result.kindSource });
+            this.toast.success(`Added “${created.name}”`);
+            this.close();
+          },
+          error: () => {
+            this.busy.set(false);
+            this.creating.set(false);
+            this.error.set(`Added “${created.name}”, but it could not be set on this topic. Choose it above.`);
+          },
+        });
       },
       error: (error: unknown) => {
         this.busy.set(false);

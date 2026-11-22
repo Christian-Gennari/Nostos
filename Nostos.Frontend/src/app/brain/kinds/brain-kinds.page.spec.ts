@@ -1,14 +1,15 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { OverlayModule } from '@angular/cdk/overlay';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router, type ParamMap } from '@angular/router';
-import { BehaviorSubject, of, Subject } from 'rxjs';
+import { readFileSync } from 'node:fs';
+import { BehaviorSubject, of, Subject, throwError } from 'rxjs';
 
 import { BooksService } from '../../core/services/books.service';
 import { NotesService } from '../../core/services/notes.service';
 import { ToastService } from '../../core/services/toast.service';
 import { TopicsService, type TopicDto, type TopicKindDto } from '../../core/services/topics.service';
 import { AssistantService } from '../../ui/assistant/assistant.service';
-import { BrainKindsPage } from './brain-kinds.page';
+import { BrainKindsPage, BULK_KIND_LIMIT } from './brain-kinds.page';
 import { BrainStateService } from '../brain-state.service';
 
 const kind = (id: string, name: string, colorKey: string, sortOrder: number, topicCount = 0): TopicKindDto => ({
@@ -36,28 +37,16 @@ describe('BrainKindsPage', () => {
   let query: BehaviorSubject<ParamMap>;
   let kinds: TopicKindDto[];
   let topics: TopicDto[];
+  let topicsFail: boolean;
   let setTopicsKind: ReturnType<typeof vi.fn>;
   let updateKind: ReturnType<typeof vi.fn>;
   let createKind: ReturnType<typeof vi.fn>;
   let deleteKind: ReturnType<typeof vi.fn>;
+  let listKinds: ReturnType<typeof vi.fn>;
 
   const component = (): BrainKindsPage => fixture.componentInstance;
 
-  beforeEach(async () => {
-    query = new BehaviorSubject<ParamMap>(convertToParamMap({}));
-    topics = [
-      topic('t1', 'Ursula K. Le Guin'),
-      topic('t2', 'Education', 'k1', 'assistant'),
-      topic('t3', 'Tolkien'),
-      topic('t4', 'Story', 'k2', 'connected-app'),
-    ];
-    kinds = [person, idea];
-    setTopicsKind = vi.fn((ids: string[], kindId: string | null) =>
-      of({ updatedTopicIds: ids, kindId, kindSource: kindId ? 'reader' : null }));
-    updateKind = vi.fn(() => of(person));
-    createKind = vi.fn(() => of(kind('k3', 'Field', 'kind-3', 3)));
-    deleteKind = vi.fn(() => of(undefined));
-
+  async function mount(): Promise<void> {
     await TestBed.configureTestingModule({
       imports: [BrainKindsPage, OverlayModule],
       providers: [
@@ -66,14 +55,14 @@ describe('BrainKindsPage', () => {
           provide: ActivatedRoute,
           useValue: {
             queryParamMap: query.asObservable(),
-            snapshot: { queryParamMap: convertToParamMap({}) },
+            snapshot: { queryParamMap: query.value },
           },
         },
         {
           provide: TopicsService,
           useValue: {
-            list: () => of(topics),
-            listKinds: () => of(kinds),
+            list: () => topicsFail ? throwError(() => new Error('topics unavailable')) : of(topics),
+            listKinds,
             setTopicsKind,
             updateKind,
             createKind,
@@ -102,10 +91,37 @@ describe('BrainKindsPage', () => {
 
     fixture = TestBed.createComponent(BrainKindsPage);
     fixture.detectChanges();
+  }
+
+  /** A fresh page over the data as it now stands (a failed first load, 600 topics). */
+  async function remount(): Promise<void> {
+    fixture.destroy();
+    TestBed.resetTestingModule();
+    await mount();
+  }
+
+  beforeEach(async () => {
+    query = new BehaviorSubject<ParamMap>(convertToParamMap({}));
+    topicsFail = false;
+    topics = [
+      topic('t1', 'Ursula K. Le Guin'),
+      topic('t2', 'Education', 'k1', 'assistant'),
+      topic('t3', 'Tolkien'),
+      topic('t4', 'Story', 'k2', 'connected-app'),
+    ];
+    kinds = [person, idea];
+    setTopicsKind = vi.fn((ids: string[], kindId: string | null) =>
+      of({ updatedTopicIds: ids, kindId, kindSource: kindId ? 'reader' : null }));
+    updateKind = vi.fn(() => of(person));
+    createKind = vi.fn(() => of(kind('k3', 'Field', 'kind-3', 3)));
+    deleteKind = vi.fn(() => of(undefined));
+    listKinds = vi.fn(() => of(kinds));
+
+    await mount();
   });
 
   afterEach(() => {
-    fixture.destroy();
+    fixture?.destroy();
     document.querySelectorAll('.cdk-overlay-container').forEach((node) => node.remove());
   });
 
@@ -204,11 +220,12 @@ describe('BrainKindsPage', () => {
   });
 
   it('renames a kind in place and rereads the kind metadata', () => {
-    const reload = vi.spyOn(TestBed.inject(BrainStateService), 'reloadKinds');
+    const loads = listKinds.mock.calls.length;
     component().startRename(person);
-    component().commitRename('People');
+    component().commitRename('k1', 'People');
+
     expect(updateKind).toHaveBeenCalledWith('k1', { name: 'People' });
-    expect(reload).toHaveBeenCalled();
+    expect(listKinds.mock.calls.length).toBeGreaterThan(loads);
   });
 
   it('creates a kind with the next free colour', () => {
@@ -272,5 +289,259 @@ describe('BrainKindsPage', () => {
   it('does not suggest Person for a topic that already has a kind', () => {
     const education = component().topics().find((item) => item.id === 't2')!;
     expect(component().personSuggestion(education)).toBeNull();
+  });
+
+  it('rereads the kind counts after a topic-kind write, so the delete confirm is right', () => {
+    // The server now says Person has 21 topics, not the 34 the page loaded with.
+    setTopicsKind.mockImplementation((ids: string[], kindId: string | null) => {
+      kinds = kinds.map((item) => item.id === 'k1' ? { ...item, topicCount: 21 } : item);
+      return of({ updatedTopicIds: ids, kindId, kindSource: kindId ? 'reader' : null });
+    });
+    checkbox(indexOf('t2'), true);
+    component().clearKind();
+    fixture.detectChanges();
+
+    component().askDelete(component().kinds().find((item) => item.id === 'k1')!);
+    expect(component().deleteDescription()).toBe('21 topics will have no kind. The topics stay.');
+  });
+
+  it('keeps the selection to rows still on screen', () => {
+    setQuery({ filter: 'untyped' });
+    checkbox(indexOf('t1'), true);
+    expect(component().selectedCount()).toBe(1);
+
+    // The topic got a kind elsewhere (Ask Nostos, a connected app) and the list
+    // reloaded; the row is no longer visible, so it is no longer selected.
+    topics = topics.map((item) => item.id === 't1' ? { ...item, kindId: 'k1' } : item);
+    TestBed.inject(BrainStateService).refresh();
+    fixture.detectChanges();
+
+    expect(component().selected().has('t1')).toBe(false);
+    expect(component().selectedCount()).toBe(0);
+  });
+
+  it('clears the selection when the filter changes', () => {
+    checkbox(indexOf('t1'), true);
+    checkbox(indexOf('t3'), true);
+    expect(component().selectedCount()).toBe(2);
+
+    setQuery({ filter: 'k2' });
+    expect(component().selectedCount()).toBe(0);
+  });
+
+  it('selects a range inside the filtered rows only', () => {
+    setQuery({ filter: 'untyped' });
+    // The untyped rows are t1 and t3, A–Z: Tolkien, Ursula K. Le Guin.
+    expect(component().topics().map((item) => item.id)).toEqual(['t3', 't1']);
+    checkbox(indexOf('t3'), true);
+    checkbox(indexOf('t1'), true, true);
+
+    expect([...component().selected()].sort()).toEqual(['t1', 't3']);
+  });
+
+  it('never applies a kind to nothing without saying so', () => {
+    const toast = TestBed.inject(ToastService);
+    component().applyKind('k1');
+
+    expect(setTopicsKind).not.toHaveBeenCalled();
+    expect(toast.info).toHaveBeenCalledWith('Select at least one topic first.');
+  });
+
+  it('caps Select all at the bulk limit, and a second press undoes it', () => {
+    topics = Array.from({ length: 520 }, (_, i) => topic(`t${i}`, `Topic ${String(i).padStart(3, '0')}`));
+    TestBed.inject(BrainStateService).refresh();
+    fixture.detectChanges();
+
+    component().toggleAll();
+    expect(component().selectedCount()).toBe(BULK_KIND_LIMIT);
+    expect(TestBed.inject(ToastService).info).toHaveBeenCalledWith(
+      'Selected 500 topics. Select fewer at a time.');
+
+    // The same press again undoes the capped selection instead of repeating it.
+    component().toggleAll();
+    expect(component().selectedCount()).toBe(0);
+  });
+
+  it('says the 500 limit in the bar and marks its buttons when a range passes it', () => {
+    topics = Array.from({ length: 520 }, (_, i) => topic(`t${i}`, `Topic ${String(i).padStart(3, '0')}`));
+    TestBed.inject(BrainStateService).refresh();
+    fixture.detectChanges();
+
+    checkbox(0, true);
+    checkbox(510, true, true);
+    expect(component().selectedCount()).toBe(511);
+    expect(component().overBulkLimit()).toBe(true);
+    fixture.detectChanges();
+
+    const note = fixture.nativeElement.querySelector('#kinds-bulk-limit') as HTMLElement;
+    expect(note.textContent).toContain('Select at most 500 topics at once.');
+    const actions = fixture.nativeElement.querySelectorAll('.selection-action') as NodeListOf<HTMLButtonElement>;
+    expect(actions.length).toBe(3);
+    for (const action of Array.from(actions)) {
+      expect(action.disabled).toBe(true);
+      expect(action.getAttribute('aria-describedby')).toBe('kinds-bulk-limit');
+    }
+  });
+
+  it('says a mixed-kind Keep was partial, and refreshes the list anyway', () => {
+    const toast = TestBed.inject(ToastService);
+    const state = TestBed.inject(BrainStateService);
+    const refresh = vi.spyOn(state, 'refresh');
+    setTopicsKind.mockImplementation((ids: string[], kindId: string | null) =>
+      kindId === 'k2'
+        ? throwError(() => new Error('network'))
+        : of({ updatedTopicIds: ids, kindId, kindSource: 'reader' }));
+    checkbox(indexOf('t2'), true);
+    checkbox(indexOf('t4'), true);
+
+    component().keepSelection();
+    fixture.detectChanges();
+
+    expect(setTopicsKind).toHaveBeenCalledTimes(2);
+    expect(refresh).toHaveBeenCalled();
+    expect(toast.error).toHaveBeenCalledWith(
+      'Kept 1 topic as yours, but 1 topic could not be kept. Try again.');
+  });
+
+  it('rereads the kinds after a failed reorder, so equal sort orders do not stick', () => {
+    const state = TestBed.inject(BrainStateService);
+    const refresh = vi.spyOn(state, 'refresh');
+    updateKind.mockReturnValue(throwError(() => new Error('network')));
+
+    component().moveKind(person, 1);
+
+    expect(refresh).toHaveBeenCalled();
+    expect(TestBed.inject(ToastService).error).toHaveBeenCalledWith(
+      'Could not reorder the kinds. Try again.');
+  });
+
+  it('ignores a rename answer for a kind whose field has since closed', () => {
+    const answer = new Subject<TopicKindDto>();
+    updateKind.mockReturnValue(answer);
+    const toast = TestBed.inject(ToastService);
+
+    component().startRename(person);
+    component().commitRename('k1', 'People');
+    // The reader opens another kind's field while the first save is in flight.
+    component().startRename(idea);
+
+    answer.next({ ...person, name: 'People' });
+    expect(component().renamingId()).toBe('k2');
+
+    answer.error(new Error('network'));
+    expect(component().renameError()).toBeNull();
+    expect(toast.error).toHaveBeenCalled();
+  });
+
+  it('counts the whole list in the header while a filter is on', () => {
+    setQuery({ filter: 'untyped' });
+    expect(component().headerCount()).toBe('2 of 4 topics');
+    expect(fixture.nativeElement.querySelector('.page-count').textContent).toContain('2 of 4 topics');
+
+    setQuery({});
+    expect(component().headerCount()).toBe('4 topics');
+  });
+
+  it('hides the repeated No kind pill under the No kind filter', () => {
+    setQuery({ filter: 'untyped' });
+    expect(fixture.nativeElement.querySelector('.topic-row app-topic-kind-pill')).toBeNull();
+
+    setQuery({});
+    expect(fixture.nativeElement.querySelector('.topic-row app-topic-kind-pill')).not.toBeNull();
+  });
+
+  it('folds the filter from the URL', () => {
+    setQuery({ filter: 'Untyped' });
+    expect(component().filter()).toBe('untyped');
+    expect(component().topics().map((item) => item.id)).toEqual(['t3', 't1']);
+  });
+
+  it('shows a failure state with Try again when the topics cannot be read', async () => {
+    topicsFail = true;
+    await remount();
+
+    const failed = fixture.nativeElement.querySelector('.sorter-failed') as HTMLElement;
+    expect(failed).not.toBeNull();
+    expect(failed.textContent).toContain('Could not load the topics');
+    expect(fixture.nativeElement.querySelector('.topic-rows')).toBeNull();
+
+    const button = failed.querySelector('button') as HTMLButtonElement;
+    expect(button.textContent).toContain('Try again');
+    topicsFail = false;
+    button.click();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.sorter-failed')).toBeNull();
+    expect(fixture.nativeElement.querySelectorAll('.topic-row').length).toBe(4);
+  });
+
+  it('does not carry the palette glyph on a kind swatch', () => {
+    const swatch = fixture.nativeElement.querySelector('.kind-swatch') as HTMLElement;
+    expect(swatch.querySelector('.kind-swatch-dot')).not.toBeNull();
+    expect(swatch.querySelector('nostos-icon')).toBeNull();
+  });
+
+  it('keeps each kind card its own height beside an open palette', () => {
+    const css = readFileSync('src/app/brain/kinds/brain-kinds.page.css', 'utf8');
+    expect(css).toMatch(/\.kind-list\s*\{[^}]*align-items:\s*start/);
+  });
+
+  it('gives the phone checkbox and swatch a 44px target without growing them', () => {
+    const css = readFileSync('src/app/brain/kinds/brain-kinds.page.css', 'utf8');
+    const touch = css.match(/@media \(pointer: coarse\), \(hover: none\) \{([\s\S]*?)\n\}/);
+    expect(touch).toBeTruthy();
+    expect(touch![1]).toMatch(/\.topic-row\s*\{[^}]*--row-check-size:\s*var\(--control-h-touch\)/);
+    expect(touch![1]).toMatch(/\.kind-swatch\s*\{[^}]*width:\s*var\(--control-h-touch\)/);
+    // The Person? suggestion keeps the kind pill's height and grows a hit area
+    // instead of becoming a second, twice-as-tall control on a phone.
+    expect(touch![1]).toMatch(/button\.person-suggestion[^{]*\{[^}]*min-height:\s*24px/);
+    expect(touch![1]).toMatch(/\.person-suggestion::after\s*\{[^}]*inset:\s*-10px 0/);
+  });
+
+  it('says a colour another kind holds offers a swap, in whole sentences', () => {
+    component().toggleColor(person);
+    fixture.detectChanges();
+
+    const hint = fixture.nativeElement.querySelector('.color-hint') as HTMLElement;
+    expect(hint.textContent?.trim()).toBe(
+      'Colours no other kind holds are free. Picking a colour another kind holds offers a swap.');
+  });
+
+  it('moves focus to the sorter heading after a bulk action', () => {
+    checkbox(indexOf('t2'), true);
+    fixture.detectChanges();
+    const setKind = fixture.nativeElement.querySelector('.selection-action') as HTMLButtonElement;
+    setKind.focus();
+
+    component().applyKind('k1');
+    fixture.detectChanges();
+
+    expect(document.activeElement).toBe(fixture.nativeElement.querySelector('#kinds-sorter-title'));
+  });
+
+  it('gives Clear kind its own glyph, not the selection bar close cross', () => {
+    checkbox(indexOf('t2'), true);
+    fixture.detectChanges();
+
+    const actions = fixture.nativeElement.querySelectorAll('.selection-action') as NodeListOf<HTMLElement>;
+    const glyphs = Array.from(actions).map(
+      (action) => (action.querySelector('nostos-icon') as HTMLElement).getAttribute('name'));
+    expect(glyphs[1]).toBe('minus');
+    expect(glyphs.filter((name) => name === 'x')).toHaveLength(0);
+  });
+
+  it('returns focus to the kind card when a rename closes', async () => {
+    component().startRename(person);
+    fixture.detectChanges();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(fixture.nativeElement.querySelector('.kind-rename')).not.toBeNull();
+
+    component().cancelRename();
+    fixture.detectChanges();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const card = fixture.nativeElement.querySelector('.kind-card') as HTMLElement;
+    expect(card.getAttribute('data-rename-row')).not.toBeNull();
+    expect(card.tabIndex).toBe(-1);
+    expect(document.activeElement).toBe(card);
   });
 });

@@ -1,5 +1,6 @@
 import type { TopicDto, TopicKindDto, TopicKindSource } from '../../core/services/topics.service';
 import { normalizeSearchText } from '../../core/search-text';
+import { plural } from '../../core/format';
 
 /** The twelve palette keys a kind may use, in palette order. */
 export const KIND_COLOR_KEYS = [
@@ -42,6 +43,22 @@ export function kindFilterChips(kinds: readonly TopicKindDto[]): KindFilterChip[
     { value: ASSISTANT_FILTER, label: 'Set by Ask Nostos', colorKey: null },
     { value: CONNECTED_APP_FILTER, label: 'Set by a connected app', colorKey: null },
   ];
+}
+
+/** The filter value the sorter understands, case-folded: `Untyped` → `untyped`. */
+export function normalizeKindFilter(value: string | null | undefined): string {
+  const raw = value?.trim() ?? '';
+  if (!raw) return 'all';
+  const lower = raw.toLowerCase();
+  return lower === 'all' || lower === UNTYPED_FILTER || lower === ASSISTANT_FILTER
+    || lower === CONNECTED_APP_FILTER
+    ? lower
+    : raw;
+}
+
+/** The header's count: "13 of 40 topics" while a filter or a search is on. */
+export function kindCountLabel(shown: number, total: number, filtered: boolean): string {
+  return filtered ? `${shown} of ${plural(total, 'topic')}` : plural(total, 'topic');
 }
 
 /** Whether a topic belongs under the sorter's `filter` value. */
@@ -151,35 +168,47 @@ export function authorNames(author: string | null | undefined): string[] {
 }
 
 /**
+ * The names a topic may match, folded once for a whole list: every author's
+ * full name and each surname tail ("Le Guin", "Guin" for "Ursula K. Le Guin"),
+ * so a row never re-normalises the library on every change detection.
+ */
+export function authorNameIndex(authors: Iterable<string>): ReadonlySet<string> {
+  const index = new Set<string>();
+  for (const author of authors) {
+    for (const name of authorNames(author)) {
+      const parts = normalizePersonName(name).split(' ').filter(Boolean);
+      // All suffixes: the whole name, then each shorter tail. `topic` is at
+      // least three letters, so "Eco" matches while a lone initial never does.
+      for (let i = 0; i < parts.length; i++) index.add(parts.slice(i).join(' '));
+    }
+  }
+  return index;
+}
+
+/**
  * Whether a topic is named after an author in the library: the whole name, or
  * the surname ("Le Guin", "Tolkien") when the library spells the full name.
  */
 export function topicMatchesAuthor(topicName: string, authors: Iterable<string>): boolean {
+  return topicMatchesAuthorIndex(topicName, authorNameIndex(authors));
+}
+
+/** The same check against an index built once by `authorNameIndex`. */
+export function topicMatchesAuthorIndex(topicName: string, index: ReadonlySet<string>): boolean {
   const topic = normalizePersonName(topicName);
-  if (topic.length < 3) return false;
-  for (const author of authors) {
-    for (const name of authorNames(author)) {
-      const normalized = normalizePersonName(name);
-      if (!normalized) continue;
-      if (normalized === topic) return true;
-      // A surname: the tail of the full name. `topic` is at least three letters,
-      // so "Eco" matches while a lone initial never does.
-      if (normalized.endsWith(` ${topic}`)) return true;
-    }
-  }
-  return false;
+  return topic.length >= 3 && index.has(topic);
 }
 
 /** The offline "Person?" suggestion for an untyped topic, or null. */
 export function personSuggestionFor(
   topic: TopicDto,
   kinds: readonly TopicKindDto[],
-  authors: Iterable<string>,
+  authorIndex: ReadonlySet<string>,
 ): TopicKindDto | null {
   if (topic.kindId) return null;
   const kind = personKind(kinds);
   if (!kind) return null;
-  return topicMatchesAuthor(topic.name, authors) ? kind : null;
+  return topicMatchesAuthorIndex(topic.name, authorIndex) ? kind : null;
 }
 
 /**
@@ -219,7 +248,11 @@ export function toggleId(selected: ReadonlySet<string>, id: string, on: boolean)
   return next;
 }
 
-/** The name folded the way the server compares kind names: trimmed, NFC, upper-case. */
+/**
+ * The name folded the way the server compares kind names: trimmed, NFC, then
+ * upper-cased with the invariant mapping (`toUpperCase`, not the locale's, so a
+ * Turkish viewer refuses the same duplicate the server does).
+ */
 export function normalizeName(value: string): string {
-  return value.trim().normalize('NFC').toLocaleUpperCase();
+  return value.trim().normalize('NFC').toUpperCase();
 }

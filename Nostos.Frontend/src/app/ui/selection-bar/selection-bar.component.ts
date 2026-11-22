@@ -67,6 +67,9 @@ import { IconButtonComponent } from '../icon-button/icon-button.component';
         aria-label="Stop selecting"
         (click)="closed.emit()"
       ></button>
+      @if (note(); as message) {
+        <p class="selection-note" role="alert" [id]="noteId()">{{ message }}</p>
+      }
     </div>
   `,
   styles: [
@@ -89,6 +92,7 @@ import { IconButtonComponent } from '../icon-button/icon-button.component';
       .selection-bar {
         box-sizing: border-box;
         display: flex;
+        flex-wrap: wrap;
         align-items: center;
         gap: 0.35rem;
         max-width: 100%;
@@ -100,6 +104,18 @@ import { IconButtonComponent } from '../icon-button/icon-button.component';
         color: var(--color-text-main);
         font-size: var(--text-sm);
         white-space: nowrap;
+      }
+
+      /* A reason the actions are unavailable (over a bulk limit), on its own
+         line under them; the buttons point at it with their aria-describedby. */
+      .selection-note {
+        flex: 1 1 100%;
+        margin: 0 0 0.1rem;
+        color: var(--color-danger);
+        font-size: var(--text-xs);
+        font-weight: var(--fw-medium);
+        line-height: 1.35;
+        white-space: normal;
       }
 
       /* The count is a status, not a title: muted ink and tabular figures so
@@ -164,6 +180,13 @@ export class SelectionBarComponent {
 
   /** The toolbar's accessible name — "Selected books", "Selected notes". */
   readonly label = input('Selected items');
+
+  /**
+   * Why the bar's actions are unavailable right now (over a bulk limit), shown
+   * on its own line and referenced by the caller's buttons through `noteId`.
+   */
+  readonly note = input<string | null>(null);
+  readonly noteId = input('selection-bar-note');
 
   /** The close control was pressed. The caller owns what leaving means. */
   readonly closed = output<void>();

@@ -3,12 +3,16 @@ import { describe, expect, it } from 'vitest';
 import type { TopicDto, TopicKindDto } from '../../core/services/topics.service';
 import {
   KIND_COLOR_KEYS,
+  authorNameIndex,
   authorNames,
   freeKindColorKeys,
+  kindCountLabel,
   kindDeleteDescription,
   kindSorterTopics,
   kindSourceLabel,
   kindUsingColor,
+  normalizeKindFilter,
+  normalizeName,
   normalizePersonName,
   personSuggestionFor,
   rangeSelection,
@@ -102,9 +106,33 @@ describe('kinds helpers', () => {
   });
 
   it('suggests Person only for an untyped topic named after a library author', () => {
-    expect(personSuggestionFor(topic('t1', 'Tolkien'), kinds, ['J.R.R. Tolkien'])?.id).toBe('k1');
-    expect(personSuggestionFor(topic('t2', 'Tolkien', 'k2'), kinds, ['J.R.R. Tolkien'])).toBeNull();
-    expect(personSuggestionFor(topic('t3', 'Education'), kinds, ['J.R.R. Tolkien'])).toBeNull();
-    expect(personSuggestionFor(topic('t4', 'Tolkien'), [idea], ['J.R.R. Tolkien'])).toBeNull();
+    const authors = authorNameIndex(['J.R.R. Tolkien']);
+    expect(personSuggestionFor(topic('t1', 'Tolkien'), kinds, authors)?.id).toBe('k1');
+    expect(personSuggestionFor(topic('t2', 'Tolkien', 'k2'), kinds, authors)).toBeNull();
+    expect(personSuggestionFor(topic('t3', 'Education'), kinds, authors)).toBeNull();
+    expect(personSuggestionFor(topic('t4', 'Tolkien'), [idea], authors)).toBeNull();
+  });
+
+  it('folds kind names with the invariant mapping, as the server does', () => {
+    // The Turkish dotted/dotless i is where the locale mapping and the server's
+    // disagree; `I` must fold to `I`, never to `İ`.
+    expect(normalizeName('  person ')).toBe('PERSON');
+    expect(normalizeName('fıkır')).toBe('FIKIR');
+  });
+
+  it('folds the filter from the URL, leaving a kind id alone', () => {
+    expect(normalizeKindFilter('Untyped')).toBe('untyped');
+    expect(normalizeKindFilter(' ASSISTANT ')).toBe('assistant');
+    expect(normalizeKindFilter('Connected-App')).toBe('connected-app');
+    expect(normalizeKindFilter('')).toBe('all');
+    expect(normalizeKindFilter(null)).toBe('all');
+    expect(normalizeKindFilter('0f7b2c1e-0000-4000-8000-000000000000'))
+      .toBe('0f7b2c1e-0000-4000-8000-000000000000');
+  });
+
+  it('says "13 of 40 topics" only while something is narrowing the list', () => {
+    expect(kindCountLabel(13, 40, true)).toBe('13 of 40 topics');
+    expect(kindCountLabel(40, 40, false)).toBe('40 topics');
+    expect(kindCountLabel(1, 1, false)).toBe('1 topic');
   });
 });

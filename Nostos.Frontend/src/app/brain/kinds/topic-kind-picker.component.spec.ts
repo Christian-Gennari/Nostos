@@ -1,7 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { OverlayModule } from '@angular/cdk/overlay';
 import { provideRouter } from '@angular/router';
-import { Subject, of } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 
 import { NotesService } from '../../core/services/notes.service';
 import { TopicsService, type TopicDto, type TopicKindDto } from '../../core/services/topics.service';
@@ -20,6 +20,9 @@ const kind = (id: string, name: string, colorKey: string): TopicKindDto => ({
 
 const person = kind('k1', 'Person', 'kind-1');
 const idea = kind('k2', 'Idea', 'kind-2');
+
+/** Lets the popover's queued focus move and the panel's microtasks run. */
+const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe('TopicKindPickerComponent', () => {
   let fixture: ComponentFixture<TopicKindPickerComponent>;
@@ -64,14 +67,17 @@ describe('TopicKindPickerComponent', () => {
   });
 
   it('shows a quiet Add a kind line when the topic has none', () => {
-    expect(fixture.nativeElement.querySelector('.kind-add')?.textContent?.trim()).toBe('Add a kind');
-    expect(fixture.nativeElement.querySelector('.kind-trigger')).toBeNull();
+    const trigger = fixture.nativeElement.querySelector('.kind-trigger') as HTMLElement;
+    expect(trigger.textContent?.trim()).toBe('Add a kind');
+    expect(trigger.classList.contains('is-add')).toBe(true);
   });
 
   it('shows the current kind as a pill', () => {
     fixture.componentRef.setInput('topic', { ...topic, kindId: 'k1', kindSource: 'reader' });
     fixture.detectChanges();
-    expect(fixture.nativeElement.querySelector('.kind-trigger')?.textContent?.trim()).toContain('Person');
+    const trigger = fixture.nativeElement.querySelector('.kind-trigger') as HTMLElement;
+    expect(trigger.textContent?.trim()).toContain('Person');
+    expect(trigger.classList.contains('is-add')).toBe(false);
   });
 
   it('opens with every kind, No kind, New kind… and Manage kinds', () => {
@@ -84,6 +90,40 @@ describe('TopicKindPickerComponent', () => {
     );
     expect(document.body.textContent).toContain('New kind…');
     expect(document.body.textContent).toContain('Manage kinds');
+  });
+
+  it('puts focus on the current kind when it opens', async () => {
+    fixture.componentRef.setInput('topic', { ...topic, kindId: 'k1', kindSource: 'reader' });
+    fixture.detectChanges();
+    fixture.componentInstance.toggle();
+    fixture.detectChanges();
+    await tick();
+
+    const focused = document.activeElement as HTMLElement;
+    expect(focused.classList.contains('kind-choice')).toBe(true);
+    expect(focused.textContent).toContain('Person');
+  });
+
+  it('puts focus on No kind when the topic has none', async () => {
+    fixture.componentInstance.toggle();
+    fixture.detectChanges();
+    await tick();
+
+    expect((document.activeElement as HTMLElement).textContent).toContain('No kind');
+  });
+
+  it('gives focus back to the trigger after a choice, not to the page body', async () => {
+    fixture.componentRef.setInput('topic', { ...topic, kindId: 'k1', kindSource: 'reader' });
+    fixture.detectChanges();
+    fixture.componentInstance.toggle();
+    fixture.detectChanges();
+    await tick();
+
+    fixture.componentInstance.choose('k2');
+    fixture.detectChanges();
+    await tick();
+
+    expect(document.activeElement).toBe(fixture.nativeElement.querySelector('.kind-trigger'));
   });
 
   it('sets a kind and stores the reader as its source', () => {
@@ -110,6 +150,24 @@ describe('TopicKindPickerComponent', () => {
     expect(createKind).toHaveBeenCalledWith({ name: 'Field', colorKey: 'kind-3' });
     expect(setTopicsKind).toHaveBeenCalledWith(['t1'], 'k3');
     expect(reload).toHaveBeenCalled();
+  });
+
+  it('keeps the new kind when it could not be set, and says which half failed', () => {
+    setTopicsKind.mockReturnValue(throwError(() => new Error('network')));
+    const reload = vi.spyOn(TestBed.inject(BrainStateService), 'reloadKinds');
+    fixture.componentInstance.toggle();
+    fixture.componentInstance.startCreating();
+    fixture.componentInstance.draftName.set('Field');
+    fixture.componentInstance.createKind();
+    fixture.detectChanges();
+
+    expect(createKind).toHaveBeenCalled();
+    // The kind is real: the list is read again, and the panel stays open to
+    // choose it, with a message that is not "Could not add the kind".
+    expect(reload).toHaveBeenCalled();
+    expect(fixture.componentInstance.error()).toBe(
+      'Added “Field”, but it could not be set on this topic. Choose it above.');
+    expect(fixture.componentInstance.isOpen()).toBe(true);
   });
 
   it('does not offer a new kind at twelve, and says why', () => {

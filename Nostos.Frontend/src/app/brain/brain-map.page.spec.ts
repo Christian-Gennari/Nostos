@@ -397,5 +397,27 @@ describe('BrainMapPage', () => {
       'Showing 150 of 150 topics (7 hidden by kind)'
     );
   });
+
+  it('opens the kind picker from a map-card pill and closes it back to the card', async () => {
+    await mountPage({});
+    const page = fixture.componentInstance;
+
+    page.openKindPicker({ topicId: 'edu', kindId: 'k1' });
+    expect(page.kindPickerTopic()?.id).toBe('edu');
+    expect(page.kindPickerOrigin()).toBeInstanceOf(HTMLElement);
+
+    page.closeKindPicker();
+    expect(page.kindPickerTopic()).toBeNull();
+    expect(page.kindPickerOrigin()).toBeNull();
+  });
+
+  it('ignores a picker request for a topic the page no longer holds', async () => {
+    await mountPage({});
+    const page = fixture.componentInstance;
+
+    page.openKindPicker({ topicId: 'gone', kindId: null });
+
+    expect(page.kindPickerTopic()).toBeNull();
+  });
 });
 

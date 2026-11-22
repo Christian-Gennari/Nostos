@@ -1,37 +1,31 @@
 @if (showTrigger()) {
-  @if (currentKind(); as kind) {
-    <button
-      #trigger
-      type="button"
-      class="kind-trigger"
-      [attr.aria-expanded]="isOpen()"
-      aria-haspopup="dialog"
-      [attr.aria-label]="'Change kind for ' + topic().name + ': ' + kind.name"
-      (click)="toggle()"
-    >
+  <!-- One button for both states: the pill and the "Add a kind" line swap
+       inside it, so focus returns to the same element when the panel closes
+       (two branches would destroy the trigger under the focused panel). -->
+  <button
+    #trigger
+    type="button"
+    class="kind-trigger"
+    [class.is-add]="!currentKind()"
+    [attr.aria-expanded]="isOpen()"
+    aria-haspopup="dialog"
+    [attr.aria-label]="triggerLabel()"
+    (click)="toggle()"
+  >
+    @if (currentKind(); as kind) {
       <app-topic-kind-pill [name]="kind.name" [colorKey]="kind.colorKey" />
       <nostos-icon class="kind-caret" name="caret-down" [size]="12" />
-    </button>
-  } @else {
-    <button
-      #trigger
-      type="button"
-      class="kind-add"
-      [attr.aria-expanded]="isOpen()"
-      aria-haspopup="dialog"
-      [attr.aria-label]="'Add a kind to ' + topic().name"
-      (click)="toggle()"
-    >
+    } @else {
       Add a kind
-    </button>
-  }
+    }
+  </button>
 }
 
 @if (isOpen()) {
   <nostos-settings-popover
     [origin]="anchor()"
     heading="Kind"
-    [initialFocus]="false"
+    initialFocus=".kind-choice.is-current"
     (dismissed)="close()"
   >
     <div class="kind-picker">
