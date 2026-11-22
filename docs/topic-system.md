@@ -98,6 +98,13 @@ with its provenance in `TopicModel.KindSource` (`reader`, `assistant`, or
 - **Merge:** Merging (or renaming onto an existing topic) keeps the survivor's
   kind and source; if the survivor has none, it takes the merged topic's `KindId`
   and `KindSource`.
+- **Who may replace a kind:** A kind whose source is `reader` is never
+  overwritten by Ask Nostos or a connected app unless the caller explicitly asks
+  (`overwriteReaderKinds: true`); it is reported as skipped instead. The rule
+  lives in `ITopicRepository.SetTopicKindsAsync`, which applies a mixed batch in
+  one transaction under the library write lock. Over MCP, `set_topic_kinds`
+  writes source `connected-app`; the reader can review or clear those kinds at
+  **Brain → Kinds → "Set by a connected app"**.
 - **Portability and backup:** Backups and portable archives carry `topicKinds`
   and each topic's `kindId`/`kindSource`. Archives without `topicKinds` import
   with default kinds and untyped topics; imports match existing kinds by

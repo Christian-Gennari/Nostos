@@ -241,7 +241,14 @@ public sealed class McpToolContractTests : IAsyncLifetime
         Add("list_notes", await CallAsync("list_notes", new() { ["bookId"] = _mobyId }));
         Add("list_topics", await CallAsync("list_topics", new()));
         Add("list_topics(search)", await CallAsync("list_topics", new() { ["search"] = "Ishmael" }));
+        Add("list_topics(withoutKind)", await CallAsync("list_topics", new() { ["withoutKind"] = true }));
         Add("get_topic", await CallAsync("get_topic", new() { ["topicId"] = _topicId }));
+        Add("list_topic_kinds", await CallAsync("list_topic_kinds", new()));
+        Add("create_topic_kind", await CallAsync("create_topic_kind", new() { ["name"] = "Theme" }));
+        Add("set_topic_kinds", await CallAsync("set_topic_kinds", new()
+        {
+            ["assignments"] = new[] { new { topicId = Guid.Parse(_topicId["topic:".Length..]), kindId = Nostos.Backend.Data.Models.TopicKindModel.PersonId } },
+        }));
 
         Add("list_drafts", await CallAsync("list_drafts", new() { ["query"] = "simplicity" }));
         Add("list_drafts(folders)", await CallAsync("list_drafts", new() { ["type"] = "Folder" }));

@@ -145,12 +145,35 @@ public interface ITopicRepository
 
     Task<bool> DeleteKindAsync(Guid id, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Sets one kind (or clears it) on many topics in one unit of work. Kept for
+    /// the reader's bulk action, which may replace a kind the reader set.
+    /// </summary>
     Task<SetTopicsKindOutcome> SetTopicsKindAsync(
         IReadOnlyList<Guid> topicIds,
         Guid? kindId,
         string source = TopicKindSources.Reader,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Applies one kind per topic in a single transaction, for a client that
+    /// classifies many topics at once. With <paramref name="overwriteReaderKinds"/>
+    /// false, a topic whose kind the reader set (<see cref="TopicKindSources.Reader"/>)
+    /// is reported as skipped and left alone. With
+    /// <paramref name="ignoreUnknownTopicIds"/> true, unknown ids are reported in
+    /// the result and the known ones are still applied; otherwise one unknown id
+    /// refuses the whole request, as the reader's endpoint expects.
+    /// </summary>
+    Task<SetTopicsKindOutcome> SetTopicKindsAsync(
+        IReadOnlyList<TopicKindAssignment> assignments,
+        string source = TopicKindSources.Reader,
+        bool overwriteReaderKinds = true,
+        bool ignoreUnknownTopicIds = false,
+        CancellationToken cancellationToken = default);
 }
+
+/// <summary>One topic's new kind in a batch; a null kind clears it.</summary>
+public sealed record TopicKindAssignment(Guid TopicId, Guid? KindId);
 
 public enum TopicKindMutationStatus
 {

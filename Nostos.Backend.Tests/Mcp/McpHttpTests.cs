@@ -173,16 +173,18 @@ public sealed class McpHttpTests : IAsyncLifetime
 
         tools.Select(t => t.Name).Should().BeEquivalentTo(
             "search", "fetch", "find_quote", "overview", "list_books", "get_book", "list_notes", "list_topics",
-            "get_topic", "list_drafts", "read_draft", "reading_list",
-            "save_note", "save_passage", "create_draft", "add_to_reading_list", "add_book", "update_book");
-        string[] writes = ["save_note", "save_passage", "create_draft", "add_to_reading_list", "add_book", "update_book"];
+            "get_topic", "list_topic_kinds", "list_drafts", "read_draft", "reading_list",
+            "save_note", "save_passage", "create_draft", "add_to_reading_list", "add_book", "update_book",
+            "set_topic_kinds", "create_topic_kind");
+        string[] writes = ["save_note", "save_passage", "create_draft", "add_to_reading_list", "add_book", "update_book", "set_topic_kinds", "create_topic_kind"];
         foreach (var tool in tools.Where(t => !writes.Contains(t.Name)))
             tool.ProtocolTool.Annotations!.ReadOnlyHint.Should().BeTrue(tool.Name);
         foreach (var tool in tools.Where(t => writes.Contains(t.Name)))
         {
             tool.ProtocolTool.Annotations!.ReadOnlyHint.Should().BeFalse(tool.Name);
-            // update_book can replace a detail (with replace: true), so it says so.
-            tool.ProtocolTool.Annotations!.DestructiveHint.Should().Be(tool.Name == "update_book", tool.Name);
+            // update_book can replace a detail (with replace: true) and
+            // set_topic_kinds can clear a kind, so they say so.
+            tool.ProtocolTool.Annotations!.DestructiveHint.Should().Be(tool.Name is "update_book" or "set_topic_kinds", tool.Name);
         }
         _mcp.ServerInstructions.Should().Contain("Quote only words a Nostos tool returned");
     }

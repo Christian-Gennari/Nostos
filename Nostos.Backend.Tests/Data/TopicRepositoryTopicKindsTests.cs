@@ -149,6 +149,97 @@ public sealed class TopicRepositoryTopicKindsTests
         (await verifyDb.TopicKinds.CountAsync()).Should().Be(TopicKindModel.MaxKinds);
     }
 
+    [Fact]
+    public async Task SetTopicKindsAsync_skips_reader_kinds_reports_unknown_ids_and_overwrites_when_asked()
+    {
+        await using var library = await LocalPortableTestLibrary.CreateAsync();
+        var dbPath = Path.Combine(library.Root, "nostos.db");
+
+        var readerTopic = new TopicModel { Id = Guid.NewGuid(), Topic = "Reader Topic" };
+        var untypedTopic = new TopicModel { Id = Guid.NewGuid(), Topic = "Untyped Topic" };
+        library.Db.Topics.AddRange(readerTopic, untypedTopic);
+        await library.Db.SaveChangesAsync();
+
+        var unknownTopicId = Guid.NewGuid();
+        await using (var db = CreateFileContext(dbPath))
+        {
+            var repo = new TopicRepository(db);
+            var readerSet = await repo.SetTopicsKindAsync([readerTopic.Id], TopicKindModel.PersonId, TopicKindSources.Reader);
+            readerSet.Status.Should().Be(SetTopicsKindStatus.Success);
+
+            var outcome = await repo.SetTopicKindsAsync(
+                [
+                    new TopicKindAssignment(readerTopic.Id, TopicKindModel.IdeaId),
+                    new TopicKindAssignment(untypedTopic.Id, TopicKindModel.IdeaId),
+                    new TopicKindAssignment(unknownTopicId, TopicKindModel.IdeaId),
+                ],
+                TopicKindSources.ConnectedApp,
+                overwriteReaderKinds: false,
+                ignoreUnknownTopicIds: true);
+
+            outcome.Status.Should().Be(SetTopicsKindStatus.Success);
+            outcome.Result!.SetTopicIds.Should().Equal([untypedTopic.Id]);
+            outcome.Result.SkippedReaderKindTopicIds.Should().Equal([readerTopic.Id]);
+            outcome.Result.UnknownTopicIds.Should().Equal([unknownTopicId]);
+            outcome.Result.ClearedTopicIds.Should().BeEmpty();
+        }
+
+        await using (var db = CreateFileContext(dbPath))
+        {
+            var readerRow = await db.Topics.AsNoTracking().SingleAsync(t => t.Id == readerTopic.Id);
+            readerRow.KindId.Should().Be(TopicKindModel.PersonId);
+            readerRow.KindSource.Should().Be(TopicKindSources.Reader);
+
+            var untypedRow = await db.Topics.AsNoTracking().SingleAsync(t => t.Id == untypedTopic.Id);
+            untypedRow.KindId.Should().Be(TopicKindModel.IdeaId);
+            untypedRow.KindSource.Should().Be(TopicKindSources.ConnectedApp);
+        }
+
+        await using (var db = CreateFileContext(dbPath))
+        {
+            var repo = new TopicRepository(db);
+            var overwritten = await repo.SetTopicKindsAsync(
+                [new TopicKindAssignment(readerTopic.Id, TopicKindModel.IdeaId)],
+                TopicKindSources.ConnectedApp,
+                overwriteReaderKinds: true,
+                ignoreUnknownTopicIds: true);
+
+            overwritten.Status.Should().Be(SetTopicsKindStatus.Success);
+            overwritten.Result!.SetTopicIds.Should().Equal([readerTopic.Id]);
+            overwritten.Result.SkippedReaderKindTopicIds.Should().BeEmpty();
+        }
+
+        await using (var db = CreateFileContext(dbPath))
+        {
+            var readerRow = await db.Topics.AsNoTracking().SingleAsync(t => t.Id == readerTopic.Id);
+            readerRow.KindId.Should().Be(TopicKindModel.IdeaId);
+            readerRow.KindSource.Should().Be(TopicKindSources.ConnectedApp);
+        }
+    }
+
+    [Fact]
+    public async Task SetTopicKindsAsync_refuses_the_whole_batch_on_an_unknown_id_unless_asked_to_ignore_it()
+    {
+        await using var library = await LocalPortableTestLibrary.CreateAsync();
+        var dbPath = Path.Combine(library.Root, "nostos.db");
+
+        var topic = new TopicModel { Id = Guid.NewGuid(), Topic = "Known Topic" };
+        library.Db.Topics.Add(topic);
+        await library.Db.SaveChangesAsync();
+
+        await using var db = CreateFileContext(dbPath);
+        var repo = new TopicRepository(db);
+        var refused = await repo.SetTopicKindsAsync(
+            [
+                new TopicKindAssignment(topic.Id, TopicKindModel.PersonId),
+                new TopicKindAssignment(Guid.NewGuid(), TopicKindModel.PersonId),
+            ],
+            TopicKindSources.ConnectedApp);
+
+        refused.Status.Should().Be(SetTopicsKindStatus.TopicNotFound);
+        (await db.Topics.AsNoTracking().SingleAsync(t => t.Id == topic.Id)).KindId.Should().BeNull();
+    }
+
     private static NostosDbContext CreateFileContext(string databasePath, params IInterceptor[] interceptors)
     {
         var builder = new DbContextOptionsBuilder<NostosDbContext>()
