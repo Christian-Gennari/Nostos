@@ -10,13 +10,13 @@
  *
  * Runs against the served app. Real pointer, real keyboard focus.
  *
- * Usage: node scripts/probe-selection.mjs [--port 5214]
+ * Usage: node scripts/probe-selection.mjs [--port 5099]
  */
 import { chromium } from '@playwright/test';
 
 const argv = process.argv.slice(2);
 const arg = (n, d) => { const i = argv.indexOf(`--${n}`); return i >= 0 && argv[i + 1] ? argv[i + 1] : d; };
-const BASE = `http://127.0.0.1:${arg('port', '5214')}`;
+const BASE = `http://127.0.0.1:${arg('port', '5099')}`;
 
 const readBg = (sel) => {
   const el = document.querySelector(sel);

@@ -17,7 +17,7 @@
  * later.
  *
  * Usage:
- *   node scripts/capture-baseline.mjs [--port 5214] [--out <dir>]
+ *   node scripts/capture-baseline.mjs [--port 5099] [--out <dir>]
  *   node scripts/capture-baseline.mjs --theme sepia --surface library
  *
  * Assumes an app is already serving (npm run prod / npm start). It does NOT
@@ -39,7 +39,7 @@ const arg = (name, fallback) => {
   return i >= 0 && argv[i + 1] ? argv[i + 1] : fallback;
 };
 
-const PORT = arg('port', '5214');
+const PORT = arg('port', '5099');
 const BASE = `http://127.0.0.1:${PORT}`;
 const OUT = resolve(arg('out', join(frontendRoot, 'e2e/visual-evidence/design-baseline')));
 const ONLY_THEME = arg('theme', null);
@@ -569,7 +569,7 @@ async function main() {
     throw new Error(
       `build freshness FAILED: the served stylesheet is ${servedBytes} bytes but the newest build is ` +
       `${builtBytes} (${builtCss.name}). The server is running a different build than the working tree — ` +
-      'rebuild and restart (npm run build && PM2_HOME=/home/dev/.pm2 pm2 restart nostos).',
+      'rebuild and restart the server serving this port (e.g. `npm run build`).',
     );
   }
   const lagMs = srcNewest ? srcNewest.mtime - builtCss.mtime : 0;

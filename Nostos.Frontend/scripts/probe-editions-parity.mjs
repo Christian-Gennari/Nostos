@@ -28,7 +28,7 @@ const arg = (n, d) => {
   const i = argv.indexOf(`--${n}`);
   return i >= 0 && argv[i + 1] ? argv[i + 1] : d;
 };
-const BASE = `http://127.0.0.1:${arg('port', '5214')}`;
+const BASE = `http://127.0.0.1:${arg('port', '5099')}`;
 
 /**
  * A recipe pair: `modal` must compute the same values as `page` for every listed

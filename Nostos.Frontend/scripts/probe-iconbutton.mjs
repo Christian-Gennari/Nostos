@@ -40,7 +40,7 @@ const arg = (name, fallback) => {
   return i >= 0 && argv[i + 1] ? argv[i + 1] : fallback;
 };
 
-const PORT = arg('port', '5214');
+const PORT = arg('port', '5099');
 const BASE = `http://127.0.0.1:${PORT}`;
 // Icon buttons live on these. The reader is first because the harness elsewhere
 // learned that surface ORDER changes what a time-dependent page renders.

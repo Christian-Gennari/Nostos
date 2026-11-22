@@ -684,10 +684,10 @@ npm run check                     # parse + token graph (incl. .ts theme modules
                                   #   (the 8th, possible-unwinnable-dark-override, is ADVISORY)
 npm run check:design -- --self-test   # proves each drift rule can actually fire
 npm run check:freshness           # proves the freshness check fails in both directions
-npm run capture:baseline -- --port 5214 --out /tmp/after
+npm run capture:baseline -- --port 5099 --out /tmp/after
 npm run check:pixels -- /tmp/after    # the real acceptance test
 npm run probe:selection           # rest/hover/focus of a selected row, both themes
-npm run probe:iconbutton -- --port 5214 --out /tmp/before   # icon-button contract
+npm run probe:iconbutton -- --port 5099 --out /tmp/before   # icon-button contract
 npm run probe:iconbutton -- --diff /tmp/before/iconbutton.json /tmp/after/iconbutton.json
 ```
 

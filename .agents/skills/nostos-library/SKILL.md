@@ -5,13 +5,16 @@ description: "Use when the user asks to add, find, update or organise books and 
 
 # Nostos Library via the REST API
 
-Talk to a SelfHosted Nostos server with `curl` against its REST API. A
-SelfHosted server has no login: the API answers anyone who can reach it, so it
-is normally only reachable from the machine it runs on. The default address is
-the production port on that machine; set `NOSTOS_URL` to point elsewhere.
+Talk to a Nostos server with `curl` against its REST API. The server address
+comes from `NOSTOS_URL` (there is no default): set it to your target — for
+example a local dev run (`http://localhost:5099`, per `docs/getting-started.md:41`),
+a container (`http://127.0.0.1:8080` inside the container per `Dockerfile:55`, or
+its published host port), or a Nostos Cloud URL. A SelfHosted server has no
+login: the API answers anyone who can reach it, so it is normally only
+reachable from the machine or private network it runs on.
 
 ```bash
-B=${NOSTOS_URL:-http://127.0.0.1:5214}
+B=${NOSTOS_URL:?Set NOSTOS_URL to your Nostos server URL}
 ```
 
 This is the user's real library. Read before you write, change only what was
@@ -206,5 +209,5 @@ Errors come back as JSON with a `title` code and a readable `detail`, for
 example `{"title":"invalid_book_identity","status":400,"detail":"Unknown book type: kindle. ..."}`.
 Report the `detail` to the user. Do not retry a `4xx` with guessed changes.
 
-If nothing answers at `$B`, the server is down. Tell the user; do not restart
-it yourself. (On the maintainer's machine it runs under PM2 as `nostos`.)
+If nothing answers at `$B`, the server is down or `NOSTOS_URL` is wrong. Tell
+the user; do not start or restart a server yourself.

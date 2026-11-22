@@ -14,7 +14,7 @@
  *
  * It cannot change data. Every non-GET request is refused with 405. GET /api/**
  * is forwarded to a running Nostos server (NOSTOS_PREVIEW_API, default
- * http://127.0.0.1:5214), so the pages show real content.
+ * http://127.0.0.1:5099), so the pages show real content.
  *
  * `--cloud` answers the capability request and the Cloud-only endpoints with the
  * fixtures below, because the bundle is the same for both deployments and only
@@ -28,7 +28,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 const DIST = join(ROOT, 'dist', 'Nostos.Frontend', 'browser');
-const API = new URL(process.env.NOSTOS_PREVIEW_API ?? 'http://127.0.0.1:5214');
+const API = new URL(process.env.NOSTOS_PREVIEW_API ?? 'http://127.0.0.1:5099');
 
 const CONTENT_TYPES = {
   '.html': 'text/html; charset=utf-8',
