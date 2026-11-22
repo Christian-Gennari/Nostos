@@ -279,12 +279,14 @@ export class BrainMapPage {
   }
 
   /**
-   * The legend's "Sort them with Ask Nostos" opens the composed request in the
+   * The legend's "Sort with Ask Nostos" opens the composed request in the
    * composer, visible and editable; it is never sent on the reader's behalf.
+   * A draft the reader has already written is kept and the request is appended
+   * below it, never overwritten.
    */
   sortUnkindedWithAssistant(): void {
     if (!this.assistant.surfaceAvailable()) return;
-    this.assistant.updateDraft(BrainMapPage.SORT_UNKINDED_REQUEST);
+    this.assistant.appendToDraft(BrainMapPage.SORT_UNKINDED_REQUEST);
     this.assistant.requestSurfaceOpen();
   }
 

@@ -6,6 +6,7 @@ import { ChangeDetectionStrategy, Component, input, output } from '@angular/core
 import { RouterLink } from '@angular/router';
 
 import { ChipComponent } from '../../ui/chip/chip.component';
+import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
 import type { KindLegendEntry } from './topic-map.helpers';
 
 /**
@@ -21,7 +22,7 @@ import type { KindLegendEntry } from './topic-map.helpers';
 @Component({
   selector: 'app-map-kind-legend',
   standalone: true,
-  imports: [RouterLink, ChipComponent],
+  imports: [RouterLink, ChipComponent, NostosIconComponent],
   templateUrl: './map-kind-legend.component.html',
   styleUrl: './map-kind-legend.component.css',
   changeDetection: ChangeDetectionStrategy.OnPush,

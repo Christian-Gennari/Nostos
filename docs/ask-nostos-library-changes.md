@@ -19,9 +19,13 @@ collections, file books into them or take them out, edit a book's own details
   changes nothing. Right after the card appears, replying "yes" or "no" does
   the same.
 - **Topic kinds are grouped by kind.** A kind the changeset creates comes
-  first, with its colour and a "New" marker. Each group has one checkbox, and
-  **Show every change** lists the topics in it so a wrong guess can be
-  unticked on its own.
+  first, with its colour and a "New" marker; every kind shows its palette
+  colour, existing or new. Each group has one checkbox, and **Show every
+  change** lists the topics in it so a wrong guess can be unticked on its own.
+  A topic or group you untick keeps its place, unticked — it does not move
+  into the plain step list or disappear. A new kind's create step counts only
+  while at least one of its topics is ticked, so **Apply changes** is disabled
+  once nothing is left ticked.
 - **Nothing is applied half way.** A review changes nothing until you apply it,
   and an apply is all or nothing.
 
@@ -54,27 +58,39 @@ set it (`reader`, `assistant`, `connected-app`) with `topics_list` and
 `topics_get`. It classifies through `topics_set_kind` (many topics, one kind, or
 clear) and creates a kind with `topics_create_kind`.
 
-- **A kind you set is yours.** Ask Nostos never replaces a kind whose source is
-  `reader` unless you named that topic in the same request. The result tells
-  the model "Kept N kinds you set yourself", so it can report what it left
-  alone.
+- **A kind you set is yours.** Ask Nostos never replaces — or clears — a kind
+  whose source is `reader` unless you named that topic in the same request.
+  "Named" is a whole-word match in your own words, folded like a topic name
+  (case and composed accents); a word inside a longer word, a name under three
+  letters, or the request's own vocabulary ("a kind", "my topics") does not
+  count. The model is asked to list the topics it believes you named, and each
+  one is checked against those words. The result tells the model "Kept N kinds
+  you set yourself", so it can report what it left alone.
 - **Creating a kind always waits for review**, even inside an otherwise small
   changeset.
 - Applied kinds carry the `assistant` source. They appear in the Brain's
   "Set by Ask Nostos" filter (issue #1769) and can be sorted again by hand.
 - Undo restores every topic's kind and source from before the changeset, then
   deletes a kind the changeset created once no topic uses it any more. A kind
-  another topic started using is kept.
+  another topic started using is kept. A kind you deleted, renamed or recoloured
+  after the apply is yours: Undo keeps it and lists what it left alone, rather
+  than failing.
 
-**Where you start it.** The map legend's **No kind (n)** row offers **Sort them
-with Ask Nostos** when an AI provider is configured. It opens Ask Nostos with
-the request already in the composer — "Give a kind to my topics that have none.
-Use the kinds I have; propose a new kind only if many topics need it." — visible
-and editable before you send it. On a large library the model reads
-`topics_list` a page at a time (the `untyped` filter) and may stage several
-`topics_set_kind` calls; they arrive on one review card. If a turn's execution
-budget runs out first, the review card shows how many it sorted, and a second
-run continues from the topics that still have no kind.
+**Where you start it.** The map legend's **No kind (n)** row offers two
+separate actions when an AI provider is configured: **Sort them by hand** (the
+kinds page, filtered to topics with no kind) and **Sort with Ask Nostos**. The
+second opens Ask Nostos with the request already in the composer — "Give a kind
+to my topics that have none. Use the kinds I have; propose a new kind only if
+many topics need it." — visible and editable before you send it. A draft you
+had already typed is kept: the request is appended below it, never written
+over.
+
+On a large library the model reads `topics_list` a page at a time (the
+`untyped` filter returns only each topic's id and name, up to 250 a page with a
+`nextPage`), and may stage several `topics_set_kind` calls (up to 250 topics
+each); they arrive on one review card. If a turn's execution budget runs out
+first, the reply above the card says how many it sorted and how many still have
+no kind, and a second run continues from the topics that have no kind.
 
 ## What Ask Nostos never does
 

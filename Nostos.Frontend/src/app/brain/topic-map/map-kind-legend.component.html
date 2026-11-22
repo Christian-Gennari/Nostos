@@ -27,20 +27,30 @@
         <span class="map-legend-kind-label">{{ entry.label }}</span>
         <span class="map-legend-kind-count"> ({{ entry.count }})</span>
       </button>
-      <a
-        class="map-legend-sort"
-        routerLink="/brain/kinds"
-        [queryParams]="{ filter: 'untyped' }"
-      >Sort them</a>
-      @if (assistantAvailable()) {
-      <button
-        appChip
-        type="button"
-        class="map-legend-sort map-legend-ask"
-        (click)="sortWithAssistant.emit()"
-        data-testid="map-legend-sort-with-assistant"
-      >Sort them with Ask Nostos</button>
-      }
+      <!-- Two separate actions, not one sentence of two links: sorting by
+           hand and asking Ask Nostos to do it. Each is a chip with a real tap
+           target on a phone. -->
+      <span class="map-legend-sort-actions">
+        <a
+          class="map-legend-sort map-legend-sort-manual"
+          routerLink="/brain/kinds"
+          [queryParams]="{ filter: 'untyped' }"
+          data-testid="map-legend-sort-manual"
+        >Sort them by hand</a>
+        @if (assistantAvailable()) {
+        <span class="map-legend-separator" aria-hidden="true">·</span>
+        <button
+          appChip
+          type="button"
+          class="map-legend-sort map-legend-ask"
+          (click)="sortWithAssistant.emit()"
+          data-testid="map-legend-sort-with-assistant"
+        >
+          <nostos-icon name="sparkle" [size]="16" />
+          <span>Sort with Ask Nostos</span>
+        </button>
+        }
+      </span>
     </span>
     } @else {
     <button

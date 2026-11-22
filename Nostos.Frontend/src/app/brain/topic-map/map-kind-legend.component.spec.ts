@@ -40,18 +40,27 @@ describe('MapKindLegendComponent entry point', () => {
     return fixture;
   }
 
-  it('offers Sort them with Ask Nostos on the No kind row when an AI provider is configured', () => {
+  it('offers two separate sort actions on the No kind row when an AI provider is configured', () => {
     const fixture = setup(true);
-    const button = fixture.nativeElement.querySelector('[data-testid="map-legend-sort-with-assistant"]') as HTMLButtonElement;
+    const element = fixture.nativeElement as HTMLElement;
+    const manual = element.querySelector('[data-testid="map-legend-sort-manual"]') as HTMLAnchorElement;
+    const button = element.querySelector('[data-testid="map-legend-sort-with-assistant"]') as HTMLButtonElement;
 
-    expect(button.textContent).toContain('Sort them with Ask Nostos');
+    // Two actions, each naming itself, with a separator between them.
+    expect(manual.textContent).toContain('Sort them by hand');
+    expect(button.textContent).toContain('Sort with Ask Nostos');
+    expect(button.querySelector('svg, nostos-icon')).not.toBeNull();
+    expect(element.querySelector('.map-legend-separator')).not.toBeNull();
+
     button.click();
     expect(fixture.componentInstance.asked).toBe(true);
   });
 
-  it('hides it when no provider is configured', () => {
+  it('keeps the manual sort and hides only the Ask action when no provider is configured', () => {
     const fixture = setup(false);
+    const element = fixture.nativeElement as HTMLElement;
 
-    expect(fixture.nativeElement.querySelector('[data-testid="map-legend-sort-with-assistant"]')).toBeNull();
+    expect(element.querySelector('[data-testid="map-legend-sort-manual"]')).not.toBeNull();
+    expect(element.querySelector('[data-testid="map-legend-sort-with-assistant"]')).toBeNull();
   });
 });

@@ -358,7 +358,7 @@ describe('BrainMapPage', () => {
     expect(chips[0].getAttribute('aria-label')).toContain('drawn on the map');
 
     const sortLink = legend.querySelector('.map-legend-sort') as HTMLAnchorElement;
-    expect(sortLink.textContent?.trim()).toBe('Sort them');
+    expect(sortLink.textContent?.trim()).toBe('Sort them by hand');
 
     const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
     chips[0].click();
