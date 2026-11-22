@@ -1,10 +1,11 @@
 import type { NoteContextDto, TopicWritingUsageDto } from '../core/services/topics.service';
 import type { CitingWriting } from '../ui/note-item/note-item.component';
-import { replaceTopicReferences, thoughtForDisplay } from '../ui/note-item/note-item.helpers';
+import { thoughtForDisplay } from '../ui/note-item/note-item.helpers';
+import { noteWikilinksToText } from '../ui/pipes/note-format.pipe';
 
-/** The reader-facing text of a note: `[[Topic]]` references become their word or go. */
+/** The reader-facing text of a note: `[[Topic]]` references become their word. */
 export function plainNoteText(content: string | null | undefined): string {
-  const words = replaceTopicReferences(thoughtForDisplay(content ?? ''), () => '');
+  const words = noteWikilinksToText(thoughtForDisplay(content ?? ''));
   return words.replace(/[ \t]{2,}/g, ' ').replace(/[ \t]+\n/g, '\n').trim();
 }
 
