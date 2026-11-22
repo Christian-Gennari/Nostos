@@ -116,6 +116,16 @@ export class BrainStateService {
   }
 
   /**
+   * Re-reads kind metadata after the reader changed a kind (renamed, recoloured,
+   * reordered, added or deleted). `refresh()` deliberately does not refetch a
+   * loaded list, so the screens that edit kinds ask for this explicitly.
+   */
+  reloadKinds(): void {
+    this.kindsRequested = true;
+    this.loadKinds();
+  }
+
+  /**
    * Loads the topics the first time anything asks, without the counts: for a
    * page that offers topics but shows no sidebar. `ensureLoaded` called later
    * still fetches the counts.

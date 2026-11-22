@@ -1,0 +1,294 @@
+<div class="kinds-scroller">
+  <header class="toolbar toolbar-edge">
+    <button type="button" appButton variant="ghost" class="place-switch" aria-controls="brain-sidebar"
+      [attr.aria-expanded]="state.drawerOpen()" (click)="openDrawer()">
+      <span class="place-switch-label">Kinds</span>
+      <nostos-icon name="caret-down" [size]="14" />
+    </button>
+
+    <div class="toolbar-title">
+      <span class="eyebrow"><nostos-icon concept="kinds" [size]="12" />Brain</span>
+      <h1 class="page-title">Kinds</h1>
+      @if (topicsLoaded()) {
+      <span class="page-count" role="status">{{ plural(topics().length, 'topic') }}</span>
+      }
+    </div>
+
+    <nostos-search-field class="search-bar-container" (cleared)="clearSearch()">
+      <input
+        appInput
+        controlSize="compact"
+        type="search"
+        class="search-input"
+        id="kinds-search"
+        aria-label="Search topics by name"
+        placeholder="Search topics…"
+        [value]="searchDraft()"
+        (input)="onSearchInput($any($event.target).value)"
+        (keydown.escape)="clearSearch()"
+      />
+    </nostos-search-field>
+  </header>
+
+  <div class="kinds-body">
+    <!-- The kinds themselves, at the top of the page (issue #1769). -->
+    <section class="kind-editor" aria-labelledby="kinds-editor-title">
+      <header class="section-head">
+        <div class="section-title">
+          <h2 id="kinds-editor-title">Your kinds</h2>
+          <p class="section-lead">What a topic is: a Person, a Place, an Idea. Twelve at most, one colour each.</p>
+        </div>
+        <button appButton variant="secondary" size="sm" type="button" class="new-kind"
+          [disabled]="atKindLimit()" [attr.title]="atKindLimit() ? 'All 12 kinds are in use. Delete one to add another.' : null"
+          (click)="startNewKind()">
+          <nostos-icon name="plus" [size]="14" />New kind
+        </button>
+      </header>
+
+      @if (atKindLimit()) {
+        <p class="kind-limit">All {{ maxKinds }} kinds are in use. Delete one to add another.</p>
+      }
+
+      @if (newKindOpen()) {
+        <form class="new-kind-form" (submit)="$event.preventDefault(); createKind()">
+          <span class="new-kind-swatch" [style.--kind-color]="nextKindColorCss()" aria-hidden="true"></span>
+          <label class="visually-hidden" for="new-kind-name">Name for the new kind</label>
+          <input
+            appInput
+            id="new-kind-name"
+            type="text"
+            class="new-kind-field"
+            autocomplete="off"
+            maxlength="100"
+            placeholder="Kind name"
+            [value]="newKindName()"
+            [disabled]="newKindBusy()"
+            (input)="newKindName.set($any($event.target).value)"
+            (keydown.escape)="cancelNewKind(); $event.stopPropagation()"
+          />
+          <button appButton variant="primary" size="sm" type="submit" [busy]="newKindBusy()" [disabled]="newKindBusy()">
+            Add kind
+          </button>
+          <button appButton variant="ghost" size="sm" type="button" [disabled]="newKindBusy()" (click)="cancelNewKind()">
+            Cancel
+          </button>
+          @if (newKindError(); as message) {
+            <p class="kind-error" role="alert">{{ message }}</p>
+          }
+        </form>
+      }
+
+      @if (kinds().length) {
+        <ul class="kind-list" aria-label="Kinds">
+          @for (kind of kinds(); track kind.id; let first = $first; let last = $last) {
+            <li class="kind-card" [class.is-selected]="filter() === kind.id">
+              <button type="button" class="kind-swatch" [style.--kind-color]="kindColor(kind)"
+                [attr.aria-expanded]="colorPickId() === kind.id" aria-haspopup="true"
+                [attr.aria-label]="'Change the colour of ' + kind.name" (click)="toggleColor(kind)">
+                <nostos-icon name="palette" [size]="12" />
+              </button>
+
+              @if (renamingKind(); as current) {
+                @if (current.id === kind.id) {
+                  <nostos-inline-rename
+                    class="kind-rename"
+                    variant="row"
+                    [name]="current.name"
+                    [label]="'Rename ' + current.name"
+                    requiredMessage="A kind needs a name."
+                    [error]="renameError()"
+                    [busy]="renaming()"
+                    (committed)="commitRename($event)"
+                    (cancelled)="cancelRename()"
+                  />
+                } @else {
+                  <button type="button" class="kind-name" [title]="'Rename ' + kind.name" (click)="startRename(kind)">
+                    {{ kind.name }}
+                  </button>
+                }
+              } @else {
+                <button type="button" class="kind-name" [title]="'Rename ' + kind.name" (click)="startRename(kind)">
+                  {{ kind.name }}
+                </button>
+              }
+
+              <span class="kind-count">{{ kindCount(kind) }}</span>
+
+              <div class="kind-actions">
+                <button appIconButton type="button" size="xxs" icon="caret-up" [glyphSize]="13"
+                  [disabled]="first || busy()" [attr.aria-label]="'Move ' + kind.name + ' up'" (click)="moveKind(kind, -1)"></button>
+                <button appIconButton type="button" size="xxs" icon="caret-down" [glyphSize]="13"
+                  [disabled]="last || busy()" [attr.aria-label]="'Move ' + kind.name + ' down'" (click)="moveKind(kind, 1)"></button>
+                <button appIconButton type="button" size="xxs" tone="danger" icon="trash" [glyphSize]="13"
+                  [attr.aria-label]="'Delete ' + kind.name" (click)="askDelete(kind)"></button>
+              </div>
+
+              @if (colorPickId() === kind.id) {
+                <div class="color-panel" role="group" [attr.aria-label]="'Colour for ' + kind.name">
+                  <div class="color-grid">
+                    @for (choice of colorChoices(kind); track choice.key) {
+                      <button type="button" class="color-option"
+                        [class.is-current]="isCurrentColor(kind, choice.key)"
+                        [class.is-taken]="!!choice.other"
+                        [style.--swatch-color]="colorVar(choice.key)"
+                        [attr.aria-label]="choice.other ? 'Colour used by ' + choice.other.name + '. Swap colours?' : 'Use this colour'"
+                        [attr.title]="colorTitle(choice)"
+                        [disabled]="swapBusy()"
+                        (click)="chooseColor(kind, choice.key)">
+                        @if (isCurrentColor(kind, choice.key)) {
+                          <nostos-icon name="check" [size]="12" />
+                        }
+                      </button>
+                    }
+                  </div>
+                  <p class="color-hint">Free colours are offered; one another kind holds offers a swap.</p>
+                  @if (pendingSwap(); as swap) {
+                    @if (swap.kind.id === kind.id) {
+                      <div class="swap-row" role="alert">
+                        <span><strong>{{ swap.other.name }}</strong> already uses this colour. Swap theirs with {{ kind.name }}?</span>
+                        <button appButton variant="primary" size="sm" type="button" [busy]="swapBusy()" [disabled]="swapBusy()" (click)="confirmSwap()">Swap</button>
+                        <button appButton variant="ghost" size="sm" type="button" [disabled]="swapBusy()" (click)="cancelSwap()">Cancel</button>
+                      </div>
+                    }
+                  }
+                </div>
+              }
+            </li>
+          }
+        </ul>
+      }
+    </section>
+
+    <!-- The sorter: every topic, filtered and acted on in bulk. -->
+    <section class="kind-sorter" aria-labelledby="kinds-sorter-title">
+      <header class="section-head">
+        <div class="section-title">
+          <h2 id="kinds-sorter-title">Topics</h2>
+          <p class="section-lead">Tick topics to set or clear their kind at once. Shift-click selects a range.</p>
+        </div>
+      </header>
+
+      <div class="filter-row" role="group" aria-label="Filter topics">
+        @for (chip of kindChips(); track chip.value) {
+          <button appChip type="button" class="filter-chip" [attr.aria-pressed]="filter() === chip.value"
+            (click)="setFilter(chip.value)">
+            @if (chip.colorKey) {
+              <span class="chip-dot" [style.background]="colorVar(chip.colorKey)" aria-hidden="true"></span>
+            }
+            {{ chip.label }}
+          </button>
+        }
+      </div>
+
+      @if (q()) {
+        <div class="search-chip-row">
+          <button appChip type="button" class="filter-chip" (click)="clearSearch()" [title]="'Clear search: ' + q()">
+            <span>“{{ q() }}”</span><nostos-icon name="x" [size]="14" />
+          </button>
+        </div>
+      }
+
+      <div class="sorter-tools">
+        <button appButton variant="ghost" size="sm" type="button" (click)="toggleAll()" [disabled]="!topics().length">
+          <nostos-icon name="check-square" [size]="15" />
+          {{ allVisibleSelected() ? 'Clear selection' : 'Select all' }}
+        </button>
+        <span class="sorter-count" role="status">{{ plural(topics().length, 'topic') }}</span>
+      </div>
+
+      @if (!topicsLoaded()) {
+        <nostos-loading-indicator class="sorter-loading" label="Loading topics" />
+      } @else if (!topics().length) {
+        <nostos-empty-state concept="topic" [message]="q() || filter() !== 'all' ? 'No topics match.' : 'Topics appear here when a note carries one.'">
+          @if (q() || filter() !== 'all') {
+            <button appButton variant="secondary" size="sm" type="button" (click)="clearSearch(); setFilter('all')">Clear filters</button>
+          }
+        </nostos-empty-state>
+      } @else {
+        <ul class="topic-rows" aria-label="Topics">
+          @for (topic of topics(); track topic.id; let i = $index) {
+            <li class="topic-row" [class.is-selected]="isSelected(topic.id)">
+              <input
+                type="checkbox"
+                class="row-check"
+                [checked]="isSelected(topic.id)"
+                [attr.aria-label]="'Select ' + topic.name"
+                (click)="onCheckboxClick(i, $event)"
+              />
+              <span class="topic-main">
+                <a class="topic-name" [routerLink]="['/brain/topics', topic.id]">{{ topic.name }}</a>
+                <span class="topic-meta">{{ plural(topic.usageCount, 'note') }}</span>
+              </span>
+              @if (kindOf(topic); as kind) {
+                <app-topic-kind-pill [name]="kind.name" [colorKey]="kind.colorKey" />
+              } @else {
+                <app-topic-kind-pill [name]="null" />
+              }
+              @if (sourceLabel(topic); as source) {
+                <span class="source-marker">{{ source }}</span>
+              }
+              @if (personSuggestion(topic); as person) {
+                <button appChip type="button" class="person-suggestion"
+                  [attr.title]="'“' + topic.name + '” is an author in your library'"
+                  (click)="acceptPerson(topic, person, $event)">
+                  {{ person.name }}?
+                </button>
+              }
+            </li>
+          }
+        </ul>
+      }
+    </section>
+  </div>
+</div>
+
+@if (selectedCount() > 0) {
+  <nostos-selection-bar [count]="selectedCount()" label="Selected topics" (closed)="clearSelection()">
+    <button #setKindTrigger appButton variant="ghost" size="sm" type="button" class="selection-action"
+      [disabled]="busy() || overBulkLimit()" [attr.aria-expanded]="setKindOpen()" aria-haspopup="dialog"
+      aria-label="Set kind…" (click)="setKindOpen.set(!setKindOpen())">
+      <nostos-icon concept="kinds" [size]="14" /><span class="selection-label">Set kind…</span>
+    </button>
+    <button appButton variant="ghost" size="sm" type="button" class="selection-action"
+      [disabled]="busy() || overBulkLimit()" aria-label="Clear kind" (click)="clearKind()">
+      <nostos-icon name="x" [size]="14" /><span class="selection-label">Clear kind</span>
+    </button>
+    <button appButton variant="ghost" size="sm" type="button" class="selection-action"
+      [disabled]="busy() || overBulkLimit()" aria-label="Keep as mine" (click)="keepSelection()">
+      <nostos-icon name="check" [size]="14" /><span class="selection-label">Keep</span>
+    </button>
+  </nostos-selection-bar>
+}
+
+@if (setKindOpen()) {
+  <nostos-settings-popover
+    [origin]="setKindOrigin()?.nativeElement ?? null"
+    heading="Set kind"
+    (dismissed)="setKindOpen.set(false)"
+  >
+    <div class="bulk-kind-panel">
+      @if (overBulkLimit()) {
+        <p class="kind-error" role="alert">Select at most {{ bulkLimit }} topics at once.</p>
+      } @else {
+        <app-kind-choice-list
+          [kinds]="kinds()"
+          [selectedId]="null"
+          [includeNone]="false"
+          label="Set the selected topics' kind"
+          (picked)="applyKind($event)"
+        />
+      }
+    </div>
+  </nostos-settings-popover>
+}
+
+<app-confirm-modal
+  [isOpen]="!!deleteTarget()"
+  [heading]="'Delete ' + (deleteTarget()?.name ?? 'kind')"
+  [description]="deleteDescription()"
+  confirmLabel="Delete kind"
+  busyLabel="Deleting…"
+  [busy]="deleting()"
+  (confirm)="deleteKind()"
+  (cancel)="cancelDelete()"
+></app-confirm-modal>

@@ -1,0 +1,138 @@
+:host {
+  display: inline-flex;
+  min-width: 0;
+}
+
+/* The current kind as a capsule; a click opens the picker. */
+.kind-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 1px 0.1rem 1px 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  border-radius: var(--radius-pill);
+}
+
+.kind-trigger:hover {
+  filter: brightness(0.98);
+}
+
+.kind-trigger:focus-visible,
+.kind-add:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.kind-caret {
+  color: var(--color-text-light);
+}
+
+/* The quiet line, like "Add your own words…": an invitation, not chrome. */
+.kind-add {
+  margin: 0;
+  padding: 0.35rem 0.5rem;
+  margin-inline: -0.5rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text-light);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-style: italic;
+  text-align: left;
+  cursor: pointer;
+}
+
+.kind-add:hover {
+  background: var(--bg-hover);
+}
+
+.kind-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 14rem;
+}
+
+.kind-picker-lead {
+  margin: 0;
+  padding: 0 0.6rem;
+  color: var(--color-text-light);
+  font-size: var(--text-xs);
+}
+
+.kind-picker-divider {
+  height: 1px;
+  margin: 0.15rem 0.25rem;
+  background: var(--border-color);
+}
+
+.kind-picker-action {
+  justify-content: flex-start;
+  gap: 0.4rem;
+  width: 100%;
+  color: var(--color-text-main);
+}
+
+.kind-picker-note {
+  margin: 0;
+  padding: 0.35rem 0.6rem;
+  color: var(--color-text-light);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+}
+
+.kind-picker-error {
+  margin: 0;
+  padding: 0.35rem 0.6rem;
+  color: var(--color-danger);
+  font-size: var(--text-xs);
+}
+
+.kind-manage {
+  align-self: flex-start;
+  gap: 0.3rem;
+}
+
+.kind-create {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0 0.15rem;
+}
+
+.kind-create-field {
+  width: 100%;
+}
+
+.kind-create-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.kind-create-hint {
+  margin: 0;
+  color: var(--color-text-light);
+  font-size: var(--text-xs);
+}
+
+@media (max-width: 768px) {
+  .kind-add,
+  .kind-trigger {
+    min-height: var(--control-h-touch);
+  }
+
+  .kind-picker {
+    min-width: min(18rem, calc(100vw - 2.5rem));
+  }
+
+  .kind-create-field {
+    /* 16px: anything smaller makes iOS zoom the page when the field takes focus. */
+    font-size: var(--text-md);
+  }
+}

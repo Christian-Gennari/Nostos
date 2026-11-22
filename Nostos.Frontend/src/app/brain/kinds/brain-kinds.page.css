@@ -1,0 +1,516 @@
+/* Kinds: the editor at the top, the topic sorter under it. The page owns its
+   scroll, like every Brain place, and its reading column is the list's. */
+:host {
+  display: block;
+  height: 100%;
+}
+
+.kinds-scroller {
+  height: 100%;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+/* --- Toolbar (the Brain's) ------------------------------------------------ */
+.toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: minmax(max-content, 1fr) minmax(0, 420px) minmax(max-content, 1fr);
+  grid-template-rows: minmax(2.4rem, auto);
+  align-items: center;
+  column-gap: 2rem;
+  padding: 1.5rem 3rem 1.25rem;
+  background: var(--glass-bg-strong);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+}
+
+.place-switch {
+  display: none;
+}
+
+.toolbar-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 0.75rem;
+  row-gap: 0.1rem;
+  min-width: 0;
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--color-text-light);
+  font-size: 0.7rem;
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.page-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.page-count {
+  color: var(--color-text-light);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.search-bar-container {
+  width: 100%;
+  min-width: 0;
+}
+
+/* --- The reading column --------------------------------------------------- */
+.kinds-body {
+  max-width: calc(46rem + 6rem);
+  margin-inline: auto;
+  padding: 0.75rem 3rem 8rem;
+}
+
+.section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem 1.5rem;
+  padding: 0.5rem 0 0.85rem;
+}
+
+.section-title h2 {
+  margin: 0;
+  color: var(--color-text-main);
+  font-family: 'Newsreader', serif;
+  font-size: 1.4rem;
+  font-weight: var(--fw-medium);
+}
+
+.section-lead {
+  margin: 0.2rem 0 0;
+  max-width: 34rem;
+  color: var(--color-text-light);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.new-kind {
+  flex: none;
+  gap: 0.35rem;
+}
+
+.kind-limit,
+.kind-error {
+  margin: 0 0 0.75rem;
+  color: var(--color-text-light);
+  font-size: var(--text-sm);
+}
+
+.kind-error {
+  color: var(--color-danger);
+}
+
+/* --- New kind ------------------------------------------------------------- */
+.new-kind-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.85rem;
+  padding: 0.7rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-surface);
+  background: var(--bg-surface);
+}
+
+.new-kind-swatch {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-round);
+  background: var(--kind-color);
+}
+
+.new-kind-field {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+/* --- The kind cards ------------------------------------------------------- */
+.kind-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15.5rem, 1fr));
+  gap: 0.55rem;
+  margin: 0 0 1.5rem;
+  padding: 0;
+  list-style: none;
+}
+
+.kind-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 0.55rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-surface);
+  background: var(--bg-surface);
+}
+
+.kind-card.is-selected {
+  border-color: color-mix(in srgb, var(--color-brand-accent) 45%, var(--border-color));
+  box-shadow: inset 3px 0 0 var(--color-brand-accent);
+}
+
+.kind-swatch {
+  position: relative;
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--kind-color) 55%, var(--border-color));
+  border-radius: var(--radius-round);
+  background: color-mix(in srgb, var(--kind-color) 22%, transparent);
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.kind-swatch:hover,
+.kind-swatch[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--kind-color) 40%, transparent);
+}
+
+.kind-swatch:focus-visible,
+.kind-name:focus-visible,
+.color-option:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.kind-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-text-main);
+  font: inherit;
+  font-weight: var(--fw-medium);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: text;
+}
+
+.kind-rename {
+  flex: 1 1 8rem;
+  min-width: 0;
+}
+
+.kind-count {
+  flex: 0 0 auto;
+  color: var(--color-text-light);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.kind-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0.1rem;
+}
+
+/* --- The colour panel ----------------------------------------------------- */
+.color-panel {
+  flex: 1 1 100%;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.color-grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 3px;
+}
+
+.color-option {
+  --swatch-color: var(--map-kind-none);
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  aspect-ratio: 1;
+  min-width: 14px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: var(--swatch-color);
+  color: #fff;
+  cursor: pointer;
+}
+
+.color-option.is-current {
+  border-color: var(--color-text-main);
+  box-shadow: 0 0 0 1px var(--bg-surface) inset;
+}
+
+.color-option.is-taken:not(.is-current) {
+  opacity: 0.42;
+  /* A taken colour is still offered as a swap: the ring marks it as different,
+     not as disabled. */
+  outline: 1px dashed var(--bg-surface);
+  outline-offset: -3px;
+}
+
+.color-option:disabled {
+  cursor: progress;
+}
+
+.color-hint {
+  margin: 0.45rem 0 0;
+  color: var(--color-text-light);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+}
+
+.swap-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 0.6rem;
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-alt);
+  font-size: var(--text-sm);
+}
+
+.swap-row > span {
+  flex: 1 1 14rem;
+}
+
+/* --- The sorter ----------------------------------------------------------- */
+.kind-sorter {
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding-bottom: 0.5rem;
+}
+
+.filter-chip {
+  gap: 0.35rem;
+}
+
+.chip-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-round);
+}
+
+.search-chip-row {
+  padding-bottom: 0.35rem;
+}
+
+.sorter-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.4rem 0 0.5rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.sorter-count {
+  color: var(--color-text-light);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.sorter-loading {
+  display: flex;
+  justify-content: center;
+  padding: 3rem 0;
+}
+
+.topic-rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.topic-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.65rem;
+  padding: 0.55rem 0.4rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.topic-row.is-selected {
+  background: color-mix(in srgb, var(--color-brand-accent) 7%, transparent);
+}
+
+.row-check {
+  flex: 0 0 auto;
+  width: 17px;
+  height: 17px;
+  margin: 0;
+  accent-color: var(--color-brand-accent);
+  cursor: pointer;
+}
+
+.topic-main {
+  display: flex;
+  flex: 1 1 10rem;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.15rem 0.6rem;
+  min-width: 0;
+}
+
+.topic-name {
+  overflow: hidden;
+  color: var(--color-text-main);
+  font-weight: var(--fw-medium);
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topic-name:hover {
+  text-decoration: underline;
+}
+
+.topic-meta,
+.source-marker {
+  color: var(--color-text-light);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.source-marker {
+  flex: 0 0 auto;
+}
+
+.person-suggestion {
+  flex: 0 0 auto;
+  min-height: 26px;
+  padding: 2px 9px;
+  font-size: 0.75rem;
+}
+
+.bulk-kind-panel {
+  min-width: 13rem;
+}
+
+/* --- Phone ---------------------------------------------------------------- */
+@media (max-width: 768px) {
+  .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 4px;
+    padding: 10px 14px;
+  }
+
+  .place-switch {
+    display: inline-flex;
+    flex: 1 1 0;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
+    max-width: none;
+    min-height: var(--control-h-touch);
+    padding: 0 0.6rem;
+    color: var(--color-text-main);
+    font-size: 1.05rem;
+    font-weight: var(--fw-semibold);
+    justify-content: flex-start;
+  }
+
+  .place-switch-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .toolbar-title {
+    display: none;
+  }
+
+  .search-bar-container {
+    order: 3;
+    flex: 1 1 100%;
+  }
+
+  .search-bar-container .search-input {
+    min-height: var(--control-h-touch);
+  }
+
+  .kinds-body {
+    max-width: none;
+    padding: 0.5rem 18px 8rem;
+  }
+
+  .kind-list {
+    grid-template-columns: 1fr;
+  }
+
+  .section-head {
+    align-items: center;
+  }
+
+  .new-kind {
+    min-height: var(--control-h-touch);
+  }
+
+  .kind-name {
+    font-size: var(--text-md);
+  }
+
+  .color-grid {
+    grid-template-columns: repeat(6, 1fr);
+    gap: 6px;
+    max-width: 15rem;
+  }
+
+  .color-option {
+    min-width: 26px;
+  }
+
+  /* The sorter is one column: the name on its own line, then the kind, source
+     and suggestion under it. */
+  .topic-main {
+    flex: 1 1 calc(100% - 2rem);
+  }
+
+  .topic-row app-topic-kind-pill,
+  .source-marker {
+    margin-left: calc(17px + 0.65rem);
+  }
+
+  .person-suggestion {
+    min-height: var(--control-h-touch);
+  }
+}

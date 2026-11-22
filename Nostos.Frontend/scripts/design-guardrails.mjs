@@ -645,6 +645,12 @@ export const PRODUCT_BUTTONS = new Map(Object.entries({
   // split (#1639); the row is still the catalogue's product surface.
   'src/app/add-book-modal/add-book-source-picker.component.html': ['source-result'],
   'src/app/brain/brain-topic-words.component.html': ['words-add'],
+  // A kind is edited where it is shown: its name reads as text until clicked,
+  // its swatch is a 26px colour chip, and the palette is twelve colour swatches.
+  'src/app/brain/kinds/brain-kinds.page.html': ['kind-name', 'kind-swatch', 'color-option'],
+  // The topic page's kind pill, and the quiet "Add a kind" line beside the
+  // reader's own words: both are text-shaped invitations, not filled buttons.
+  'src/app/brain/kinds/topic-kind-picker.component.html': ['kind-trigger', 'kind-add'],
   // A related note is a full-width reading row under the open note, the same
   // shape as the Brain list's rows rather than a filled button.
   'src/app/brain/brain-note-detail.component.html': ['related-row'],
