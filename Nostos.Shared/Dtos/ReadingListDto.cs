@@ -7,7 +7,8 @@ namespace Nostos.Shared.Dtos;
 /// A book the user wants to read, whether or not they own it yet.
 /// <paramref name="NextPosition"/> is the slot on the ordered "Next up" shelf,
 /// or null for "Someday". <paramref name="OwnedBookId"/> names a library book
-/// that looks like the same title, so the list can say "you already have this".
+/// that looks like the same title, so the list can say "you already have this"
+/// and show its cover (<paramref name="OwnedCoverUrl"/>, <paramref name="OwnedCoverVersion"/>).
 /// </summary>
 public sealed record ReadingListEntryDto(
     Guid Id,
@@ -19,7 +20,9 @@ public sealed record ReadingListEntryDto(
     string? RecommendedBy,
     int? NextPosition,
     DateTime CreatedAt,
-    Guid? OwnedBookId = null
+    Guid? OwnedBookId = null,
+    string? OwnedCoverUrl = null,
+    string? OwnedCoverVersion = null
 );
 
 /// <summary>

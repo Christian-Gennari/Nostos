@@ -60,14 +60,27 @@ public sealed class ReadingListEndpointTests : IClassFixture<LibraryEndpointFact
     private async Task<List<ReadingListEntryDto>> ListAsync() =>
         (await Client.GetFromJsonAsync<List<ReadingListEntryDto>>("/api/reading-list"))!;
 
-    private async Task<Guid> SeedBookAsync(string title, string? author = null, string? isbn = null)
+    private async Task<Guid> SeedBookAsync(
+        string title, string? author = null, string? isbn = null, string? coverFileName = null)
     {
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<NostosDbContext>();
         var book = new PhysicalBookModel { Title = title, Author = author, Isbn = isbn, NormalizedIsbn = isbn };
+        if (coverFileName is not null)
+            book.FileDetails.SetCover(coverFileName);
         db.Books.Add(book);
         await db.SaveChangesAsync();
         return book.Id;
+    }
+
+    private async Task<string?> SetBookCoverAsync(Guid bookId, string? coverFileName)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<NostosDbContext>();
+        var book = await db.Books.SingleAsync(b => b.Id == bookId);
+        book.FileDetails.SetCover(coverFileName);
+        await db.SaveChangesAsync();
+        return book.FileDetails.CoverVersion;
     }
 
     private static async Task<string?> ErrorCodeAsync(HttpResponseMessage response)
@@ -237,9 +250,47 @@ public sealed class ReadingListEndpointTests : IClassFixture<LibraryEndpointFact
         var unrelated = await AddAsync($"Unowned {marker}");
 
         sameTitle.OwnedBookId.Should().Be(bookId);
+        sameTitle.OwnedCoverUrl.Should().BeNull();
+        sameTitle.OwnedCoverVersion.Should().BeNull();
         sameAuthor.OwnedBookId.Should().Be(bookId);
         otherAuthor.OwnedBookId.Should().BeNull();
         unrelated.OwnedBookId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task An_owned_entry_carries_the_library_books_cover_url_and_version()
+    {
+        await ResetAsync();
+        var marker = Guid.NewGuid().ToString("N")[..8];
+        var coveredBookId = await SeedBookAsync(
+            $"Time and Free Will {marker}", "Henri Bergson", coverFileName: "cover.jpg");
+        var plainBookId = await SeedBookAsync(
+            $"Matter and Memory {marker}", "Henri Bergson");
+
+        var covered = await AddAsync($"Time and Free Will {marker}", "Henri Bergson");
+        var plain = await AddAsync($"Matter and Memory {marker}", "Henri Bergson");
+        var unowned = await AddAsync($"Creative Evolution {marker}", "Henri Bergson");
+
+        covered.OwnedBookId.Should().Be(coveredBookId);
+        covered.OwnedCoverUrl.Should().Be($"/api/books/{coveredBookId}/cover");
+        covered.OwnedCoverVersion.Should().NotBeNullOrEmpty();
+
+        plain.OwnedBookId.Should().Be(plainBookId);
+        plain.OwnedCoverUrl.Should().BeNull();
+        plain.OwnedCoverVersion.Should().BeNull();
+
+        unowned.OwnedBookId.Should().BeNull();
+        unowned.OwnedCoverUrl.Should().BeNull();
+        unowned.OwnedCoverVersion.Should().BeNull();
+
+        // Replacing the library book's cover updates the version returned by the reading list.
+        var initialVersion = covered.OwnedCoverVersion;
+        var nextVersion = await SetBookCoverAsync(coveredBookId, "cover.png");
+        nextVersion.Should().NotBeNullOrEmpty().And.NotBe(initialVersion);
+
+        var refreshed = (await ListAsync()).Single(e => e.Id == covered.Id);
+        refreshed.OwnedCoverUrl.Should().Be($"/api/books/{coveredBookId}/cover");
+        refreshed.OwnedCoverVersion.Should().Be(nextVersion);
     }
 
     [Fact]

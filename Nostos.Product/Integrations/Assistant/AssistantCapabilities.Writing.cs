@@ -333,6 +333,7 @@ public static partial class AssistantCapabilities
         shelf = entry.NextPosition is null ? "someday" : "next",
         nextPosition = entry.NextPosition is { } slot ? slot + 1 : (int?)null,
         ownedBookId = entry.OwnedBookId,
+        ownedCoverUrl = entry.OwnedCoverUrl,
         addedAt = entry.CreatedAt,
     };
 

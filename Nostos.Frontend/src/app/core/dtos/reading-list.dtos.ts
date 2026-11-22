@@ -17,6 +17,10 @@ export interface ReadingListEntry {
   createdAt: string;
   /** A library book that looks like the same title, when there is one. */
   ownedBookId?: string | null;
+  /** The owned library book's cover endpoint, when that book has a cover. */
+  ownedCoverUrl?: string | null;
+  /** Changes whenever the owned book's cover bytes change; build image URLs with `coverImageUrl`. */
+  ownedCoverVersion?: string | null;
 }
 
 export interface SaveReadingListEntry {

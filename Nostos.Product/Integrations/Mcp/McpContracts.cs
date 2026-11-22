@@ -270,6 +270,7 @@ internal sealed record McpReadingListEntry(
     string Shelf,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.Never)] int? NextPosition,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.Never)] Guid? OwnedBookId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.Never)] string? OwnedCoverUrl,
     DateTime AddedAt);
 
 /// <summary>What <c>add_to_reading_list</c> did: the entry, and whether it was already there.</summary>
