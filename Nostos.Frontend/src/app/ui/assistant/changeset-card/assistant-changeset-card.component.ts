@@ -5,7 +5,6 @@ import type {
   AssistantChangesetDto,
   LibraryChangesetCountsDto,
   LibraryCollectionChangeDto,
-  LibraryTopicKindAssignmentDto,
 } from '../assistant.service';
 import { CheckboxDirective } from '../../check/check.directive';
 import { plural } from '../../../core/format';
@@ -17,14 +16,26 @@ const BOOK_LIST_LIMIT = 40;
 /** How many topic names a kind group shows before "and N more". */
 const KIND_PREVIEW_LIMIT = 5;
 
+/** One topic in a kind group, with its own tick state. */
+interface KindGroupTopic {
+  stepIndex: number | null;
+  topicId: string | null;
+  topicName: string;
+  previousKindName: string | null;
+  included: boolean;
+}
+
 /** A kind's topics as one review group with one checkbox. */
 interface KindGroup {
   key: string;
   name: string;
   color: string | null;
   isNew: boolean;
-  topics: LibraryTopicKindAssignmentDto[];
+  topics: KindGroupTopic[];
+  /** The steps that give or clear one topic's kind, for the group checkbox. */
   stepIndexes: number[];
+  /** The step that creates this kind, when the changeset does. */
+  createStepIndex: number | null;
   included: boolean;
 }
 
@@ -91,62 +102,73 @@ export class AssistantChangesetCardComponent {
     // longer stand, so the card says what became of them instead.
     if (this.status() === 'undone') return 'These changes were undone.';
     if (this.status() === 'discarded') return 'These changes were not applied. Nothing changed.';
-    if (
-      diff.collections.length + diff.memberships.length + diff.bookEdits.length
-        + (diff.topicKinds?.length ?? 0) + (diff.topicKindAssignments?.length ?? 0) === 0
-    ) {
+    const nothingLeft = this.inReview()
+      ? this.includedCount() === 0
+      : diff.collections.length + diff.memberships.length + diff.bookEdits.length
+        + (diff.topicKinds?.length ?? 0) + (diff.topicKindAssignments?.length ?? 0) === 0;
+    if (nothingLeft) {
       return this.inReview() ? 'Every step is left out.' : 'Nothing changed.';
     }
     return describe(changeset.diff.counts, diff.memberships.length, this.inReview());
   });
 
-  readonly includedCount = computed(() => this.changeset().steps.filter((step) => step.included).length);
+  /**
+   * The steps an apply would actually run. A kind's create step only counts
+   * while at least one of its topics is ticked, exactly as the server's
+   * included set drops it once every topic is left out.
+   */
+  readonly includedCount = computed(() => this.effectiveIncluded().length);
   readonly canApply = computed(() => this.inReview() && this.includedCount() > 0 && !this.disabled());
 
+  /**
+   * Groups are built from every stored step, not from the diff a preview
+   * recomputes without the excluded ones, so unticking a topic (or a whole
+   * kind) leaves it in place, unticked, instead of making it vanish into the
+   * plain step list.
+   */
   readonly kindGroups = computed<KindGroup[]>(() => {
-    const diff = this.changeset().diff;
-    const assignments = diff.topicKindAssignments ?? [];
-    if (assignments.length === 0) return [];
-
-    const createdOrder = new Map<string, number>();
-    const createdColors = new Map<string, string | null>();
-    const createdSteps = new Map<string, number>();
-    (diff.topicKinds ?? []).forEach((kind, order) => {
-      if (kind.kind !== 'created') return;
-      createdOrder.set(kind.id, order);
-      createdColors.set(kind.id, kindCssVar(kind.colorKey));
-      if (kind.stepIndex !== null && kind.stepIndex !== undefined) {
-        createdSteps.set(kind.id, kind.stepIndex);
-      }
-    });
-
-    const stepIncluded = new Map(this.changeset().steps.map((step) => [step.index, step.included]));
+    const steps = this.changeset().steps;
     const groups = new Map<string, KindGroup>();
-    for (const assignment of assignments) {
-      const key = assignment.kindId ?? 'none';
-      let group = groups.get(key);
+    const createdOrder = new Map<string, number>();
+
+    for (const step of steps) {
+      const info = step.topicKind;
+      if (!info?.createsKind || createdOrder.has(info.kindKey)) continue;
+      createdOrder.set(info.kindKey, createdOrder.size);
+    }
+
+    for (const step of steps) {
+      const info = step.topicKind;
+      if (!info || info.createsKind) continue;
+      let group = groups.get(info.kindKey);
       if (!group) {
         group = {
-          key,
-          name: assignment.kindName ?? 'No kind',
-          color: assignment.kindId ? createdColors.get(assignment.kindId) ?? null : null,
-          isNew: assignment.kindId ? createdOrder.has(assignment.kindId) : false,
+          key: info.kindKey,
+          name: info.kindName,
+          // Every kind has a palette colour, existing or new.
+          color: info.colorKey ? kindCssVar(info.colorKey) : null,
+          isNew: info.isNewKind,
           topics: [],
           stepIndexes: [],
-          included: true,
+          createStepIndex: steps.find((candidate) =>
+            candidate.topicKind?.createsKind && candidate.topicKind.kindKey === info.kindKey)?.index ?? null,
+          included: false,
         };
-        groups.set(key, group);
-        if (assignment.kindId && createdSteps.has(assignment.kindId)) {
-          group.stepIndexes.push(createdSteps.get(assignment.kindId)!);
-        }
+        groups.set(info.kindKey, group);
       }
-      group.topics.push(assignment);
-      if (assignment.stepIndex !== null) group.stepIndexes.push(assignment.stepIndex);
+      group.topics.push({
+        stepIndex: step.index,
+        topicId: info.topicId,
+        topicName: info.topicName ?? step.summary,
+        previousKindName: info.previousKindName,
+        included: step.included,
+      });
+      group.stepIndexes.push(step.index);
     }
 
     const ordered = [...groups.values()];
     for (const group of ordered) {
-      group.included = group.stepIndexes.every((index) => stepIncluded.get(index) !== false);
+      group.included = group.topics.some((topic) => topic.included);
     }
     ordered.sort((a, b) => {
       if (a.isNew !== b.isNew) return a.isNew ? -1 : 1;
@@ -162,11 +184,14 @@ export class AssistantChangesetCardComponent {
 
   /** Steps that are not part of a kind group, still shown as their own lines. */
   readonly otherSteps = computed(() => {
-    const kindSteps = new Set(this.kindGroups().flatMap((group) => group.stepIndexes));
-    for (const kind of this.changeset().diff.topicKinds ?? []) {
-      if (kind.stepIndex !== null && kind.stepIndex !== undefined) kindSteps.add(kind.stepIndex);
-    }
-    return this.changeset().steps.filter((step) => !kindSteps.has(step.index));
+    const grouped = new Set(this.kindGroups().map((group) => group.key));
+    return this.changeset().steps.filter((step) => {
+      const info = step.topicKind;
+      if (!info) return true;
+      // A kind's create step is represented by its group; a kind created on
+      // its own has no group and keeps its own line.
+      return info.createsKind && !grouped.has(info.kindKey);
+    });
   });
 
   readonly collectionLines = computed(() => this.changeset().diff.collections.map(collectionLine));
@@ -202,6 +227,28 @@ export class AssistantChangesetCardComponent {
   topicIncluded(stepIndex: number | null): boolean {
     if (stepIndex === null) return true;
     return this.changeset().steps[stepIndex]?.included !== false;
+  }
+
+  private effectiveIncluded(): number[] {
+    const steps = this.changeset().steps;
+    const includedTopicKinds = new Set<string>();
+    for (const step of steps) {
+      if (step.included && step.topicKind && !step.topicKind.createsKind) {
+        includedTopicKinds.add(step.topicKind.kindKey);
+      }
+    }
+
+    return steps
+      .filter((step) => {
+        if (!step.included) return false;
+        const info = step.topicKind;
+        if (!info?.createsKind) return true;
+        const hasTopicSteps = steps.some((candidate) =>
+          candidate.topicKind && !candidate.topicKind.createsKind
+            && candidate.topicKind.kindKey === info.kindKey);
+        return !hasTopicSteps || includedTopicKinds.has(info.kindKey);
+      })
+      .map((step) => step.index);
   }
 
   toggleKindTopic(stepIndex: number | null, event: Event): void {
@@ -241,9 +288,7 @@ function describe(counts: LibraryChangesetCountsDto, booksRefiled: number, futur
         : `${verb('refile', 'refiled')} ${books}`);
   }
   if (counts.bookEdits) parts.push(`${verb('edit', 'edited')} ${plural(counts.bookEdits, 'book')}`);
-  if (counts.topicKindChanges) {
-    parts.push(`${verb('give', 'gave')} ${plural(counts.topicKindChanges, 'topic')} a kind`);
-  }
+  parts.push(...kindChangeParts(counts, verb));
   if (counts.topicKindsCreated) {
     parts.push(`${verb('create', 'created')} ${plural(counts.topicKindsCreated, 'topic kind')}`);
   }
@@ -252,6 +297,31 @@ function describe(counts: LibraryChangesetCountsDto, booksRefiled: number, futur
     ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`
     : parts[0] ?? '';
   return `${future ? 'This will ' : 'I '}${sentence}.`;
+}
+
+/**
+ * The kind changes in their own words: giving a kind, changing one and removing
+ * one are three different acts, and a clear is not a gift. A host that predates
+ * the split falls back to the neutral "change the kind of N topics".
+ */
+function kindChangeParts(
+  counts: LibraryChangesetCountsDto,
+  verb: (present: string, past: string) => string,
+): string[] {
+  const given = counts.topicKindsGiven ?? 0;
+  const changed = counts.topicKindsChanged ?? 0;
+  const cleared = counts.topicKindsCleared ?? 0;
+  if (given + changed + cleared === 0) {
+    return counts.topicKindChanges
+      ? [`${verb('change', 'changed')} the kind of ${plural(counts.topicKindChanges, 'topic')}`]
+      : [];
+  }
+
+  const parts: string[] = [];
+  if (given) parts.push(`${verb('give', 'gave')} ${plural(given, 'topic')} a kind`);
+  if (changed) parts.push(`${verb('change', 'changed')} the kind of ${plural(changed, 'topic')}`);
+  if (cleared) parts.push(`${verb('remove', 'removed')} the kind from ${plural(cleared, 'topic')}`);
+  return parts;
 }
 
 function collectionLine(change: LibraryCollectionChangeDto): { key: string; text: string; note: string | null } {

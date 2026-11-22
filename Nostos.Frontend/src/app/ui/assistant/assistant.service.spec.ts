@@ -1452,6 +1452,33 @@ describe('AssistantService voice transcript alignment', () => {
       .toEqual({ actionToken: 'token-1', excluded: [1, 2], diffHash: 'hash-2' });
   });
 
+  it('adds a prepared request to the composer without overwriting the reader’s draft', () => {
+    service.appendToDraft('Sort my topics.');
+    expect(service.draft()).toBe('Sort my topics.');
+
+    // Adding it again changes nothing.
+    service.appendToDraft('Sort my topics.');
+    expect(service.draft()).toBe('Sort my topics.');
+
+    service.appendToDraft('Give a kind to my topics that have none.');
+    expect(service.draft()).toBe('Sort my topics.\n\nGive a kind to my topics that have none.');
+  });
+
+  it('leaves out a whole kind group in one request', () => {
+    service.updateDraft('Sort my topics.');
+    service.submit();
+    http.expectOne('/api/assistant/turn/stream').flush(turn({ changeset: changeset() }));
+
+    service.setChangesetStepsIncluded('cs-1', [1, 2], false);
+
+    const request = http.expectOne('/api/assistant/changesets/cs-1/preview');
+    expect(request.request.body).toEqual({
+      actionToken: 'token-1',
+      // The create step stays in; the server drops it when no topic uses it.
+      excluded: [1, 2],
+    });
+  });
+
   it('undoes applied changes and lists what it left alone', () => {
     service.updateDraft('Rename Fiction.');
     service.submit();

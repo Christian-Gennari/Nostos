@@ -2,7 +2,9 @@ using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Nostos.Backend.Data;
+using Nostos.Backend.Data.Interfaces;
 using Nostos.Backend.Data.Models;
+using Nostos.Backend.Data.Repositories;
 using Nostos.Backend.Services;
 using Nostos.Backend.Services.Library;
 using Nostos.Backend.Tests.Support;
@@ -199,6 +201,94 @@ public sealed class LibraryChangesetTopicKindTests : IClassFixture<SqliteTestFix
         await using var check = await h.Factory.CreateDbContextAsync();
         (await check.TopicKinds.AsNoTracking().AnyAsync(k => k.Id == kindId))
             .Should().BeTrue("another topic still uses it");
+    }
+
+    [Fact]
+    public async Task Undo_after_the_reader_deleted_the_kind_it_would_restore_keeps_the_topic_and_says_so()
+    {
+        var h = await SeedAsync();
+
+        // Paulo Freire's reader kind (Person) becomes Idea; then the reader
+        // deletes Person. Restoring Person would point Topic.KindId at a row
+        // that no longer exists, which used to abort the whole undo with
+        // SQLite Error 19 and an HTTP 500.
+        var applied = await h.Service.ApplyAsync(
+            [new SetTopicKindOp([h.Person], TopicKindRef.Existing(TopicKindModel.IdeaId), NamedTopicIds: [h.Person])],
+            expectedDiffHash: null);
+        applied.Success.Should().BeTrue(applied.ErrorMessage);
+
+        await using (var db = await h.Factory.CreateDbContextAsync())
+            (await new TopicRepository(db).DeleteKindAsync(TopicKindModel.PersonId)).Should().BeTrue();
+
+        var reverted = await h.Service.RevertAsync(applied.Undo!);
+
+        reverted.Success.Should().BeTrue("an undo must report a conflict, not fail with a 500");
+        reverted.Conflicts.Should().ContainSingle()
+            .Which.Should().Be("Kept the kind of “Paulo Freire”: the kind “Person” was deleted after this was applied.");
+
+        await using var check = await h.Factory.CreateDbContextAsync();
+        var topic = await check.Topics.AsNoTracking().SingleAsync(t => t.Id == h.Person);
+        topic.KindId.Should().Be(TopicKindModel.IdeaId, "the topic is left as the changeset left it");
+        topic.KindSource.Should().Be(TopicKindSources.Assistant);
+    }
+
+    [Fact]
+    public async Task Undo_after_a_created_kind_was_renamed_restores_the_topics_and_keeps_the_kind()
+    {
+        var h = await SeedAsync();
+
+        var applied = await h.Service.ApplyAsync(
+        [
+            new CreateTopicKindOp("school", "School of thought"),
+            new SetTopicKindOp([h.Freire], TopicKindRef.Created("school")),
+        ], expectedDiffHash: null);
+        applied.Success.Should().BeTrue(applied.ErrorMessage);
+        var kindId = applied.Undo!.TopicKinds.Single().Id;
+
+        await using (var db = await h.Factory.CreateDbContextAsync())
+        {
+            (await new TopicRepository(db).UpdateKindAsync(
+                kindId, "Way of thinking", "kind-9", sortOrder: null, swapColor: false)).Status
+                .Should().Be(TopicKindMutationStatus.Success);
+        }
+
+        var reverted = await h.Service.RevertAsync(applied.Undo!);
+
+        reverted.Success.Should().BeTrue();
+        reverted.Conflicts.Should().ContainSingle()
+            .Which.Should().Contain("Way of thinking").And.Contain("changed after this was applied");
+
+        await using var check = await h.Factory.CreateDbContextAsync();
+        (await check.TopicKinds.AsNoTracking().AnyAsync(k => k.Id == kindId))
+            .Should().BeTrue("a kind the reader edited is theirs");
+        (await check.Topics.AsNoTracking().SingleAsync(t => t.Id == h.Freire)).KindId
+            .Should().BeNull("the topic's own restore does not depend on the kept kind");
+    }
+
+    [Fact]
+    public async Task Undo_after_the_reader_deleted_the_kind_the_changeset_created_does_not_throw()
+    {
+        var h = await SeedAsync();
+
+        var applied = await h.Service.ApplyAsync(
+        [
+            new CreateTopicKindOp("school", "School of thought"),
+            new SetTopicKindOp([h.Freire], TopicKindRef.Created("school")),
+        ], expectedDiffHash: null);
+        applied.Success.Should().BeTrue(applied.ErrorMessage);
+        var kindId = applied.Undo!.TopicKinds.Single().Id;
+
+        await using (var db = await h.Factory.CreateDbContextAsync())
+            (await new TopicRepository(db).DeleteKindAsync(kindId)).Should().BeTrue();
+
+        var reverted = await h.Service.RevertAsync(applied.Undo!);
+
+        reverted.Success.Should().BeTrue("the created kind is already gone, so there is nothing to remove");
+        reverted.Conflicts.Should().ContainSingle()
+            .Which.Should().Contain("Kept the kind of \"Freire\"");
+
+        await using var check = await h.Factory.CreateDbContextAsync();
+        (await check.Topics.AsNoTracking().SingleAsync(t => t.Id == h.Freire)).KindId.Should().BeNull();
     }
 
     [Fact]

@@ -57,9 +57,31 @@ public sealed class AssistantChangePolicyTopicKindTests
             .RequiresReview.Should().BeFalse();
     }
 
+    [Fact]
+    public void The_review_reason_says_what_the_kind_changes_actually_do()
+    {
+        var cleared = AssistantChangePolicy.Evaluate(
+            Diff(12, given: 0, changed: 0, cleared: 12), Options, false, false);
+        cleared.Reasons.Should().ContainSingle()
+            .Which.Should().Be("Removes the kind from 12 topics.");
+
+        var given = AssistantChangePolicy.Evaluate(
+            Diff(12, given: 12, changed: 0, cleared: 0), Options, false, false);
+        given.Reasons.Should().ContainSingle()
+            .Which.Should().Be("Gives 12 topics a kind.");
+
+        var mixed = AssistantChangePolicy.Evaluate(
+            Diff(12, given: 8, changed: 3, cleared: 1), Options, false, false);
+        mixed.Reasons.Should().ContainSingle()
+            .Which.Should().Be("Gives 8 topics a kind, changes the kind of 3 topics and removes the kind from 1 topic.");
+    }
+
     private static LibraryChangesetDiffDto Diff(
         int topics,
-        IReadOnlyList<LibraryTopicKindChangeDto>? createdKinds = null)
+        IReadOnlyList<LibraryTopicKindChangeDto>? createdKinds = null,
+        int? given = null,
+        int? changed = null,
+        int? cleared = null)
     {
         createdKinds ??= [];
         var assignments = Enumerable.Range(0, topics)
@@ -76,7 +98,10 @@ public sealed class AssistantChangePolicyTopicKindTests
             new LibraryChangesetCountsDto(
                 0, 0, 0, 0, 0, 0, 0, 0,
                 TopicKindsCreated: createdKinds.Count,
-                TopicKindChanges: assignments.Count),
+                TopicKindChanges: assignments.Count,
+                TopicKindsGiven: given ?? 0,
+                TopicKindsChanged: changed ?? 0,
+                TopicKindsCleared: cleared ?? 0),
             createdKinds,
             assignments);
     }

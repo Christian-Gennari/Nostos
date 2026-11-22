@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Nostos.Backend.Integrations.Assistant;
+using Nostos.Backend.Services.Library;
 using Nostos.Product.Composition;
 using Nostos.Shared.Dtos;
 using Xunit;
@@ -20,6 +21,59 @@ public sealed class AssistantChangesetStoreTests
         new([], [], [], new LibraryChangesetCountsDto(0, 0, 0, 0, 0, 0, 0, 0), [], []);
 
     private readonly TestTimeProvider _clock = new();
+
+    [Fact]
+    public void A_review_step_keeps_its_topic_kind_after_the_reader_leaves_it_out()
+    {
+        // A preview recomputes the diff without the excluded step, so the card
+        // can only keep a left-out topic in place if the step itself says what
+        // it changes (issue #1770 review).
+        var store = new AssistantChangesetStore(_clock);
+        var kindId = Guid.NewGuid();
+        var topicId = Guid.NewGuid();
+        var diff = new LibraryChangesetDiffDto(
+            [], [], [],
+            new LibraryChangesetCountsDto(0, 0, 0, 0, 0, 0, 0, 0, 1, 1),
+            [new LibraryTopicKindChangeDto(kindId, "created", "School of thought", null, "kind-7", 1, StepIndex: 0)],
+            [new LibraryTopicKindAssignmentDto(
+                topicId, "Freire", kindId, "School of thought", null, "assistant", StepIndex: 1, KindColorKey: "kind-7")]);
+
+        var stored = store.Add(
+            "owner", "conversation", "turn",
+            [
+                new AssistantStagedStep(
+                    new CreateTopicKindOp("school", "School of thought", "kind-7"),
+                    "Create the topic kind “School of thought”", []),
+                new AssistantStagedStep(
+                    new SetTopicKindOp([topicId], TopicKindRef.Existing(kindId)),
+                    "Set “Freire” to “School of thought”", [0]),
+            ],
+            diff, "hash", AssistantChangesetStatus.Review, [], undo: null);
+
+        var create = stored.ToDto().Steps[0].TopicKind;
+        create.Should().NotBeNull();
+        create!.CreatesKind.Should().BeTrue();
+        create.KindName.Should().Be("School of thought");
+        create.ColorKey.Should().Be("kind-7");
+
+        store.Update(stored, changeset =>
+        {
+            changeset.Excluded.Add(1);
+            changeset.Diff = EmptyDiff;
+        });
+
+        var dto = stored.ToDto();
+        dto.Steps[1].Included.Should().BeFalse();
+        var topic = dto.Steps[1].TopicKind;
+        topic.Should().NotBeNull("the step still describes the topic the reader left out");
+        topic!.TopicId.Should().Be(topicId);
+        topic.TopicName.Should().Be("Freire");
+        topic.KindKey.Should().Be(kindId.ToString());
+        topic.KindName.Should().Be("School of thought");
+        topic.ColorKey.Should().Be("kind-7");
+        topic.IsNewKind.Should().BeTrue();
+        topic.CreatesKind.Should().BeFalse();
+    }
 
     [Fact]
     public void An_owner_past_its_capacity_expires_only_its_own_oldest()

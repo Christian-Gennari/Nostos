@@ -28,6 +28,15 @@ public sealed class StoredAssistantChangeset
     public required string ActionToken { get; init; }
     public required IReadOnlyList<AssistantStagedStep> Steps { get; init; }
 
+    /// <summary>
+    /// The diff as the review first described it: every step's effect, whether
+    /// or not the reader has since left it out. A preview recomputes
+    /// <see cref="Diff"/> without the excluded steps, so the card's kind groups
+    /// read names, colours and "was …" notes from here and their tick state
+    /// from the steps.
+    /// </summary>
+    public required LibraryChangesetDiffDto Baseline { get; init; }
+
     public AssistantChangesetStatus Status { get; set; }
     public HashSet<int> Excluded { get; set; } = [];
     public required LibraryChangesetDiffDto Diff { get; set; }
@@ -52,12 +61,62 @@ public sealed class StoredAssistantChangeset
             _ => "discarded",
         },
         Steps.Select((step, index) => new AssistantChangeStepDto(
-            index, step.Summary, !Excluded.Contains(index), step.DependsOn)).ToList(),
+            index, step.Summary, !Excluded.Contains(index), step.DependsOn, StepTopicKind(index))).ToList(),
         WithStepIndexes(),
         DiffHash,
         ActionToken,
         ReviewReasons,
         Status == AssistantChangesetStatus.Applied && Undo is not null);
+
+    /// <summary>
+    /// One step's topic-kind effect, read from the baseline diff so a step the
+    /// reader has left out keeps its name, colour and "was …" note on the card.
+    /// Null for a step that does not touch topic kinds.
+    /// </summary>
+    private AssistantStepTopicKindDto? StepTopicKind(int index)
+    {
+        switch (Steps[index].Op)
+        {
+            case CreateTopicKindOp create:
+            {
+                var created = Baseline.TopicKinds.FirstOrDefault(kind =>
+                    kind.Kind == "created" && string.Equals(kind.Name, create.Name, StringComparison.Ordinal));
+                return new AssistantStepTopicKindDto(
+                    KindKey: created?.Id.ToString() ?? create.Ref,
+                    KindName: create.Name,
+                    ColorKey: created?.ColorKey ?? create.ColorKey,
+                    CreatesKind: true,
+                    IsNewKind: true,
+                    TopicId: null,
+                    TopicName: null,
+                    PreviousKindName: null);
+            }
+            case SetTopicKindOp setKind:
+            {
+                if (setKind.TopicIds.Count != 1)
+                    return null;
+
+                var topicId = setKind.TopicIds[0];
+                var assignment = Baseline.TopicKindAssignments
+                    .FirstOrDefault(candidate => candidate.TopicId == topicId);
+                if (assignment is null)
+                    return null;
+
+                return new AssistantStepTopicKindDto(
+                    KindKey: assignment.KindId?.ToString() ?? "none",
+                    KindName: assignment.KindName ?? "No kind",
+                    ColorKey: assignment.KindColorKey,
+                    CreatesKind: false,
+                    IsNewKind: assignment.KindId is { } kindId
+                        && Baseline.TopicKinds.Any(kind => kind.Id == kindId),
+                    TopicId: assignment.TopicId,
+                    TopicName: assignment.TopicName,
+                    PreviousKindName: assignment.PreviousKindName);
+            }
+            default:
+                return null;
+        }
+    }
 
     /// <summary>
     /// Names the review step each topic-kind assignment belongs to, so the
@@ -171,6 +230,7 @@ public sealed class AssistantChangesetStore(TimeProvider? time = null)
                 ActionToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant(),
                 Steps = steps,
                 Status = status,
+                Baseline = diff,
                 Diff = diff,
                 DiffHash = diffHash,
                 ReviewReasons = reviewReasons,

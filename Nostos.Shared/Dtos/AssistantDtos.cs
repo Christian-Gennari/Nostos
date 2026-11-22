@@ -339,7 +339,27 @@ public sealed record AssistantChangeStepDto(
     int Index,
     string Summary,
     bool Included,
-    IReadOnlyList<int> DependsOn);
+    IReadOnlyList<int> DependsOn,
+    // APPENDED (issue #1770 review): what this step does to topic kinds, so the
+    // review card can group and untick steps from the steps themselves rather
+    // than from a diff that a preview recomputes without the excluded ones.
+    AssistantStepTopicKindDto? TopicKind = null);
+
+/// <summary>
+/// One review step's topic-kind effect. A step either creates a kind
+/// (<see cref="CreatesKind"/>) or sets/clears one topic's kind. The card groups
+/// topics by <see cref="KindKey"/>, and treats a created kind's step as
+/// included only while at least one of its topic steps is.
+/// </summary>
+public sealed record AssistantStepTopicKindDto(
+    string KindKey,
+    string KindName,
+    string? ColorKey,
+    bool CreatesKind,
+    bool IsNewKind,
+    Guid? TopicId,
+    string? TopicName,
+    string? PreviousKindName);
 
 /// <summary>Recompute a review with some steps left out.</summary>
 public sealed record AssistantChangesetPreviewRequest(

@@ -55,6 +55,9 @@ public sealed record LibraryBookEditDto(
 /// <summary>
 /// One topic kind the changeset creates. <paramref name="Kind"/> is
 /// <c>created</c> (a changeset never edits or deletes a kind).
+/// <paramref name="TopicCount"/> is how many topics <em>this changeset</em>
+/// assigns to the kind, not the kind's library-wide total: the review card
+/// counts the steps it can leave out, not the whole library.
 /// </summary>
 public sealed record LibraryTopicKindChangeDto(
     Guid Id,
@@ -81,7 +84,10 @@ public sealed record LibraryTopicKindAssignmentDto(
     string? KindName,
     string? PreviousKindName,
     string? Source,
-    int? StepIndex = null);
+    int? StepIndex = null,
+    // APPENDED (issue #1770 review): the target kind's palette key, so the
+    // review card shows an existing kind's colour as well as a new one's.
+    string? KindColorKey = null);
 
 /// <summary>One field of a book, before and after, as display text.</summary>
 public sealed record LibraryFieldChangeDto(string Field, string? Before, string? After);
@@ -97,6 +103,10 @@ public sealed record LibraryChangesetCountsDto(
     int BooksLosingMembership,
     int BookEdits,
     // APPENDED (issue #1770). TopicKindChanges counts every topic whose kind
-    // the changeset gives, changes or clears.
+    // the changeset gives, changes or clears; the three below split it so the
+    // card and the review reason can say which of the three happened.
     int TopicKindsCreated = 0,
-    int TopicKindChanges = 0);
+    int TopicKindChanges = 0,
+    int TopicKindsGiven = 0,
+    int TopicKindsChanged = 0,
+    int TopicKindsCleared = 0);

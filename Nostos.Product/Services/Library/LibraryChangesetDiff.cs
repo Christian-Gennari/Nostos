@@ -95,9 +95,16 @@ internal static class LibraryChangesetDiff
 
         return (await db.Topics.AsNoTracking()
                 .Where(t => topicIds.Contains(t.Id))
-                .Select(t => new { t.Id, t.Topic, t.KindId, t.KindSource })
+                .Select(t => new
+                {
+                    t.Id,
+                    t.Topic,
+                    t.KindId,
+                    t.KindSource,
+                    KindName = t.Kind != null ? t.Kind.Name : null,
+                })
                 .ToListAsync(ct))
-            .ToDictionary(t => t.Id, t => new TopicKindAssignmentState(t.Topic, t.KindId, t.KindSource));
+            .ToDictionary(t => t.Id, t => new TopicKindAssignmentState(t.Topic, t.KindId, t.KindSource, t.KindName));
     }
 
     public static async Task<LibraryChangesetDiffDto> BuildAsync(
@@ -205,7 +212,10 @@ internal static class LibraryChangesetDiff
             BooksLosingMembership: memberships.Count(m => m.Removed.Count > 0),
             BookEdits: edits.Count,
             TopicKindsCreated: topicKinds.Count(k => k.Kind == "created"),
-            TopicKindChanges: topicKindAssignments.Count);
+            TopicKindChanges: topicKindAssignments.Count,
+            TopicKindsGiven: topicKindAssignments.Count(a => a.KindId is not null && a.PreviousKindName is null),
+            TopicKindsChanged: topicKindAssignments.Count(a => a.KindId is not null && a.PreviousKindName is not null),
+            TopicKindsCleared: topicKindAssignments.Count(a => a.KindId is null));
 
         return new LibraryChangesetDiffDto(collections, memberships, edits, counts, topicKinds, topicKindAssignments);
     }
@@ -263,6 +273,11 @@ internal static class LibraryChangesetDiff
                 ? before.TopicKinds.TryGetValue(id, out var kind) ? kind.Name : null
                 : null;
 
+        string? KindColorKey(Guid? kindId) =>
+            kindId is { } id
+                ? after.TopicKinds.TryGetValue(id, out var kind) ? kind.ColorKey : null
+                : null;
+
         var changed = new List<LibraryTopicKindAssignmentDto>();
         foreach (var topicId in before.TopicKindAssignments.Keys.Union(after.TopicKindAssignments.Keys))
         {
@@ -278,7 +293,8 @@ internal static class LibraryChangesetDiff
                 afterKindId,
                 KindName(afterKindId),
                 PreviousKindName(was?.KindId),
-                now?.Source));
+                now?.Source,
+                KindColorKey: KindColorKey(afterKindId)));
         }
 
         changed.Sort((a, b) =>
@@ -401,10 +417,10 @@ internal static class LibraryChangesetDiff
                     ?? before.TopicKindAssignments.GetValueOrDefault(topicId)?.TopicName
                     ?? "Topic",
                 before.TopicKindAssignments.GetValueOrDefault(topicId)
-                    is { } was ? new TopicKindAssignmentState(was.TopicName, was.KindId, was.Source)
+                    is { } was ? was
                     : new TopicKindAssignmentState("Topic", null, null),
                 after.TopicKindAssignments.GetValueOrDefault(topicId)
-                    is { } now ? new TopicKindAssignmentState(now.TopicName, now.KindId, now.Source)
+                    is { } now ? now
                     : new TopicKindAssignmentState("Topic", null, null)))
             .ToList();
 

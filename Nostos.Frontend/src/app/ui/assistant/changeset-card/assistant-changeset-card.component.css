@@ -108,8 +108,33 @@
   gap: 2px;
 }
 
-.changeset__kind-group--off {
-  opacity: 0.6;
+/*
+ * A left-out kind keeps its place but reads as off through muted ink, a dashed
+ * edge and a strike-through — the same off-state recipe as the map legend's
+ * chips. Fading the whole group to 0.6 dropped its text under the contrast
+ * floor, so the state is carried by ink and decoration instead of opacity.
+ */
+.changeset__kind-group--off .changeset__kind-head {
+  padding: 2px 6px;
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+  color: var(--color-text-muted);
+}
+
+.changeset__kind-group--off .changeset__kind-name {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.changeset__kind-group--off .changeset__kind-swatch {
+  opacity: 0.35;
+}
+
+.changeset__kind-topics--off {
+  color: var(--color-text-muted);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
 }
 
 .changeset__kind-head {
@@ -153,10 +178,18 @@
 }
 
 .changeset__kind-topics {
+  min-width: 0;
   margin: 0 0 0 24px;
   color: var(--color-text-muted);
   font-size: 0.74rem;
   line-height: 1.4;
+  /* A long topic name wraps inside the card instead of widening it. */
+  overflow-wrap: anywhere;
+}
+
+.changeset__topic-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .changeset__kind-detail {
