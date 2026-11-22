@@ -4,6 +4,7 @@ import {
   forceCollide,
   forceLink,
   forceManyBody,
+  forceRadial,
   forceSimulation,
   forceX,
   forceY,
@@ -13,6 +14,8 @@ import {
 import {
   DRAG_ALPHA,
   DRAG_THRESHOLD_PX,
+  LOCAL_RADIAL_STRENGTH,
+  LOCAL_RING_STEP,
   OBSIDIAN_FORCES,
   OBSIDIAN_LINK_STRENGTH,
   SETTLE_ALPHA,
@@ -31,6 +34,9 @@ export interface SimulationInitOptions {
   visibleEdges: readonly TopicGraphEdgeDto[];
   stageWidth: number;
   stageHeight: number;
+  rootId?: string | null;
+  hops?: ReadonlyMap<string, number> | null;
+  keepPositions?: boolean;
 }
 
 export interface SimulationDragOptions {
@@ -50,6 +56,7 @@ export class TopicMapSimulation {
   private layoutFrame: number | null = null;
   private graph: Graph | null = null;
   private onRefresh: (() => void) | null = null;
+  private rootId: string | null = null;
 
   /* Drag-to-reposition state */
   private draggedNode: string | null = null;
@@ -87,9 +94,10 @@ export class TopicMapSimulation {
    * to the stage, shelve unconnected isolates, and snapshot home positions.
    */
   initLayout(options: SimulationInitOptions): void {
-    const { graph, visibleNodes, visibleEdges, stageWidth, stageHeight } = options;
+    const { graph, visibleNodes, visibleEdges, stageWidth, stageHeight, rootId, hops, keepPositions } = options;
     this.disposed = false;
     this.graph = graph;
+    this.rootId = rootId ?? null;
 
     const connected = new Set<string>();
     for (const edge of visibleEdges) {
@@ -97,16 +105,28 @@ export class TopicMapSimulation {
       connected.add(edge.sourceId);
       connected.add(edge.targetId);
     }
-    const isolates = visibleNodes.filter((n) => !connected.has(n.id));
+    const simulated = new Set(connected);
+    if (this.rootId && graph.hasNode(this.rootId)) {
+      simulated.add(this.rootId);
+    }
+
+    const isolates = visibleNodes.filter((n) => !simulated.has(n.id));
     const layoutNodes: LayoutNode[] = visibleNodes
-      .filter((n) => connected.has(n.id))
+      .filter((n) => simulated.has(n.id))
       .map((n) => {
         const attrs = graph.getNodeAttributes(n.id);
+        const isRoot = this.rootId !== null && n.id === this.rootId;
+        if (isRoot) {
+          graph.setNodeAttribute(n.id, 'x', 0);
+          graph.setNodeAttribute(n.id, 'y', 0);
+        }
         return {
           id: n.id,
-          x: Number(attrs['x']),
-          y: Number(attrs['y']),
+          x: isRoot ? 0 : Number(attrs['x']),
+          y: isRoot ? 0 : Number(attrs['y']),
+          ...(isRoot ? { fx: 0, fy: 0 } : {}),
           size: Number(attrs['size']),
+          hop: isRoot ? 0 : hops?.get(n.id),
         };
       });
     const layoutLinks = visibleEdges
@@ -146,32 +166,46 @@ export class TopicMapSimulation {
           .strength(OBSIDIAN_FORCES.collideStrength)
       );
 
-    this.layout.alpha(SETTLE_ALPHA);
+    if (this.rootId) {
+      this.layout.force(
+        'radial',
+        forceRadial<LayoutNode>(
+          (node) => (node.hop ?? 0) * LOCAL_RING_STEP,
+          0,
+          0
+        ).strength((node) => (node.hop ? LOCAL_RADIAL_STRENGTH : 0))
+      );
+    }
+
+    this.layout.alpha(keepPositions ? SETTLE_ALPHA * 0.6 : SETTLE_ALPHA);
     let settleTicks = 0;
     while (this.layout.alpha() > OBSIDIAN_FORCES.alphaMin && settleTicks < 300) {
       this.layout.tick();
       settleTicks += 1;
     }
 
-    const turn = alignmentRotation(
-      layoutNodes.map((n) => ({ x: Number(n.x) || 0, y: Number(n.y) || 0 })),
-      stageWidth,
-      stageHeight
-    );
-    if (turn) {
-      const cos = Math.cos(turn);
-      const sin = Math.sin(turn);
-      for (const n of layoutNodes) {
-        const x = Number(n.x) || 0;
-        const y = Number(n.y) || 0;
-        n.x = x * cos - y * sin;
-        n.y = x * sin + y * cos;
+    if (!keepPositions) {
+      const turn = alignmentRotation(
+        layoutNodes.map((n) => ({ x: Number(n.x) || 0, y: Number(n.y) || 0 })),
+        stageWidth,
+        stageHeight
+      );
+      if (turn) {
+        const cos = Math.cos(turn);
+        const sin = Math.sin(turn);
+        for (const n of layoutNodes) {
+          if (this.rootId && n.id === this.rootId) continue;
+          const x = Number(n.x) || 0;
+          const y = Number(n.y) || 0;
+          n.x = x * cos - y * sin;
+          n.y = x * sin + y * cos;
+        }
       }
     }
     this.writeLayoutToGraph();
 
     if (isolates.length) {
-      const extent = graphExtent(graph, connected);
+      const extent = graphExtent(graph, simulated);
       const shelf = shelfPositions(
         isolates.length,
         extent,
@@ -243,6 +277,7 @@ export class TopicMapSimulation {
     };
 
     sigma.on('downNode', (e) => {
+      if (this.rootId && e.node === this.rootId) return;
       this.draggingActive = false;
       beginDrag(e.node, e.event.x, e.event.y);
     });
@@ -295,12 +330,13 @@ export class TopicMapSimulation {
     this.layout?.nodes().forEach((node) => {
       const home = this.layoutHome.get(node.id);
       if (!home) return;
+      const isRoot = this.rootId !== null && node.id === this.rootId;
       node.x = home.x;
       node.y = home.y;
       node.vx = 0;
       node.vy = 0;
-      node.fx = null;
-      node.fy = null;
+      node.fx = isRoot ? 0 : null;
+      node.fy = isRoot ? 0 : null;
     });
 
     return true;
@@ -362,6 +398,7 @@ export class TopicMapSimulation {
   }
 
   pinNodeForDrag(node: string, x?: number, y?: number): void {
+    if (this.rootId && node === this.rootId) return;
     const layout = this.layout;
     const graph = this.graph;
     if (!layout || !graph) return;
@@ -379,8 +416,9 @@ export class TopicMapSimulation {
 
   releasePinnedNode(): void {
     for (const entry of this.layout?.nodes() ?? []) {
-      entry.fx = null;
-      entry.fy = null;
+      const isRoot = this.rootId !== null && entry.id === this.rootId;
+      entry.fx = isRoot ? 0 : null;
+      entry.fy = isRoot ? 0 : null;
     }
   }
 
@@ -397,6 +435,7 @@ export class TopicMapSimulation {
     this.layout = null;
     this.graph = null;
     this.onRefresh = null;
+    this.rootId = null;
     this.draggedNode = null;
     this.dragging = false;
     this.dragStart = null;

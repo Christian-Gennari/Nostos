@@ -33,8 +33,11 @@ import {
 } from '../../core/services/topics.service';
 
 import {
+  LOCAL_MAP_DEPTH_MAX,
+  LOCAL_MAP_DEPTH_MIN,
   MAX_MAP_TOPICS,
   drawnTopics,
+  scopeGraph,
   type MapCamera,
 } from './topic-map.helpers';
 import { TopicMapRenderer } from './topic-map-renderer';
@@ -46,6 +49,16 @@ export type { MapCamera } from './topic-map.helpers';
 
 /** How many related topics the selection card lists. */
 const SELECTION_RELATED_MAX = 4;
+/** Share of total graph topics above which a large depth >= 2 scope defaults to strength 2. */
+const AUTO_MIN_SHARED_RATIO = 0.6;
+
+export interface MapScopeInfo {
+  totalInScope: number;
+  shownCount: number;
+  maxShared: number;
+  effectiveMin: number;
+  capped: boolean;
+}
 
 interface MapModel {
   names: Map<string, string>;
@@ -89,12 +102,17 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
   @Input() camera: MapCamera | null = null;
   @Input() centerOnLoad = false;
   @Input() notesLabel = 'Read notes';
+  @Input() rootId: string | null = null;
+  @Input() depth = LOCAL_MAP_DEPTH_MIN;
+  @Input() minShared: number | null = null;
 
   @Output() readonly cameraKept = new EventEmitter<MapCamera>();
   @Output() readonly topicSelected = new EventEmitter<string>();
   @Output() readonly openNotes = new EventEmitter<void>();
   @Output() readonly openTopic = new EventEmitter<string>();
   @Output() readonly selectionCleared = new EventEmitter<void>();
+  @Output() readonly mapAround = new EventEmitter<string>();
+  @Output() readonly scopeInfo = new EventEmitter<MapScopeInfo>();
 
   @ViewChild('sigmaContainer', { static: false }) sigmaContainer!: ElementRef<HTMLDivElement>;
   @ViewChild('mapStage', { static: false }) mapStage!: ElementRef<HTMLElement>;
@@ -113,6 +131,11 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
   private destroyed = false;
   private viewInitialized = false;
   private pendingRebuild = false;
+  private lastBuilt = false;
+  private lastRootId: string | null = null;
+  private lastDepth = LOCAL_MAP_DEPTH_MIN;
+  private lastEffectiveMin = 1;
+  private activeRootId: string | null = null;
 
   /* State signals for the template. */
   readonly loading = signal(true);
@@ -121,7 +144,12 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
   readonly selectedNodeId = signal<string | null>(null);
   readonly isFullscreen = signal(false);
   readonly sourceCount = signal(0);
-  readonly isCapped = computed(() => this.sourceCount() > MAX_MAP_TOPICS);
+  readonly scopeTotal = signal(0);
+  readonly shownCount = signal(0);
+  readonly isLocal = signal(false);
+  readonly isCapped = computed(() =>
+    this.isLocal() ? this.scopeTotal() > MAX_MAP_TOPICS : this.sourceCount() > MAX_MAP_TOPICS
+  );
   readonly noConnections = signal(false);
   readonly accessibleNodes = signal<
     Array<{ id: string; name: string; usageCount: number; connectionCount: number }>
@@ -166,6 +194,14 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
     if (changes['topics']) {
       this.sourceCount.set((this.topics ?? []).length);
       this.loadGraphData();
+      return;
+    }
+    if ((changes['rootId'] || changes['depth'] || changes['minShared']) && this.graphData && !this.loading()) {
+      if (this.viewInitialized) {
+        this.rebuildSigma();
+      } else {
+        this.pendingRebuild = true;
+      }
     }
   }
 
@@ -221,6 +257,7 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
         error: () => {
           if (this.destroyed) return;
           this.graphData = { nodes: [], edges: [] };
+          this.lastBuilt = false;
           this.loadFailed.set(true);
           this.loading.set(false);
         },
@@ -230,25 +267,118 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
   /* ── Graph construction ── */
 
   private rebuildSigma(): void {
-    const keepsView = this.camera !== null || this.centerOnLoad;
-    this.viewport.captureCarriedCamera(this.renderer.sigmaInstance, keepsView);
-    this.disposeSigma();
-    if (!this.graphData || !this.sigmaContainer?.nativeElement) return;
+    if (!this.graphData || !this.sigmaContainer?.nativeElement) {
+      this.disposeSigma();
+      return;
+    }
 
     const container = this.sigmaContainer.nativeElement;
-    const visibleIds = new Set(drawnTopics(this.topics ?? []).map((c) => c.id));
-    const visibleNodes = this.graphData.nodes.filter((n) => visibleIds.has(n.id));
-    const visibleEdges = this.graphData.edges.filter(
-      (e) => visibleIds.has(e.sourceId) && visibleIds.has(e.targetId)
+    const normalizedRootId = this.rootId?.trim() || null;
+    const clampedDepth = Math.max(
+      LOCAL_MAP_DEPTH_MIN,
+      Math.min(LOCAL_MAP_DEPTH_MAX, Math.floor(this.depth || LOCAL_MAP_DEPTH_MIN))
     );
+    const explicitMin =
+      this.minShared !== null && this.minShared !== undefined && Number.isFinite(this.minShared)
+        ? Math.max(1, Math.floor(this.minShared))
+        : null;
+
+    let visibleNodes = this.graphData.nodes;
+    let visibleEdges = this.graphData.edges;
+    let hops: Map<string, number> | null = null;
+    let totalInScope = 0;
+    let maxShared = 1;
+    let effectiveMin = explicitMin ?? 1;
+
+    if (normalizedRootId) {
+      const allowedIds = new Set((this.topics ?? []).map((t) => t.id));
+      const allowedGraph: TopicGraphDto = {
+        nodes: this.graphData.nodes.filter((n) => allowedIds.has(n.id)),
+        edges: this.graphData.edges.filter((e) => allowedIds.has(e.sourceId) && allowedIds.has(e.targetId)),
+      };
+      const baseScope = scopeGraph(allowedGraph, normalizedRootId, clampedDepth, 1, Number.MAX_SAFE_INTEGER);
+      for (const edge of baseScope.edges) {
+        if (edge.sharedNotes > maxShared) maxShared = edge.sharedNotes;
+      }
+      if (explicitMin === null) {
+        const totalNodes = allowedGraph.nodes.length;
+        const denseDepth2Plus =
+          clampedDepth >= 2 &&
+          baseScope.totalInScope > MAX_MAP_TOPICS &&
+          totalNodes > 0 &&
+          baseScope.totalInScope / totalNodes > AUTO_MIN_SHARED_RATIO &&
+          maxShared >= 2;
+        effectiveMin = denseDepth2Plus ? 2 : 1;
+      }
+      const scoped = scopeGraph(allowedGraph, normalizedRootId, clampedDepth, effectiveMin, MAX_MAP_TOPICS);
+      visibleNodes = scoped.nodes;
+      visibleEdges = scoped.edges;
+      hops = scoped.hops;
+      totalInScope = scoped.totalInScope;
+    } else {
+      const visibleIds = new Set(drawnTopics(this.topics ?? []).map((c) => c.id));
+      visibleNodes = this.graphData.nodes.filter((n) => visibleIds.has(n.id));
+      const candidateEdges = this.graphData.edges.filter(
+        (e) => visibleIds.has(e.sourceId) && visibleIds.has(e.targetId) && e.sourceId !== e.targetId
+      );
+      for (const edge of candidateEdges) {
+        if (edge.sharedNotes > maxShared) maxShared = edge.sharedNotes;
+      }
+      visibleEdges = candidateEdges.filter((e) => e.sharedNotes >= effectiveMin);
+      totalInScope = (this.topics ?? []).length;
+    }
+
+    const scopeChanged =
+      this.lastBuilt &&
+      (this.lastRootId !== normalizedRootId ||
+        this.lastDepth !== clampedDepth ||
+        this.lastEffectiveMin !== effectiveMin);
+    const keepPositions =
+      this.lastBuilt &&
+      normalizedRootId !== null &&
+      this.lastRootId === normalizedRootId &&
+      (this.lastDepth !== clampedDepth || this.lastEffectiveMin !== effectiveMin);
+
+    let previousPositions: Map<string, { x: number; y: number }> | undefined;
+    if (keepPositions && this.renderer.graphInstance) {
+      previousPositions = new Map<string, { x: number; y: number }>();
+      this.renderer.graphInstance.forEachNode((node, attrs) => {
+        previousPositions!.set(node, { x: Number(attrs['x']) || 0, y: Number(attrs['y']) || 0 });
+      });
+    }
+
+    const keepsView = !scopeChanged && (this.camera !== null || this.centerOnLoad);
+    this.viewport.captureCarriedCamera(this.renderer.sigmaInstance, keepsView);
+    this.disposeSigma();
+
+    this.lastBuilt = true;
+    this.lastRootId = normalizedRootId;
+    this.lastDepth = clampedDepth;
+    this.lastEffectiveMin = effectiveMin;
+    this.activeRootId = normalizedRootId;
+
+    this.isLocal.set(normalizedRootId !== null);
+    this.scopeTotal.set(totalInScope);
+    this.shownCount.set(visibleNodes.length);
+    this.scopeInfo.emit({
+      totalInScope,
+      shownCount: visibleNodes.length,
+      maxShared,
+      effectiveMin,
+      capped: this.isCapped(),
+    });
 
     if (visibleNodes.length === 0) {
+      this.model.set(null);
       this.noConnections.set(true);
       this.accessibleNodes.set([]);
       return;
     }
 
-    const { graph, hueById } = this.renderer.buildGraph(visibleNodes, visibleEdges);
+    const { graph, hueById } = this.renderer.buildGraph(visibleNodes, visibleEdges, {
+      rootId: normalizedRootId,
+      initialPositions: previousPositions,
+    });
 
     // Build the selection card's view of the graph.
     const names = new Map(visibleNodes.map((n) => [n.id, n.name]));
@@ -278,7 +408,7 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
       hue: hueById,
     });
 
-    this.noConnections.set(graph.size === 0);
+    this.noConnections.set(normalizedRootId ? false : graph.size === 0);
 
     const connectionCounts = new Map<string, number>();
     graph.forEachEdge((_edge, _attrs, source, target) => {
@@ -300,11 +430,15 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
       visibleEdges,
       stageWidth: container.clientWidth,
       stageHeight: container.clientHeight,
+      rootId: normalizedRootId,
+      hops,
+      keepPositions,
     });
 
     const sigma = this.renderer.mount(graph, container, {
       getHoveredId: () => this.hoveredId(),
       getSelectedId: () => this.selectedNodeId(),
+      getRootId: () => this.activeRootId,
       isDragging: () => this.simulation.isDragging,
       hasDraggedNode: () => !!this.simulation.activeDraggedNode,
       onHoverChange: (id) => this.hoveredId.set(id),

@@ -19,6 +19,9 @@ import {
 export interface BrainMapView {
   camera: MapCamera;
   focus: string | null;
+  around: string | null;
+  depth: number;
+  min: number | null;
 }
 
 /** Ask Nostos capabilities that change notes or their topics. */

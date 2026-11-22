@@ -1,5 +1,6 @@
 import {
   LABEL_PRIORITY,
+  MAX_MAP_TOPICS,
   alignmentRotation,
   centerStrengths,
   detectCommunities,
@@ -7,6 +8,7 @@ import {
   logicalCanvasWidth,
   pickHubs,
   placeLabels,
+  scopeGraph,
   selectLabelCandidates,
   shelfPositions,
   type LabelCandidate,
@@ -309,5 +311,116 @@ describe('drawThemeNodeHover', () => {
     expect(fills).toEqual(['#1f2127', '#4a4d57']);
     expect(texts).toEqual([{ text: 'Seneca', style: '#e8e9ec' }]);
     expect(context.font).toContain('600');
+  });
+});
+
+describe('scopeGraph', () => {
+  const sample = {
+    nodes: [
+      { id: 'root', name: 'Education', usageCount: 2 },
+      { id: 'h1a', name: 'Pedagogy', usageCount: 10 },
+      { id: 'h1b', name: 'Rhetoric', usageCount: 3 },
+      { id: 'h2a', name: 'Logic', usageCount: 8 },
+      { id: 'h2b', name: 'Grammar', usageCount: 4 },
+      { id: 'h3a', name: 'Poetry', usageCount: 20 },
+      { id: 'far', name: 'Astronomy', usageCount: 50 },
+      { id: 'bridge-only', name: 'Optics', usageCount: 15 },
+    ],
+    edges: [
+      { sourceId: 'root', targetId: 'h1a', sharedNotes: 3 },
+      { sourceId: 'root', targetId: 'h1b', sharedNotes: 1 },
+      { sourceId: 'h1a', targetId: 'h2a', sharedNotes: 2 },
+      { sourceId: 'h1a', targetId: 'h2b', sharedNotes: 1 },
+      { sourceId: 'h2a', targetId: 'h3a', sharedNotes: 2 },
+      { sourceId: 'h3a', targetId: 'far', sharedNotes: 4 },
+      // Reachable from root only via the weak edge root -> h1b (1) or h1b -> bridge-only (5)
+      { sourceId: 'h1b', targetId: 'bridge-only', sharedNotes: 5 },
+      // Cross-edge at hop 2
+      { sourceId: 'h2a', targetId: 'h2b', sharedNotes: 2 },
+    ],
+  };
+
+  it('respects depth limits 1, 2, and 3', () => {
+    const d1 = scopeGraph(sample, 'root', 1, 1);
+    expect(d1.nodes.map((n) => n.id)).toEqual(['root', 'h1a', 'h1b']);
+    expect(d1.hops.get('root')).toBe(0);
+    expect(d1.hops.get('h1a')).toBe(1);
+
+    const d2 = scopeGraph(sample, 'root', 2, 1);
+    expect(d2.nodes.map((n) => n.id)).toEqual(['root', 'h1a', 'h1b', 'bridge-only', 'h2a', 'h2b']);
+    expect(d2.hops.get('h2a')).toBe(2);
+
+    const d3 = scopeGraph(sample, 'root', 3, 1);
+    expect(d3.nodes.map((n) => n.id)).toContain('h3a');
+    expect(d3.nodes.map((n) => n.id)).not.toContain('far');
+  });
+
+  it('drops edges below minShared and omits topics reachable only through dropped edges', () => {
+    const depth2 = scopeGraph(sample, 'root', 2, 2);
+    expect(depth2.nodes.map((n) => n.id)).toEqual(['root', 'h1a', 'h2a']);
+
+    const depth3 = scopeGraph(sample, 'root', 3, 2);
+    const ids = depth3.nodes.map((n) => n.id);
+    // h2b is unreachable through h1a->h2b (weight 1), so it shifts to hop 3 via h2a->h2b (weight 2)
+    expect(ids).toEqual(['root', 'h1a', 'h2a', 'h3a', 'h2b']);
+    expect(depth3.hops.get('h2b')).toBe(3);
+    // h1b (via sharedNotes: 1) and bridge-only (behind h1b even though edge=5) must not appear
+    expect(ids).not.toContain('h1b');
+    expect(ids).not.toContain('bridge-only');
+    expect(depth3.edges.every((e) => e.sharedNotes >= 2)).toBe(true);
+  });
+
+  it('caps at limit keeping closest hops first, then highest usage, and reports totalInScope', () => {
+    const capped = scopeGraph(sample, 'root', 2, 1, 4);
+    expect(capped.totalInScope).toBe(6);
+    expect(capped.nodes).toHaveLength(4);
+    // Hop 0: root (usage 2); Hop 1: h1a (10), h1b (3); Hop 2 best usage: bridge-only (15) beats h2a (8) and h2b (4)
+    expect(capped.nodes.map((n) => n.id)).toEqual(['root', 'h1a', 'h1b', 'bridge-only']);
+    expect(capped.nodes[0].id).toBe('root');
+  });
+
+  it('always keeps the root even with MAX_MAP_TOPICS limit and low root usage', () => {
+    const dense = {
+      nodes: [
+        { id: 'root', name: 'Tiny Root', usageCount: 1 },
+        ...Array.from({ length: MAX_MAP_TOPICS + 25 }, (_, i) => ({
+          id: `n-${i}`,
+          name: `Topic ${i}`,
+          usageCount: 100 + i,
+        })),
+      ],
+      edges: Array.from({ length: MAX_MAP_TOPICS + 25 }, (_, i) => ({
+        sourceId: 'root',
+        targetId: `n-${i}`,
+        sharedNotes: 2,
+      })),
+    };
+    const scoped = scopeGraph(dense, 'root', 1, 1);
+    expect(scoped.totalInScope).toBe(MAX_MAP_TOPICS + 26);
+    expect(scoped.nodes).toHaveLength(MAX_MAP_TOPICS);
+    expect(scoped.nodes[0].id).toBe('root');
+  });
+
+  it('keeps an isolated root with zero links', () => {
+    const lonely = {
+      nodes: [
+        { id: 'root', name: 'Alone', usageCount: 1 },
+        { id: 'other', name: 'Other', usageCount: 5 },
+      ],
+      edges: [],
+    };
+    const scoped = scopeGraph(lonely, 'root', 3, 1);
+    expect(scoped.nodes.map((n) => n.id)).toEqual(['root']);
+    expect(scoped.edges).toEqual([]);
+    expect(scoped.totalInScope).toBe(1);
+    expect(scoped.hops.get('root')).toBe(0);
+  });
+
+  it('returns an empty scope when rootId is missing from the graph', () => {
+    const scoped = scopeGraph(sample, 'does-not-exist', 2, 1);
+    expect(scoped.nodes).toEqual([]);
+    expect(scoped.edges).toEqual([]);
+    expect(scoped.totalInScope).toBe(0);
+    expect(scoped.hops.size).toBe(0);
   });
 });

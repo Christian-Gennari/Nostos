@@ -257,4 +257,13 @@ describe('BrainListPage', () => {
       }));
     });
   });
+
+  it('Show on map opens the local map around the topic', () => {
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    fixture.componentInstance.showOnMap('topic-42');
+
+    expect(navigate).toHaveBeenCalledWith(['/brain/map'], {
+      queryParams: { around: 'topic-42' },
+    });
+  });
 });

@@ -20,6 +20,7 @@ import {
   detectCommunities,
   drawPlacedLabels,
   drawThemeNodeHover,
+  hashSeed,
   hexToRgba,
   logicalCanvasWidth,
   mixHex,
@@ -66,12 +67,18 @@ interface LabelNode extends LabelSource {
 export interface TopicMapRendererCallbacks {
   getHoveredId: () => string | null;
   getSelectedId: () => string | null;
+  getRootId?: () => string | null;
   isDragging: () => boolean;
   hasDraggedNode: () => boolean;
   onHoverChange: (id: string | null) => void;
   onSelectNode: (id: string) => void;
   onOpenTopic: (id: string) => void;
   onClearSelection: () => void;
+}
+
+export interface BuildGraphOptions {
+  rootId?: string | null;
+  initialPositions?: ReadonlyMap<string, { x: number; y: number }> | null;
 }
 
 export interface BuiltTopicGraph {
@@ -112,10 +119,13 @@ export class TopicMapRenderer {
    */
   buildGraph(
     visibleNodes: readonly TopicGraphNodeDto[],
-    visibleEdges: readonly TopicGraphEdgeDto[]
+    visibleEdges: readonly TopicGraphEdgeDto[],
+    options: BuildGraphOptions = {}
   ): BuiltTopicGraph {
     this.theme = readTheme();
     const graph = new Graph();
+    const rootId = options.rootId ?? null;
+    const initialPositions = options.initialPositions ?? null;
 
     const usages = visibleNodes.map((n) => Math.max(0, n.usageCount));
     const minUsage = Math.min(...usages);
@@ -123,13 +133,7 @@ export class TopicMapRenderer {
     const usageRange = Math.max(1, maxUsage - minUsage);
     const maxShared = Math.max(1, ...visibleEdges.map((e) => e.sharedNotes));
 
-    const seeds: Array<{ id: string; x: number; y: number }> = visibleNodes.map((n) => ({
-      id: n.id,
-      x: 0,
-      y: 0,
-    }));
-    seedPositions(seeds, OBSIDIAN_FORCES.linkDistance);
-    const seedById = new Map(seeds.map((s) => [s.id, s]));
+    const seedById = this.resolveInitialSeeds(visibleNodes, visibleEdges, rootId, initialPositions);
 
     const hubs = pickHubs([...visibleNodes]);
 
@@ -158,6 +162,7 @@ export class TopicMapRenderer {
         ? mixHex(this.theme.node, hue, 0.55 + ratio * 0.45)
         : mixHex(this.theme.node, this.theme.nodeHead, 0.18 + ratio * 0.42);
       const seeded = seedById.get(node.id)!;
+      const isRoot = rootId !== null && node.id === rootId;
       const hub = hubs.has(node.id);
 
       graph.addNode(node.id, {
@@ -165,10 +170,10 @@ export class TopicMapRenderer {
         size,
         color: nodeColor,
         hue,
-        labelColor: hub ? this.theme.labelActive : hexToRgba(this.theme.label, 0.8 + ratio * 0.16),
-        labelWeight: hub ? '600' : '400',
-        labelPriority: hub ? LABEL_PRIORITY.hub : LABEL_PRIORITY.normal,
-        forceLabel: hub,
+        labelColor: isRoot || hub ? this.theme.labelActive : hexToRgba(this.theme.label, 0.8 + ratio * 0.16),
+        labelWeight: isRoot || hub ? '600' : '400',
+        labelPriority: isRoot ? LABEL_PRIORITY.active : hub ? LABEL_PRIORITY.hub : LABEL_PRIORITY.normal,
+        forceLabel: isRoot || hub,
         x: seeded.x,
         y: seeded.y,
         usageCount: node.usageCount,
@@ -195,6 +200,89 @@ export class TopicMapRenderer {
     }
 
     return { graph, hueById };
+  }
+
+  private resolveInitialSeeds(
+    visibleNodes: readonly TopicGraphNodeDto[],
+    visibleEdges: readonly TopicGraphEdgeDto[],
+    rootId: string | null,
+    initialPositions: ReadonlyMap<string, { x: number; y: number }> | null
+  ): Map<string, { x: number; y: number }> {
+    const seedById = new Map<string, { x: number; y: number }>();
+
+    if (!initialPositions || initialPositions.size === 0) {
+      const seeds = visibleNodes.map((n) => ({ id: n.id, x: 0, y: 0 }));
+      seedPositions(seeds, OBSIDIAN_FORCES.linkDistance);
+      for (const s of seeds) seedById.set(s.id, { x: s.x, y: s.y });
+      if (rootId && seedById.has(rootId)) seedById.set(rootId, { x: 0, y: 0 });
+      return seedById;
+    }
+
+    for (const n of visibleNodes) {
+      if (rootId && n.id === rootId) {
+        seedById.set(n.id, { x: 0, y: 0 });
+        continue;
+      }
+      const existing = initialPositions.get(n.id);
+      if (existing) seedById.set(n.id, { x: existing.x, y: existing.y });
+    }
+
+    const adjacency = new Map<string, string[]>();
+    for (const edge of visibleEdges) {
+      if (edge.sourceId === edge.targetId) continue;
+      const a = adjacency.get(edge.sourceId) ?? [];
+      a.push(edge.targetId);
+      adjacency.set(edge.sourceId, a);
+      const b = adjacency.get(edge.targetId) ?? [];
+      b.push(edge.sourceId);
+      adjacency.set(edge.targetId, b);
+    }
+
+    // Spawn newly added nodes near the centroid of already-placed neighbours (pushed slightly outward)
+    // across a few passes so expanding depth places outer hops beyond inner ones.
+    for (let pass = 0; pass < 3; pass += 1) {
+      const additions = new Map<string, { x: number; y: number }>();
+      for (const n of visibleNodes) {
+        if (seedById.has(n.id)) continue;
+        const placedNeighbours = (adjacency.get(n.id) ?? [])
+          .map((id) => seedById.get(id))
+          .filter((p): p is { x: number; y: number } => !!p);
+        if (!placedNeighbours.length) continue;
+
+        let cx = 0;
+        let cy = 0;
+        for (const p of placedNeighbours) {
+          cx += p.x;
+          cy += p.y;
+        }
+        cx /= placedNeighbours.length;
+        cy /= placedNeighbours.length;
+
+        const angle = hashSeed(`${n.id}:angle`) * 2 * Math.PI;
+        const dist = Math.hypot(cx, cy);
+        if (dist < 1) {
+          const r = OBSIDIAN_FORCES.linkDistance * (0.8 + 0.4 * hashSeed(`${n.id}:radius`));
+          additions.set(n.id, { x: r * Math.cos(angle), y: r * Math.sin(angle) });
+        } else {
+          const outward = 1 + OBSIDIAN_FORCES.linkDistance * 0.45 / dist;
+          const jitter = OBSIDIAN_FORCES.collideRadius * (0.4 + 0.6 * hashSeed(`${n.id}:radius`));
+          additions.set(n.id, {
+            x: cx * outward + jitter * Math.cos(angle),
+            y: cy * outward + jitter * Math.sin(angle),
+          });
+        }
+      }
+      if (additions.size === 0) break;
+      for (const [id, pos] of additions) seedById.set(id, pos);
+    }
+
+    const unplaced = visibleNodes.filter((n) => !seedById.has(n.id)).map((n) => ({ id: n.id, x: 0, y: 0 }));
+    if (unplaced.length) {
+      seedPositions(unplaced, OBSIDIAN_FORCES.linkDistance);
+      for (const s of unplaced) seedById.set(s.id, { x: s.x, y: s.y });
+    }
+
+    return seedById;
   }
 
   /**
@@ -475,6 +563,6 @@ export class TopicMapRenderer {
   }
 
   private activeNodeId(): string | null {
-    return this.callbacks?.getHoveredId() ?? this.callbacks?.getSelectedId() ?? null;
+    return this.callbacks?.getHoveredId() ?? this.callbacks?.getSelectedId() ?? this.callbacks?.getRootId?.() ?? null;
   }
 }
