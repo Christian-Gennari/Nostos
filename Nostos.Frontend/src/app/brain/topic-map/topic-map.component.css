@@ -92,7 +92,7 @@
 
 /*
  * The legend: what size and line weight mean. Quiet metadata in the corner, on
- * a wash of the field so it stays legible when a node sits under it.
+ * a solid surface so an edge can never run through its words.
  */
 .map-legend {
   position: absolute;
@@ -100,17 +100,40 @@
   left: 0.75rem;
   z-index: 1;
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.25rem 0.9rem;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
   max-width: calc(100% - 1.5rem);
-  padding: 0.2rem 0.45rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--bg-body) 82%, transparent);
+  background: var(--bg-surface);
   color: var(--color-text-muted);
   font-size: 0.7rem;
   line-height: 1.4;
   pointer-events: none;
+}
+
+.map-legend-full {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Only a phone shows this; on a wide screen the note lives in the legend. */
+.map-legend-compact {
+  display: none;
+  pointer-events: auto;
+}
+
+.map-legend-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.9rem;
 }
 
 .map-legend-item {
@@ -261,6 +284,61 @@
   font-variant-numeric: tabular-nums;
 }
 
+.map-card-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.3rem 0.6rem;
+}
+
+.map-card-kind-pill {
+  --kind-color: var(--map-kind-none);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 22px;
+  padding: 0.14rem 0.55rem;
+  border: 1px solid color-mix(in srgb, var(--kind-color) 40%, var(--border-color));
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--kind-color) 14%, transparent);
+  color: var(--color-text-main);
+  font-size: var(--text-xs);
+  font-weight: var(--fw-medium);
+  line-height: 1.25;
+}
+
+.map-card-kind-pill.is-untyped {
+  border-color: var(--border-color);
+  background: var(--bg-hover);
+  color: var(--color-text-muted);
+}
+
+/* #1769 turns the pill into a picker; until then it is plain text. */
+.map-card-kind-pill.is-picker {
+  font-family: inherit;
+  line-height: inherit;
+  cursor: pointer;
+}
+
+.map-card-kind-pill.is-picker:hover {
+  border-color: var(--kind-color);
+  background: color-mix(in srgb, var(--kind-color) 22%, transparent);
+}
+
+.map-card-kind-pill.is-picker:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.map-card-kind-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-round);
+  background: var(--kind-color);
+}
+
 .map-card-related {
   display: flex;
   flex-wrap: wrap;
@@ -390,10 +468,25 @@
     border-radius: 0;
   }
 
+  /* The legend lives in the Controls sheet here; only the one-line "N hidden
+     by kind" reminder stays on the map, and only while a filter hides nodes. */
   .map-legend {
     top: 0.5rem;
     left: 0.5rem;
+    max-width: calc(100% - 1rem);
+    padding: 0;
+    border: 0;
+    background: transparent;
     font-size: 0.66rem;
+  }
+
+  .map-legend-full {
+    display: none;
+  }
+
+  .map-legend-compact {
+    display: inline-flex;
+    max-width: 100%;
   }
 
   .map-hud {

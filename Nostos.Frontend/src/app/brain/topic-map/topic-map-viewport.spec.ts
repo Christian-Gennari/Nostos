@@ -14,6 +14,7 @@ function createMockSigma(overrides: Partial<Record<string, unknown>> = {}) {
     zoomIn: vi.fn(() => Promise.resolve()),
     zoomOut: vi.fn(() => Promise.resolve()),
     animate: vi.fn(() => Promise.resolve()),
+    isAnimating: vi.fn(() => false),
     setState: vi.fn((next: Record<string, number>) => {
       Object.assign(camera, next);
     }),
@@ -172,6 +173,168 @@ describe('TopicMapViewport', () => {
     expect(camera.setState).toHaveBeenCalledWith({ x: 0.4, y: 0.6, angle: 0, ratio: 0.8 });
   });
 
+  it('does not carry an animating camera into a rebuild', () => {
+    const viewport = new TopicMapViewport();
+    const { sigma, camera } = createMockSigma();
+    camera.ratio = 0.5;
+    camera.isAnimating.mockReturnValue(true);
+
+    viewport.captureCarriedCamera(sigma, true);
+
+    // The next build must frame itself: the captured state was a mid-animation
+    // frame, not the reader's view.
+    const graph = new Graph();
+    graph.addNode('a', { x: 0, y: 0 });
+    graph.addNode('b', { x: 100, y: 100 });
+    camera.setState.mockClear();
+    camera.animate.mockClear();
+    viewport.frameOnLoad({
+      sigma,
+      graph,
+      selectedId: null,
+      cameraInput: null,
+      centerOnLoad: false,
+    });
+    expect(camera.setState).not.toHaveBeenCalled();
+    expect(camera.animate).toHaveBeenCalled();
+  });
+
+  it('frames a focused topic from the settled extent instead of the stale default ratio', () => {
+    const viewport = new TopicMapViewport();
+    const graph = new Graph();
+    graph.addNode('a', { x: -1000, y: -500 });
+    graph.addNode('b', { x: 1000, y: 500 });
+    const { sigma, camera } = createMockSigma();
+    camera.ratio = 1; // Sigma's default on mount, not the graph's fit.
+
+    viewport.frameFocused(sigma, graph, 'a');
+
+    const [state] = camera.animate.mock.calls.at(-1) as unknown as [
+      { x: number; y: number; ratio: number },
+    ];
+    // Fitted ratio is ~2.98 for this extent; the focus target must follow the
+    // settled fit (0.6 of it) rather than being clamped to the camera's 1.
+    expect(state.ratio).toBeGreaterThan(1.5);
+    expect(state.x).toBeCloseTo(-1000 / 800);
+    expect(state.y).toBeCloseTo(-500 / 600);
+  });
+
+  it('re-frames once on settle when the layout moved, but not after the reader takes the camera', () => {
+    const viewport = new TopicMapViewport();
+    const graph = new Graph();
+    graph.addNode('a', { x: -100, y: -50 });
+    graph.addNode('b', { x: 100, y: 50 });
+    const { sigma, camera } = createMockSigma();
+
+    const container = document.createElement('div');
+    Object.defineProperty(container, 'clientWidth', { get: () => 800 });
+    Object.defineProperty(container, 'clientHeight', { get: () => 600 });
+
+    const frames: FrameRequestCallback[] = [];
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+      frames.push(cb);
+      return frames.length;
+    });
+    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {});
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe = vi.fn();
+        disconnect = vi.fn();
+        unobserve = vi.fn();
+      }
+    );
+
+    viewport.observeStage({
+      container,
+      getSigma: () => sigma,
+      getGraph: () => graph,
+      getSelectedId: () => 'a',
+      getCameraInput: () => null,
+      getCenterOnLoad: () => true,
+      getOverlayElements: () => ({}),
+    });
+
+    // Initial frame paints the focus from the seed extent.
+    frames.shift()!(0);
+    // The simulation settles wider after that first paint.
+    graph.setNodeAttribute('a', 'x', -1000);
+    graph.setNodeAttribute('a', 'y', -500);
+    graph.setNodeAttribute('b', 'x', 1000);
+    graph.setNodeAttribute('b', 'y', 500);
+    camera.animate.mockClear();
+
+    frames.shift()!(0);
+    expect(camera.animate).toHaveBeenCalledTimes(1);
+    const [settled] = camera.animate.mock.calls[0] as unknown as [
+      { x: number; y: number; ratio: number },
+    ];
+    expect(settled.ratio).toBeGreaterThan(1.5);
+    // The focused topic stays centred after the settled re-frame.
+    expect(settled.x).toBeCloseTo(-1000 / 800);
+    expect(settled.y).toBeCloseTo(-500 / 600);
+
+    // A rebuild has its own kept camera; it must not get a settle re-frame.
+    camera.animate.mockClear();
+    graph.setNodeAttribute('a', 'x', -1500);
+    viewport.observeStage({
+      container,
+      getSigma: () => sigma,
+      getGraph: () => graph,
+      getSelectedId: () => 'a',
+      getCameraInput: () => null,
+      getCenterOnLoad: () => true,
+      getOverlayElements: () => ({}),
+    });
+    expect(frames).toHaveLength(1); // initial frame only, no settle frame
+
+    vi.unstubAllGlobals();
+  });
+
+  it('does not re-frame on settle after the reader uses the camera', () => {
+    const viewport = new TopicMapViewport();
+    const graph = new Graph();
+    graph.addNode('a', { x: -100, y: -50 });
+    graph.addNode('b', { x: 100, y: 50 });
+    const { sigma, camera } = createMockSigma();
+    const container = document.createElement('div');
+    Object.defineProperty(container, 'clientWidth', { get: () => 800 });
+    Object.defineProperty(container, 'clientHeight', { get: () => 600 });
+
+    const frames: FrameRequestCallback[] = [];
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+      frames.push(cb);
+      return frames.length;
+    });
+    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {});
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe = vi.fn();
+        disconnect = vi.fn();
+        unobserve = vi.fn();
+      }
+    );
+
+    viewport.observeStage({
+      container,
+      getSigma: () => sigma,
+      getGraph: () => graph,
+      getSelectedId: () => 'a',
+      getCameraInput: () => null,
+      getCenterOnLoad: () => true,
+      getOverlayElements: () => ({}),
+    });
+
+    frames.shift()!(0); // initial frame
+    camera.animate.mockClear();
+    container.dispatchEvent(new Event('wheel'));
+    frames.shift()!(0); // the settle frame, which must stand down
+    expect(camera.animate).not.toHaveBeenCalled();
+
+    vi.unstubAllGlobals();
+  });
+
   it('observes stage resizes, schedules initial frame, and cleans up RAF/ResizeObserver on disposeRebuildObservers', () => {
     const viewport = new TopicMapViewport();
     const graph = new Graph();
@@ -237,7 +400,7 @@ describe('TopicMapViewport', () => {
     vi.unstubAllGlobals();
   });
 
-  it('nudges selected node out from under .map-card during revealSelected and cancels on dispose', () => {
+  it('nudges selected node out from under the HUD (card and controls rail) and cancels on dispose', () => {
     const viewport = new TopicMapViewport();
     const graph = new Graph();
     graph.addNode('a', { x: 0, y: -200 }); // viewport y = 300 - (-200) = 500
@@ -246,6 +409,7 @@ describe('TopicMapViewport', () => {
     const container = document.createElement('div');
     container.getBoundingClientRect = () => rect(0, 0, 800, 600);
     const hud = document.createElement('div');
+    hud.getBoundingClientRect = () => rect(12, 400, 776, 200);
     const card = document.createElement('div');
     card.className = 'map-card';
     card.getBoundingClientRect = () => rect(200, 420, 400, 160);
@@ -298,6 +462,79 @@ describe('TopicMapViewport', () => {
     });
     viewport.dispose();
     expect(rafQueue.size).toBe(0);
+  });
+
+  it('reveals a node hidden by the controls rail even when it sits above the card', () => {
+    const viewport = new TopicMapViewport();
+    const graph = new Graph();
+    // viewport y = 450: below the rail's top edge (400) but above the card (420),
+    // which is where the phone's focused topic used to disappear.
+    graph.addNode('a', { x: 0, y: -150 });
+    const { sigma, camera } = createMockSigma();
+
+    const container = document.createElement('div');
+    container.getBoundingClientRect = () => rect(0, 0, 800, 600);
+    const hud = document.createElement('div');
+    hud.getBoundingClientRect = () => rect(12, 400, 776, 200);
+    const card = document.createElement('div');
+    card.className = 'map-card';
+    card.getBoundingClientRect = () => rect(12, 480, 776, 160);
+    hud.appendChild(card);
+
+    const frames: FrameRequestCallback[] = [];
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+      frames.push(cb);
+      return frames.length;
+    });
+
+    viewport.revealSelected({
+      getSigma: () => sigma,
+      getGraph: () => graph,
+      getSelectedId: () => 'a',
+      getContainerEl: () => container,
+      getHudEl: () => hud,
+    });
+    frames.shift()!(0);
+
+    // Measured against the HUD's top edge, not the card's: the call moves it.
+    expect(camera.animate).toHaveBeenCalledWith(expect.objectContaining({ y: expect.any(Number) }), {
+      duration: 300,
+    });
+  });
+
+  it('centres a focused topic in the visible band above the card on a phone', () => {
+    const viewport = new TopicMapViewport();
+    const graph = new Graph();
+    graph.addNode('a', { x: 0, y: 0 });
+    graph.addNode('b', { x: 100, y: 100 });
+    const { sigma, camera } = createMockSigma();
+
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: true }) as MediaQueryList)
+    );
+    // The legend takes 40px at the top; the card and rail leave 180px covered
+    // at the bottom. The visible band's centre is above the stage's centre.
+    viewport.frameFocused(sigma, graph, 'a', viewport.fitOccupancy(), { top: 40, bottom: 180 });
+
+    const [state] = camera.animate.mock.calls.at(-1) as unknown as [
+      { x: number; y: number; ratio: number },
+    ];
+    expect(state.y).toBeLessThan(-0.05);
+    expect(state.ratio).toBeGreaterThan(0);
+
+    // A wide screen keeps the stage centre, exactly as before.
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({ matches: false }) as MediaQueryList)
+    );
+    camera.animate.mockClear();
+    viewport.frameFocused(sigma, graph, 'a', viewport.fitOccupancy(), { top: 40, bottom: 180 });
+    const [wide] = camera.animate.mock.calls.at(-1) as unknown as [{ x: number; y: number }];
+    expect(wide.x).toBeCloseTo(0);
+    expect(wide.y).toBeCloseTo(0);
+
+    vi.unstubAllGlobals();
   });
 
   it('supports pseudo-fullscreen fallback and cancels pending refresh timeouts and listeners on dispose', async () => {

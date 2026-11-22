@@ -91,6 +91,16 @@
       />
     </label>
 
+    <div class="map-control">
+      <span id="map-color-label" class="map-control-label">Colour</span>
+      <nostos-segmented
+        aria-labelledby="map-color-label"
+        [options]="colorModeOptions"
+        [value]="state.mapColorMode()"
+        (valueChange)="onColorModeChange($event)"
+      />
+    </div>
+
     <span class="map-controls-count" role="status">{{ scopeCountText() }}</span>
   </div>
 
@@ -101,6 +111,10 @@
     [rootId]="around()"
     [depth]="depth()"
     [minShared]="min()"
+    [colorMode]="effectiveColorMode()"
+    [topicKinds]="state.topicKinds()"
+    [kindsLoaded]="state.kindsLoaded()"
+    [visibleKindKeys]="visibleKindKeys()"
     [camera]="startCamera"
     [centerOnLoad]="!startCamera"
     notesLabel="Open topic"
@@ -111,6 +125,8 @@
     (mapAround)="mapAroundTopic($event)"
     (scopeInfo)="onScopeInfo($event)"
     (cameraKept)="keepCamera($event)"
+    (kindToggled)="onToggleKind($event)"
+    (clearKindFilter)="onClearKindFilter()"
   >
     <div mapHudControls class="map-hud-controls">
       @if (aroundTopic(); as root) {
@@ -156,6 +172,33 @@
     (dismissed)="controlsOpen.set(false)"
   >
     <div class="map-controls-sheet">
+      <div class="map-sheet-row">
+        <div class="map-sheet-head">
+          <span id="map-sheet-color-label" class="map-control-label">Colour</span>
+        </div>
+        <nostos-segmented
+          fill
+          aria-labelledby="map-sheet-color-label"
+          [options]="colorModeOptions"
+          [value]="state.mapColorMode()"
+          (valueChange)="onColorModeChange($event)"
+        />
+      </div>
+
+      @if (legendEntries().length || hiddenByKindCount() > 0) {
+      <div class="map-sheet-row">
+        <div class="map-sheet-head">
+          <span id="map-sheet-kinds-label" class="map-control-label">Kinds</span>
+        </div>
+        <app-map-kind-legend
+          [entries]="legendEntries()"
+          [hiddenByKindCount]="hiddenByKindCount()"
+          (toggled)="onToggleKind($event)"
+          (cleared)="onClearKindFilter()"
+        />
+      </div>
+      }
+
       @if (aroundTopic(); as root) {
       <div class="map-sheet-row">
         <div class="map-sheet-head">

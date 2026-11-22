@@ -4,6 +4,7 @@ import type {
   TopicGraphDto,
   TopicGraphEdgeDto,
   TopicGraphNodeDto,
+  TopicKindDto,
 } from '../../core/services/topics.service';
 
 export const MAX_MAP_TOPICS = 150;
@@ -445,6 +446,33 @@ export const COMMUNITY_HUES = 3;
 /** Light-theme values, used only when the CSS tokens cannot be read. */
 const COMMUNITY_FALLBACK = ['#2f6e4e', '#b06a30', '#5560a8'];
 
+/**
+ * Light-theme categorical kind colours, matching `--map-kind-1..12` in
+ * styles.css. Twelve fixed OKLCH hues 30° apart, all at L 58 so no kind reads
+ * as "louder" than another; in the dark themes the same hues sit at L 68.
+ * Every value is >= 3.9:1 against the light stage and >= 6.2:1 against the
+ * dark one (WCAG 1.4.11 non-text contrast). Deuteranopia collapses neighbouring
+ * hues by nature — the legend is what carries identity for those pairs.
+ */
+export const MAP_KIND_TOKEN_COUNT = 12;
+export const UNTYPED_KIND_KEY = 'none';
+
+const KIND_FALLBACK = [
+  '#c74a4f',
+  '#bd5a02',
+  '#9e7207',
+  '#7e8008',
+  '#3a902b',
+  '#0e8f71',
+  '#028b92',
+  '#0c85b1',
+  '#4076d8',
+  '#7d64d0',
+  '#a455b3',
+  '#bd4a86',
+];
+const KIND_NONE_FALLBACK = '#6f737c';
+
 /** A cluster needs at least this many topics before it earns a hue. */
 export const COMMUNITY_MIN_SIZE = 3;
 
@@ -469,6 +497,10 @@ export interface ThemeColors {
   field: string;
   /** Cluster hues, largest cluster first. See `COMMUNITY_HUES`. */
   communities: string[];
+  /** Categorical topic kind colours `--map-kind-1..12`. */
+  kinds: string[];
+  /** Quiet neutral `--map-kind-none` for untyped topics. */
+  kindNone: string;
 }
 
 export function readTheme(): ThemeColors {
@@ -484,6 +516,10 @@ export function readTheme(): ThemeColors {
     communities: COMMUNITY_FALLBACK.map((fallback, index) =>
       getCssVar(`--graph-community-${index + 1}`, fallback)
     ),
+    kinds: KIND_FALLBACK.map((fallback, index) =>
+      getCssVar(`--map-kind-${index + 1}`, fallback)
+    ),
+    kindNone: getCssVar('--map-kind-none', KIND_NONE_FALLBACK),
   };
 }
 
@@ -1047,4 +1083,238 @@ export function alignmentRotation(
   const principal = 0.5 * Math.atan2(2 * sxy, sxx - syy);
   const target = stageWidth >= stageHeight ? 0 : Math.PI / 2;
   return target - principal;
+}
+
+/* ── Topic kinds & filtering ── */
+
+export interface KindLegendEntry {
+  /** Kind id, or `UNTYPED_KIND_KEY` (`'none'`) for untyped topics. */
+  key: string;
+  /** The kind's name, or `"No kind"`. */
+  label: string;
+  /** CSS variable reference for DOM swatches so theme switches live-update. */
+  color: string;
+  count: number;
+  visible: boolean;
+  isUntyped: boolean;
+}
+
+const KIND_KEY_RE = /^(?:map-)?kind-(1[0-2]|[1-9])$/;
+
+/** Zero-based index (0..11) for a palette colorKey (`kind-1`..`kind-12`), or null. */
+export function kindIndexFromColorKey(colorKey: string | null | undefined): number | null {
+  if (!colorKey) return null;
+  const match = KIND_KEY_RE.exec(colorKey.trim());
+  if (!match) return null;
+  return Number.parseInt(match[1], 10) - 1;
+}
+
+/** Resolved hex colour for WebGL/canvas from `ThemeColors`. */
+export function resolveKindColor(
+  colorKey: string | null | undefined,
+  theme: Pick<ThemeColors, 'kinds' | 'kindNone'>
+): string {
+  const index = kindIndexFromColorKey(colorKey);
+  return index !== null && theme.kinds[index] ? theme.kinds[index] : theme.kindNone;
+}
+
+/** CSS custom property reference for DOM swatches and pills. */
+export function kindCssVar(colorKey: string | null | undefined): string {
+  const index = kindIndexFromColorKey(colorKey);
+  return index !== null ? `var(--map-kind-${index + 1})` : 'var(--map-kind-none)';
+}
+
+/** Filter key for a topic (`kindId` or `'none'` when untyped). */
+export function kindFilterKeyOf(kindId: string | null | undefined): string {
+  const trimmed = kindId?.trim();
+  return trimmed || UNTYPED_KIND_KEY;
+}
+
+/**
+ * Parses `?kinds=<id>,<id>` from the URL. Returns `null` when the param is
+ * absent (meaning all kinds are shown), or a Set of visible kind keys when
+ * present (`''` yields an empty Set meaning all hidden).
+ */
+export function parseKindsParam(raw: string | null): Set<string> | null {
+  if (raw === null) return null;
+  const parts = raw
+    .split(',')
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+  return new Set(parts);
+}
+
+/**
+ * Serializes visible kind keys for the `kinds` URL query param. Returns `null`
+ * (clearing the param) when `keys` is null or includes every key present in the
+ * current scope.
+ */
+export function serializeKindsParam(
+  keys: ReadonlySet<string> | null,
+  presentKeys: readonly string[]
+): string | null {
+  if (!keys) return null;
+  if (presentKeys.length > 0 && presentKeys.every((key) => keys.has(key))) {
+    return null;
+  }
+  return [...keys].join(',');
+}
+
+/** Toggles one kind key on or off and returns the next `kinds` URL param value. */
+export function toggleKindFilter(
+  current: ReadonlySet<string> | null,
+  toggledKey: string,
+  presentKeys: readonly string[]
+): string | null {
+  const next = current ? new Set(current) : new Set(presentKeys);
+  if (next.has(toggledKey)) {
+    next.delete(toggledKey);
+  } else {
+    next.add(toggledKey);
+  }
+  return serializeKindsParam(next, presentKeys);
+}
+
+/** Filter topics by visible kind keys BEFORE the 150-topic cap. */
+export function filterTopicsByKind<T extends { kindId?: string | null }>(
+  topics: readonly T[],
+  visibleKindKeys: ReadonlySet<string> | null
+): T[] {
+  if (!visibleKindKeys) return [...topics];
+  return topics.filter((topic) => visibleKindKeys.has(kindFilterKeyOf(topic.kindId)));
+}
+
+/** A scoped graph with the kind filter applied and `hiddenByKind` counted. */
+export interface KindFilteredScope extends ScopedGraph {
+  /** Reachable topics the filter removed. The root is never one of them. */
+  hiddenByKind: number;
+}
+
+/**
+ * Apply the kind filter to an ALREADY-SCOPED graph, then cap.
+ *
+ * Scoping runs on the full graph first so hiding a kind never cuts the paths
+ * that define "within N steps": `around=Education&depth=2` still reaches a
+ * Person two steps away when Person is the only visible kind. The root is kept
+ * even when its own kind is hidden, so the local map never vanishes under the
+ * reader. `limit` applies after the filter, which is what frees room for
+ * lower-ranked topics when a kind is hidden.
+ */
+export function filterScopedGraphByKind(
+  scoped: ScopedGraph,
+  visibleKindKeys: ReadonlySet<string> | null,
+  rootId: string | null = null,
+  limit: number = MAX_MAP_TOPICS
+): KindFilteredScope {
+  const visible = visibleKindKeys
+    ? scoped.nodes.filter(
+        (node) => node.id === rootId || visibleKindKeys.has(kindFilterKeyOf(node.kindId))
+      )
+    : scoped.nodes;
+  const capped = visible.slice(0, Math.max(1, Math.floor(limit)));
+  const kept = new Set(capped.map((node) => node.id));
+  const hops = new Map([...scoped.hops].filter(([id]) => kept.has(id)));
+  const edges = scoped.edges.filter((edge) => kept.has(edge.sourceId) && kept.has(edge.targetId));
+  return {
+    nodes: capped,
+    edges,
+    hops,
+    totalInScope: visible.length,
+    hiddenByKind: visibleKindKeys ? Math.max(0, scoped.totalInScope - visible.length) : 0,
+  };
+}
+
+/** Options for the legend counts. */
+export interface KindLegendOptions {
+  /**
+   * The topics the map actually drew (after the cap). A visible kind shows this
+   * count; a hidden kind shows its in-scope count instead, so the reader knows
+   * how many topics come back when they show it.
+   */
+  drawnItems?: ReadonlyArray<{ kindId?: string | null }>;
+  /**
+   * Whether the kind list itself is available. A topic with an unknown kind id
+   * is untyped only when the list loaded and does not contain that id; before
+   * then it is simply not counted as "No kind".
+   */
+  kindsLoaded?: boolean;
+}
+
+/**
+ * The legend key for one item: a known kind id, `'none'`, or null when the kind
+ * list is unavailable and the id cannot be resolved.
+ */
+function legendKeyOf(
+  item: { kindId?: string | null },
+  kindById: ReadonlyMap<string, TopicKindDto>,
+  kindsLoaded: boolean
+): string | null {
+  const id = item.kindId?.trim();
+  if (!id) return UNTYPED_KIND_KEY;
+  if (kindById.has(id)) return id;
+  return kindsLoaded ? UNTYPED_KIND_KEY : null;
+}
+
+function countLegendKeys(
+  items: ReadonlyArray<{ kindId?: string | null }>,
+  kindById: ReadonlyMap<string, TopicKindDto>,
+  kindsLoaded: boolean
+): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const item of items) {
+    const key = legendKeyOf(item, kindById, kindsLoaded);
+    if (key === null) continue;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/**
+ * Build legend rows for the kinds present in the current scope, in `sortOrder`,
+ * followed by `"No kind"` when untyped topics are present.
+ *
+ * Counts differ by state: a VISIBLE kind reports how many of its topics are
+ * drawn on the map (after the cap), while a HIDDEN kind reports its in-scope
+ * count, so the reader knows how many topics return when it is shown again.
+ */
+export function buildKindLegendEntries(
+  items: ReadonlyArray<{ kindId?: string | null }>,
+  kinds: readonly TopicKindDto[],
+  visibleKindKeys: ReadonlySet<string> | null,
+  options: KindLegendOptions = {}
+): KindLegendEntry[] {
+  const kindById = new Map(kinds.map((kind) => [kind.id, kind]));
+  const kindsLoaded = options.kindsLoaded ?? true;
+  const drawnItems = options.drawnItems ?? items;
+  const inScopeCounts = countLegendKeys(items, kindById, kindsLoaded);
+  const drawnCounts = countLegendKeys(drawnItems, kindById, kindsLoaded);
+
+  const isVisible = (key: string) => (visibleKindKeys ? visibleKindKeys.has(key) : true);
+  const countFor = (key: string) => (isVisible(key) ? drawnCounts.get(key) ?? 0 : inScopeCounts.get(key) ?? 0);
+
+  const orderedKinds = [...kinds]
+    .filter((kind) => (inScopeCounts.get(kind.id) ?? 0) > 0)
+    .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
+
+  const entries: KindLegendEntry[] = orderedKinds.map((kind) => ({
+    key: kind.id,
+    label: kind.name,
+    color: kindCssVar(kind.colorKey),
+    count: countFor(kind.id),
+    visible: isVisible(kind.id),
+    isUntyped: false,
+  }));
+
+  if ((inScopeCounts.get(UNTYPED_KIND_KEY) ?? 0) > 0) {
+    entries.push({
+      key: UNTYPED_KIND_KEY,
+      label: 'No kind',
+      color: kindCssVar(null),
+      count: countFor(UNTYPED_KIND_KEY),
+      visible: isVisible(UNTYPED_KIND_KEY),
+      isUntyped: true,
+    });
+  }
+
+  return entries;
 }

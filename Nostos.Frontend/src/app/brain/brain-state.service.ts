@@ -4,15 +4,19 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import type { NoteSummary } from '../core/dtos/note.dtos';
 import { NotesService } from '../core/services/notes.service';
 import { AssistantService } from '../ui/assistant/assistant.service';
-import { TopicsService, type TopicDto } from '../core/services/topics.service';
+import { TopicsService, type TopicDto, type TopicKindDto } from '../core/services/topics.service';
 import type { MapCamera } from './topic-map/topic-map.helpers';
 import { topicLookup } from '../ui/note-item/note-item.helpers';
 import {
+  MAP_COLOR_MODE_KEY,
   TOPIC_SORT_KEY,
+  isMapColorMode,
   isTopicSort,
   readStored,
+  readStoredNullable,
   sidebarTopics,
   writeStored,
+  type MapColorMode,
   type TopicSort,
 } from './brain.helpers';
 
@@ -22,6 +26,7 @@ export interface BrainMapView {
   around: string | null;
   depth: number;
   min: number | null;
+  kinds?: string | null;
 }
 
 /** Ask Nostos capabilities that change notes or their topics. */
@@ -48,10 +53,20 @@ export class BrainStateService {
   }
 
   readonly topics = signal<TopicDto[]>([], { equal: sameTopics });
+  readonly topicKinds = signal<TopicKindDto[]>([], { equal: sameKinds });
   readonly topicsLoaded = signal(false);
   readonly topicsFailed = signal(false);
+  /**
+   * True once the kind list actually arrived. A failure leaves it false, which
+   * tells the map to hide kind colouring and the legend rather than counting
+   * every typed topic as untyped.
+   */
+  readonly kindsLoaded = signal(false);
   readonly summary = signal<NoteSummary | null>(null);
   readonly topicSort = signal<TopicSort>(readStored(TOPIC_SORT_KEY, isTopicSort, 'usage'));
+  private readonly mapColorModeChoice = signal<MapColorMode | null>(
+    readStoredNullable(MAP_COLOR_MODE_KEY, isMapColorMode)
+  );
   /** The phone drawer holding the sidebar; closes on every navigation. */
   readonly drawerOpen = signal(false);
   /**
@@ -70,16 +85,34 @@ export class BrainStateService {
   /** The topics by lower-cased name, built once for every card on screen. */
   readonly lookup = computed(() => topicLookup(this.topics()));
   readonly sidebarTopics = computed(() => sidebarTopics(this.topics(), this.topicSort()));
+  readonly hasAnyTopicKind = computed(() => this.topics().some((topic) => !!topic.kindId));
+  readonly mapColorMode = computed<MapColorMode>(
+    () => this.mapColorModeChoice() ?? (this.hasAnyTopicKind() ? 'kind' : 'cluster')
+  );
 
   private loading = false;
   private refreshSeq = 0;
   /** The counts were asked for and have not failed; they are not asked for twice. */
   private summaryRequested = false;
+  /** A screen asked for kinds, so a later refresh may retry a failed load. */
+  private kindsRequested = false;
+  private kindsLoading = false;
 
   /** Loads the topics and counts the first time anything asks. */
   ensureLoaded(): void {
     this.ensureTopicsLoaded();
     if (!this.summaryRequested) this.loadSummary(this.refreshSeq);
+  }
+
+  /**
+   * Loads kind metadata (names and palette keys) for the screens that show it —
+   * the map today, the kind picker tomorrow. Kept out of `ensureLoaded` so a
+   * reader opening a book does not pay for a request only the map reads.
+   */
+  ensureKindsLoaded(): void {
+    this.kindsRequested = true;
+    if (this.kindsLoaded()) return;
+    this.loadKinds();
   }
 
   /**
@@ -89,13 +122,18 @@ export class BrainStateService {
    */
   ensureTopicsLoaded(): void {
     if (this.topicsLoaded() || this.loading) return;
-    this.load({ summary: false });
+    // Kind metadata is for the map; a captured note's topic pills only need the
+    // topic list, so this path keeps the request count unchanged.
+    this.load({ summary: false, kinds: false });
   }
 
   /** Reloads the topics and counts after notes or topics changed. */
   refresh(): void {
     this.dataVersion.update((version) => version + 1);
-    this.load();
+    // A screen that never asked for kinds keeps its request count unchanged;
+    // one whose kinds call failed asks again on the next refresh, because an
+    // empty list would be indistinguishable from a library with no kinds.
+    this.load({ summary: true, kinds: this.kindsRequested && !this.kindsLoaded() });
   }
 
   /** A topic was renamed, merged or deleted: refresh, and have lists reread their notes. */
@@ -104,7 +142,7 @@ export class BrainStateService {
     this.refresh();
   }
 
-  private load(options: { summary: boolean } = { summary: true }): void {
+  private load(options: { summary: boolean; kinds: boolean } = { summary: true, kinds: false }): void {
     // Only the latest request's answers are kept: an older response that
     // arrives last must not undo a newer one.
     const seq = ++this.refreshSeq;
@@ -123,7 +161,25 @@ export class BrainStateService {
         this.loading = false;
       },
     });
+    if (options.kinds) this.loadKinds();
     if (options.summary) this.loadSummary(seq);
+  }
+
+  private loadKinds(): void {
+    if (this.kindsLoading) return;
+    this.kindsLoading = true;
+    this.topicsService.listKinds().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (kinds) => {
+        this.topicKinds.set(kinds);
+        this.kindsLoaded.set(true);
+        this.kindsLoading = false;
+      },
+      // Kind metadata decorates the map and topic views; tolerate transient errors
+      // and let the next full load ask again.
+      error: () => {
+        this.kindsLoading = false;
+      },
+    });
   }
 
   private loadSummary(seq: number): void {
@@ -145,6 +201,11 @@ export class BrainStateService {
     writeStored(TOPIC_SORT_KEY, sort);
   }
 
+  setMapColorMode(mode: MapColorMode): void {
+    this.mapColorModeChoice.set(mode);
+    writeStored(MAP_COLOR_MODE_KEY, mode);
+  }
+
   /**
    * Shows a topic as the server now has it, then reloads: the reload also
    * supersedes any list still in flight from before the change.
@@ -163,5 +224,13 @@ export class BrainStateService {
 function sameTopics(a: readonly TopicDto[], b: readonly TopicDto[]): boolean {
   return a.length === b.length && a.every((topic, i) =>
     topic.id === b[i].id && topic.name === b[i].name && topic.usageCount === b[i].usageCount
-    && (topic.description ?? null) === (b[i].description ?? null));
+    && (topic.description ?? null) === (b[i].description ?? null)
+    && (topic.kindId ?? null) === (b[i].kindId ?? null)
+    && (topic.kindSource ?? null) === (b[i].kindSource ?? null));
+}
+
+function sameKinds(a: readonly TopicKindDto[], b: readonly TopicKindDto[]): boolean {
+  return a.length === b.length && a.every((kind, i) =>
+    kind.id === b[i].id && kind.name === b[i].name && kind.colorKey === b[i].colorKey
+    && kind.sortOrder === b[i].sortOrder && kind.topicCount === b[i].topicCount);
 }

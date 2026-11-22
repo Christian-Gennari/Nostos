@@ -6,6 +6,7 @@ import {
   LABEL_EDGE_ALLOWANCE_FRACTION,
   type MapCamera,
 } from './topic-map.helpers';
+import { isPhoneViewport } from '../../ui/breakpoints';
 
 export interface GraphExtent {
   minX: number;
@@ -81,6 +82,12 @@ export class TopicMapViewport {
    * camera: a refreshed topic set keeps the reader's view rather than jumping.
    */
   private carriedCamera: MapCamera | null = null;
+  /** The last camera this viewport framed itself, to tell a settled relayout from an idle one. */
+  private lastFrameTarget: { x: number; y: number; ratio: number } | null = null;
+  /** A reader interaction since the mount means the settle re-frame must keep its hands off. */
+  private userMovedCamera = false;
+  private settleFrameId: number | null = null;
+  private detachUserCameraListeners: (() => void) | null = null;
   /** True while Focus mode is the CSS fallback rather than the Fullscreen API. */
   private pseudoFullscreen = false;
   private resizeObserver: ResizeObserver | null = null;
@@ -145,9 +152,17 @@ export class TopicMapViewport {
     }
   }
 
-  /** Capture the current camera before a rebuild if the host preserves view state. */
+  /**
+   * Capture the current camera before a rebuild if the host preserves view state.
+   *
+   * An in-flight animation is deliberately not captured: its state is a frame
+   * part-way to the target, and carrying it forward froze the map at the
+   * default camera or half-zoomed while the mount animation was still running.
+   */
   captureCarriedCamera(sigma: Sigma | null, keepsView: boolean): void {
-    this.carriedCamera = sigma && keepsView ? { ...sigma.getCamera().getState() } : null;
+    const camera = sigma?.getCamera();
+    const animated = camera && typeof camera.isAnimating === 'function' && camera.isAnimating();
+    this.carriedCamera = sigma && camera && keepsView && !animated ? { ...camera.getState() } : null;
   }
 
   /**
@@ -156,6 +171,10 @@ export class TopicMapViewport {
    */
   observeStage(options: StageObserveOptions): void {
     this.disposeRebuildObservers();
+    const firstBuild = !this.framed;
+    this.userMovedCamera = false;
+    this.lastFrameTarget = null;
+    this.attachUserCameraListeners(options.container);
 
     const { container } = options;
     this.initialFrameId = window.requestAnimationFrame(() => {
@@ -176,6 +195,32 @@ export class TopicMapViewport {
       this.framed = true;
       this.carriedCamera = null;
     });
+
+    // The force layout can finish after the first painted frame. Re-frame once
+    // from the settled extent, so `?focus=` is not framed against seed
+    // positions — but never after the reader has taken control of the camera,
+    // and never on a rebuild, where the kept camera is the reader's view.
+    if (firstBuild) {
+      this.settleFrameId = window.requestAnimationFrame(() => {
+        this.settleFrameId = null;
+        if (this.disposed || !this.framed || this.userMovedCamera) return;
+        const sigma = options.getSigma();
+        const graph = options.getGraph();
+        const selectedId = options.getSelectedId();
+        if (!sigma || !graph || !selectedId || !options.getCenterOnLoad()) return;
+        const state = this.focusedCameraState(
+          sigma,
+          graph,
+          selectedId,
+          this.fitOccupancy(),
+          this.overlayInsets(container, options.getOverlayElements())
+        );
+        if (!state) return;
+        if (this.lastFrameTarget && sameFrame(state, this.lastFrameTarget)) return;
+        this.lastFrameTarget = state;
+        sigma.getCamera().animate(state, { duration: 350 });
+      });
+    }
 
     if (typeof ResizeObserver !== 'undefined') {
       let lastWidth = container.clientWidth;
@@ -222,7 +267,13 @@ export class TopicMapViewport {
     if (kept) {
       sigma?.getCamera().setState(kept);
     } else if (!this.framed && centerOnLoad && selectedId && graph?.hasNode(selectedId)) {
-      this.centerSelected(sigma, graph, selectedId);
+      this.frameFocused(
+        sigma,
+        graph,
+        selectedId,
+        this.fitOccupancy(),
+        this.overlayInsets(containerEl, overlays)
+      );
     } else {
       this.fitGraph(sigma, graph, containerEl, overlays);
     }
@@ -328,9 +379,26 @@ export class TopicMapViewport {
     sigma.getCamera().animate(state, { duration: 350 });
   }
 
-  /** Bring the selected node to the centre of the stage. */
-  centerSelected(sigma: Sigma | null, graph: Graph | null, selectedId: string | null): void {
-    if (!selectedId || !graph || !sigma || !graph.hasNode(selectedId)) return;
+  /**
+   * The camera state for a focused topic, derived from the graph's CURRENT
+   * extent. At load that is the settled layout, so the zoom is the intended
+   * fraction of a real fit rather than the Sigma default camera's ratio.
+   *
+   * On a phone the visible map is the band between the legend and the HUD
+   * (whose top edge is the real selection card, measured), not the whole
+   * canvas: centring on the middle of the stage put the focused topic under the
+   * controls rail, just above the card. The node is centred in that band
+   * instead. A wide screen keeps the stage centre.
+   */
+  focusedCameraState(
+    sigma: Sigma | null,
+    graph: Graph | null,
+    selectedId: string | null,
+    occupancy: { x: number; y: number } = this.fitOccupancy(),
+    insets: { top: number; bottom: number } = { top: 0, bottom: 0 },
+    phone = isPhoneViewport()
+  ): { x: number; y: number; ratio: number } | null {
+    if (!selectedId || !graph || !sigma || !graph.hasNode(selectedId)) return null;
 
     const attributes = graph.getNodeAttributes(selectedId);
     const framed = this.graphPointToFramed(
@@ -338,16 +406,66 @@ export class TopicMapViewport {
       Number(attributes['x']) || 0,
       Number(attributes['y']) || 0
     );
-    if (!framed) return;
+    if (!framed) return null;
 
-    const camera = sigma.getCamera();
-    const fit = this.fitCameraState(sigma, graph, this.fitOccupancy());
-    const targetRatio = fit ? Math.min(camera.ratio, Math.max(fit.ratio * 0.6, 0.3)) : camera.ratio;
+    const fit = this.fitCameraState(sigma, graph, occupancy, insets);
+    const ratio = fit
+      ? Math.max(fit.ratio * 0.6, 0.3)
+      : sigma.getCamera().ratio;
+    if (!phone) return { x: framed.x, y: framed.y, ratio };
 
-    camera.animate({ x: framed.x, y: framed.y, ratio: targetRatio }, { duration: 350 });
+    const { width, height } = sigma.getDimensions();
+    if (!width || !height) return { x: framed.x, y: framed.y, ratio };
+    const dy = (insets.top - insets.bottom) / 2;
+    if (dy === 0) return { x: framed.x, y: framed.y, ratio };
+    // Ask Sigma for the framed coordinate that sits at the band's centre under
+    // a camera already centred on the node; using that as the camera's centre
+    // moves the node there without hand-rolled maths.
+    const centred = sigma.viewportToFramedGraph(
+      { x: width / 2, y: height / 2 - dy },
+      { cameraState: { x: framed.x, y: framed.y, angle: 0, ratio } }
+    );
+    if (!Number.isFinite(centred.x) || !Number.isFinite(centred.y)) {
+      return { x: framed.x, y: framed.y, ratio };
+    }
+    return { x: centred.x, y: centred.y, ratio };
   }
 
-  /** Keep the selected node out from under the selection card. */
+  /**
+   * Frame a focused topic at load. Unlike the toolbar's "Center on selection",
+   * this does not clamp the target to the camera's current ratio: on mount that
+   * ratio is Sigma's default 1, which is what left `?focus=` over-zoomed.
+   */
+  frameFocused(
+    sigma: Sigma | null,
+    graph: Graph | null,
+    selectedId: string | null,
+    occupancy: { x: number; y: number } = this.fitOccupancy(),
+    insets: { top: number; bottom: number } = { top: 0, bottom: 0 }
+  ): void {
+    const state = this.focusedCameraState(sigma, graph, selectedId, occupancy, insets);
+    if (!state || !sigma) return;
+    this.lastFrameTarget = state;
+    sigma.getCamera().animate(state, { duration: 350 });
+  }
+
+  /**
+   * Bring the selected node to the centre of the stage (or, on a phone, of the
+   * band above the selection card and the controls rail).
+   */
+  centerSelected(
+    sigma: Sigma | null,
+    graph: Graph | null,
+    selectedId: string | null,
+    insets: { top: number; bottom: number } = { top: 0, bottom: 0 }
+  ): void {
+    const target = this.focusedCameraState(sigma, graph, selectedId, this.fitOccupancy(), insets);
+    if (!target || !sigma) return;
+    const camera = sigma.getCamera();
+    camera.animate({ ...target, ratio: Math.min(camera.ratio, target.ratio) }, { duration: 350 });
+  }
+
+  /** Keep the selected node out from under the selection card and controls rail. */
   revealSelected(options: RevealSelectedOptions): void {
     if (this.revealFrameId !== null) {
       window.cancelAnimationFrame(this.revealFrameId);
@@ -358,15 +476,20 @@ export class TopicMapViewport {
       const sigma = options.getSigma();
       const graph = options.getGraph();
       const id = options.getSelectedId();
+      const hud = options.getHudEl()?.getBoundingClientRect();
       const card = options.getHudEl()?.querySelector('.map-card')?.getBoundingClientRect();
       const stage = options.getContainerEl()?.getBoundingClientRect();
-      if (!sigma || !id || !card || !stage || !graph?.hasNode(id) || !card.height) return;
+      if (!sigma || !id || !hud || !card || !stage || !graph?.hasNode(id) || !card.height || !hud.height) {
+        return;
+      }
       const attrs = graph.getNodeAttributes(id);
       const point = sigma.graphToViewport({ x: Number(attrs['x']) || 0, y: Number(attrs['y']) || 0 });
       const margin = 32;
       const left = card.left - stage.left - margin;
       const right = card.right - stage.left + margin;
-      const limit = card.top - stage.top - margin;
+      // The HUD's top edge is the top of the rail on a phone and of the card on
+      // a wide screen; either way it is measured, not a fixed inset.
+      const limit = hud.top - stage.top - margin;
       if (point.x < left || point.x > right || point.y <= limit) return;
       const camera = sigma.getCamera();
       const state = camera.getState();
@@ -399,12 +522,39 @@ export class TopicMapViewport {
       window.cancelAnimationFrame(this.initialFrameId);
       this.initialFrameId = null;
     }
+    if (this.settleFrameId !== null) {
+      window.cancelAnimationFrame(this.settleFrameId);
+      this.settleFrameId = null;
+    }
     if (this.revealFrameId !== null) {
       window.cancelAnimationFrame(this.revealFrameId);
       this.revealFrameId = null;
     }
+    this.detachUserCameraListeners?.();
+    this.detachUserCameraListeners = null;
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
+  }
+
+  /**
+   * Note reader interactions that move or may move the camera. A press alone
+   * counts: it is the start of a pan or a drag, and the settle re-frame must
+   * not fight a gesture already under way.
+   */
+  private attachUserCameraListeners(container: HTMLElement): void {
+    const markMoved = (): void => {
+      this.userMovedCamera = true;
+    };
+    container.addEventListener('wheel', markMoved, { passive: true });
+    container.addEventListener('pointerdown', markMoved, { passive: true });
+    container.addEventListener('touchmove', markMoved, { passive: true });
+    container.addEventListener('keydown', markMoved);
+    this.detachUserCameraListeners = () => {
+      container.removeEventListener('wheel', markMoved);
+      container.removeEventListener('pointerdown', markMoved);
+      container.removeEventListener('touchmove', markMoved);
+      container.removeEventListener('keydown', markMoved);
+    };
   }
 
   /** Tear down all listeners, frames, and pending refresh timers on destroy. */
@@ -433,4 +583,15 @@ export class TopicMapViewport {
     }, delayMs);
     this.pendingTimeouts.add(id);
   }
+}
+
+function sameFrame(
+  a: { x: number; y: number; ratio: number },
+  b: { x: number; y: number; ratio: number }
+): boolean {
+  return (
+    Math.abs(a.x - b.x) < 1e-4 &&
+    Math.abs(a.y - b.y) < 1e-4 &&
+    Math.abs(a.ratio - b.ratio) < 1e-4
+  );
 }

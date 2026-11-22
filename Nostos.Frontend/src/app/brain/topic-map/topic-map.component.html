@@ -7,6 +7,10 @@
     <nostos-loading-indicator class="map-status" label="Loading graph" />
     } @else if (loadFailed()) {
     <nostos-empty-state class="map-status is-actionable" compact error message="The map could not be loaded." (retry)="retryLoad()" />
+    } @else if (allHiddenByKind()) {
+    <nostos-empty-state class="map-status is-actionable" compact message="All topics are hidden by the kind filter.">
+      <button appButton type="button" variant="secondary" size="sm" (click)="clearKindFilter.emit()">Show all kinds</button>
+    </nostos-empty-state>
     } @else if (noConnections()) {
     @if (searchQuery.trim()) {
     <nostos-empty-state class="map-status" compact message="No topics match “{{ searchQuery.trim() }}”." />
@@ -18,21 +22,42 @@
 
     <!--
       What the marks mean. Size and line weight carry the two numbers the map
-      encodes, and nothing on the canvas said so.
+      encodes; in Kind colour mode the legend also lets the user hide/show kinds.
+
+      On a phone the kind rows live in the Controls sheet instead (four rows of
+      chips covered the top of the map and the nodes under it); the map keeps
+      one compact line that only exists while kinds are filtered out.
     -->
     <div #mapLegend class="map-legend">
-      <span class="map-legend-item">
-        <span class="map-legend-dot" aria-hidden="true"></span>Size: references
-      </span>
-      <span class="map-legend-item">
-        <span class="map-legend-line" aria-hidden="true"></span>Line: shared notes
-      </span>
-      @if (isCapped()) {
-        @if (isLocal()) {
-        <span class="map-limit-note">Showing {{ shownCount() }} of {{ scopeTotal() }} topics.</span>
-        } @else {
-        <span class="map-limit-note">Showing the 150 most-referenced topics.</span>
+      <div class="map-legend-full">
+        <div class="map-legend-metrics">
+          <span class="map-legend-item">
+            <span class="map-legend-dot" aria-hidden="true"></span>Size: references
+          </span>
+          <span class="map-legend-item">
+            <span class="map-legend-line" aria-hidden="true"></span>Line: shared notes
+          </span>
+          @if (isCapped()) {
+          <span class="map-limit-note">Showing {{ shownCount() }} of {{ scopeTotal() }} topics.</span>
+          }
+        </div>
+        @if (kindsLoaded && colorMode === 'kind' && kindLegend().length || hiddenByKindCount() > 0) {
+        <app-map-kind-legend
+          [entries]="kindLegend()"
+          [hiddenByKindCount]="hiddenByKindCount()"
+          (toggled)="onToggleKind($event)"
+          (cleared)="clearKindFilter.emit()"
+        />
         }
+      </div>
+      @if (hiddenByKindCount() > 0) {
+      <button
+        appChip
+        type="button"
+        class="map-legend-compact"
+        aria-label="Show all kinds"
+        (click)="clearKindFilter.emit()"
+      >{{ hiddenByKindCount() }} hidden by kind · Show all</button>
       }
     </div>
 
@@ -50,7 +75,7 @@
           <span
             class="map-card-swatch"
             aria-hidden="true"
-            [style.background]="sel.hue ?? 'var(--graph-node)'"
+            [style.background]="sel.hue ?? (showUntypedCardPill() ? 'var(--map-kind-none)' : 'var(--graph-node)')"
           ></span>
           <h2 class="map-card-title map-selection-name">{{ selectedName || sel.name }}</h2>
           <button
@@ -65,10 +90,37 @@
             (click)="clearSelection()"
           ></button>
         </div>
-        <p class="map-card-meta">
-          {{ sel.usageCount }} {{ sel.usageCount === 1 ? 'reference' : 'references' }} ·
-          {{ sel.connectionCount }} {{ sel.connectionCount === 1 ? 'connection' : 'connections' }}
-        </p>
+        <div class="map-card-meta-row">
+          <p class="map-card-meta">
+            {{ sel.usageCount }} {{ sel.usageCount === 1 ? 'reference' : 'references' }} ·
+            {{ sel.connectionCount }} {{ sel.connectionCount === 1 ? 'connection' : 'connections' }}
+          </p>
+          @if (sel.kindName || (!sel.kindId && showUntypedCardPill())) {
+          @if (kindPickerEnabled) {
+          <button
+            appChip
+            type="button"
+            class="map-card-kind-pill is-picker"
+            [class.is-untyped]="!sel.kindName"
+            [style.--kind-color]="sel.kindColor ?? 'var(--map-kind-none)'"
+            [attr.aria-label]="'Change kind for ' + sel.name + ': ' + (sel.kindName ?? 'No kind')"
+            (click)="kindPickerRequested.emit({ topicId: sel.id, kindId: sel.kindId })"
+          >
+            <span class="map-card-kind-dot" aria-hidden="true"></span>
+            <span>{{ sel.kindName ?? 'No kind' }}</span>
+          </button>
+          } @else {
+          <span
+            class="map-card-kind-pill"
+            [class.is-untyped]="!sel.kindName"
+            [style.--kind-color]="sel.kindColor ?? 'var(--map-kind-none)'"
+          >
+            <span class="map-card-kind-dot" aria-hidden="true"></span>
+            <span>{{ sel.kindName ?? 'No kind' }}</span>
+          </span>
+          }
+          }
+        </div>
         <ng-content select="[mapCardDetail]" />
         @if (sel.related.length) {
         <div class="map-card-related" role="group" aria-label="Most connected topics">

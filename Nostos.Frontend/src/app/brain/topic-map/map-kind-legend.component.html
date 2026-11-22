@@ -1,0 +1,53 @@
+@if (hiddenByKindCount() > 0) {
+<div class="map-legend-actions">
+  <span class="map-limit-note">{{ hiddenByKindCount() }} hidden by kind.</span>
+  <button
+    appChip
+    type="button"
+    class="map-legend-clear"
+    (click)="cleared.emit()"
+  >Show all kinds</button>
+</div>
+}
+@if (entries().length) {
+<div class="map-legend-kinds" role="group" aria-label="Filter by topic kind">
+  @for (entry of entries(); track entry.key) {
+    @if (entry.isUntyped) {
+    <span class="map-legend-untyped-group">
+      <button
+        appChip
+        type="button"
+        class="map-legend-kind is-untyped"
+        [class.is-hidden]="!entry.visible"
+        [attr.aria-pressed]="entry.visible"
+        [attr.aria-label]="entry.label + ', ' + entry.count + (entry.visible ? ' drawn on the map, click to hide' : ' in scope, hidden, click to show')"
+        (click)="toggled.emit(entry.key)"
+      >
+        <span class="map-legend-swatch" aria-hidden="true" [style.background]="entry.color"></span>
+        <span class="map-legend-kind-label">{{ entry.label }}</span>
+        <span class="map-legend-kind-count"> ({{ entry.count }})</span>
+      </button>
+      <a
+        class="map-legend-sort"
+        routerLink="/brain/kinds"
+        [queryParams]="{ filter: 'untyped' }"
+      >Sort them</a>
+    </span>
+    } @else {
+    <button
+      appChip
+      type="button"
+      class="map-legend-kind"
+      [class.is-hidden]="!entry.visible"
+      [attr.aria-pressed]="entry.visible"
+      [attr.aria-label]="entry.label + ', ' + entry.count + (entry.visible ? ' drawn on the map, click to hide' : ' in scope, hidden, click to show')"
+      (click)="toggled.emit(entry.key)"
+    >
+      <span class="map-legend-swatch" aria-hidden="true" [style.background]="entry.color"></span>
+      <span class="map-legend-kind-label">{{ entry.label }}</span>
+      <span class="map-legend-kind-count"> ({{ entry.count }})</span>
+    </button>
+    }
+  }
+</div>
+}

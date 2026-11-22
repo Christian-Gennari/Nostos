@@ -18,7 +18,7 @@ books (`docs/brain-library-parity.md`). How topics live in a note's text is in
 | All notes | `/brain` | Every note and passage, newest first |
 | Passages | `/brain/passages` | Passages only (kind `passage`) |
 | Unsorted | `/brain/unsorted` | Notes that declare no `[[Topic]]` |
-| Map | `/brain/map` | The topic graph. `?around=<topicId>&depth=<1-3>&min=<n>` scopes to a local map around a topic; `?focus=<topicId>` centres a topic |
+| Map | `/brain/map` | The topic graph. `?around=<topicId>&depth=<1-3>&min=<n>` scopes to a local map around a topic; `?kinds=<id>,<id>` filters visible topic kinds (`none` for untyped); `?focus=<topicId>` centres a topic |
 | A topic | `/brain/topics/:id` | The topic's notes. `?with=<topicId>` narrows to notes shared with another topic |
 | A note | `/brain/notes/:id` | One note on its own, for links from elsewhere |
 | Sort one by one | `/brain/unsorted/sort` | Full screen, one unsorted note at a time |
@@ -115,10 +115,29 @@ returns to the same note.
 
 The map is the topic graph: a node's size is how many notes it has, a line
 means two topics share notes. **Find a topic…** centres one. Selecting a topic
-shows a card with its counts, your words (or a line from its newest note), the
-topics it shares most with, **Open topic**, and **Map around this**. Back
-returns to the map with the same view, depth, strength and selection; **Show on
-map** on a topic page opens the local map around that topic.
+shows a card with its counts, its kind pill, your words (or a line from its
+newest note), the topics it shares most with, **Open topic**, and **Map around
+this**. Back returns to the map with the same view, depth, strength, kind
+filter and selection; **Show on map** on a topic page opens the local map
+around that topic.
+
+The **Colour** control switches between **Kind** (topic kind tokens
+`--map-kind-1..12` and `--map-kind-none` for untyped topics), **Cluster**
+(co-occurrence clusters), and **None** (uniform neutral colour). It defaults
+to **Kind** once any topic has a kind, otherwise **Cluster**, and is
+remembered per viewer. In **Kind** mode the stage legend lists every kind in
+scope with a **No kind (n)** pill (with a **Sort them** link to
+`/brain/kinds?filter=untyped`). A visible kind's count is what is actually
+drawn after the cap; a hidden kind shows how many topics come back when it is
+shown. Clicking any legend pill hides or shows that kind, storing the filter in
+`?kinds=<id>,<id>` (`none` for untyped), so a filtered map can be shared and
+Back returns to it; **Show all kinds** clears it from any colour mode. If the
+kind list cannot be loaded, the map paints **Cluster** and hides the kind
+legend rather than presenting typed topics as untyped. The filter applies before
+the 150-topic cap, freeing room for the topics that remain, and a local map is
+scoped on the whole graph first, so hiding a kind never shortens the path that
+makes a topic "within N steps" — the root stays even when its own kind is
+hidden.
 
 When scoped around a topic (`?around=<topicId>&depth=<1-3>&min=<n>`), the root
 sits pinned at the centre as the active node with neighbouring topics arranged
@@ -146,3 +165,4 @@ bottom HUD so the graph keeps the screen.
 | --- | --- |
 | Screenshots | `Nostos.Frontend/e2e/visual-evidence/brain-rebuild/` (`part7-*`: every place, the sorter, selection and the map at 1280 and 390, light and dark, SelfHosted and Cloud) |
 | Local map | `Nostos.Frontend/e2e/visual-evidence/brain-local-map/` (whole map with Strength filter, `?around=<id>&depth=2&min=1`, and phone `Controls` sheet at 1280 and 390, light and dark, SelfHosted and Cloud) |
+| Map kind colours | `Nostos.Frontend/e2e/visual-evidence/brain-map-kind-colours/` (whole and local map in Kind mode with `?kinds=` filter, legend and selected card kind pill at 1280 and 390, light and dark, SelfHosted and Cloud) |
