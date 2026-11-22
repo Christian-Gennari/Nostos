@@ -407,8 +407,9 @@ internal static class AssistantChangesetPlanBuilder
             }
 
             // The plan reproduces the net effect that was already validated, so
-            // it may overwrite a reader kind that the changeset changed on purpose.
-            ops.Add(new SetTopicKindOp([topicId], kind, OverwriteReaderKinds: true));
+            // this topic is one the changeset may change on purpose: name it as
+            // such rather than switching the whole batch's protection off.
+            ops.Add(new SetTopicKindOp([topicId], kind, NamedTopicIds: [topicId]));
         }
 
         return ops;

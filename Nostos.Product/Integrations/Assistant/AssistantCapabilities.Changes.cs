@@ -310,14 +310,15 @@ public static partial class AssistantCapabilities
 
         StageWithContext(
             "topics_set_kind",
-            "Gives one topic kind to many topics, or clears their kind. A kind the reader set is kept unless the user named that topic in this request; the result says how many were kept.",
+            "Gives one topic kind to many topics, or clears their kind. A kind the reader set is kept unless the user named that topic in this request; the result says how many were kept. Name the topics the user named in namedTopicIds; leave a topic out when you are unsure.",
             $$"""
             {
               "type": "object",
               "properties": {
-                "topicIds": { "type": "array", "items": { "type": "string", "format": "uuid" }, "description": "The topics to classify, up to 500. Required." },
+                "topicIds": { "type": "array", "items": { "type": "string", "format": "uuid" }, "description": "The topics to classify, up to 250 (one page of topics_list). Required." },
                 "kind": { "type": "string", "description": "{{TopicKindArgument}} Omit it with clear true to remove the kind." },
-                "clear": { "type": "boolean", "description": "True to remove the topics' kind instead of setting one." }
+                "clear": { "type": "boolean", "description": "True to remove the topics' kind instead of setting one." },
+                "namedTopicIds": { "type": "array", "items": { "type": "string", "format": "uuid" }, "description": "Only the topicIds whose topic the user named in this request. A kind the reader set is replaced or cleared only for these. Omit when the user named no topic." }
               },
               "required": ["topicIds"],
               "additionalProperties": true
@@ -327,8 +328,13 @@ public static partial class AssistantCapabilities
             {
                 if (!TryIds(args, "topicIds", out var topicIds) || topicIds is not { Count: > 0 })
                     return Invalid("'topicIds' must be a non-empty array of topic ids.");
-                if (topicIds.Count > 500)
-                    return Invalid("At most 500 topics can be classified in one call.");
+                // One page of topics_list is at most 250 topics, so a batch
+                // that matches a page classifies it in a single call while the
+                // preview stays bounded.
+                if (topicIds.Count > 250)
+                    return Invalid("At most 250 topics can be classified in one call; ask for the next page and stage it too.");
+                if (!TryIds(args, "namedTopicIds", out var namedTopicIds))
+                    return Invalid("'namedTopicIds' must be an array of topic ids when it is given.");
 
                 var clear = Bool(args, "clear") ?? false;
                 TopicKindRef? kind = null;
@@ -357,27 +363,43 @@ public static partial class AssistantCapabilities
                 }
 
                 // The reader's own kinds are theirs. Only a topic the user named
-                // in their request may have one replaced.
-                var states = await topics.GetAllWithUsageCountAsync(ct);
+                // in their request may have one replaced or cleared. The model
+                // may say which topics it believes the user named; each one is
+                // checked against the reader's own words before it is trusted,
+                // and without that list the words alone decide.
+                var distinct = topicIds.Distinct().ToList();
+                var states = await topics.GetByIdsAsync(distinct, ct);
                 var byId = states.ToDictionary(topic => topic.Id);
                 var userText = context.UserText ?? string.Empty;
+                var named = namedTopicIds is null
+                    ? null
+                    : namedTopicIds.ToHashSet();
+                var allowedToReplace = new List<Guid>();
                 var overwrite = new List<Guid>();
                 var keptReaderKinds = 0;
                 var unknown = new List<Guid>();
-                foreach (var topicId in topicIds.Distinct())
+                foreach (var topicId in distinct)
                 {
                     if (!byId.TryGetValue(topicId, out var topic))
                     {
                         unknown.Add(topicId);
                         continue;
                     }
-                    if (topic.KindSource == TopicKindSources.Reader
-                        && !string.IsNullOrWhiteSpace(topic.Name)
-                        && !userText.Contains(topic.Name, StringComparison.OrdinalIgnoreCase))
+
+                    var readerKind = topic.KindSource == TopicKindSources.Reader;
+                    if (readerKind)
                     {
-                        keptReaderKinds++;
-                        continue;
+                        var isNamed = named is not null
+                            ? named.Contains(topicId) && AssistantNamedTopics.Names(userText, topic.Name)
+                            : AssistantNamedTopics.Names(userText, topic.Name);
+                        if (!isNamed)
+                        {
+                            keptReaderKinds++;
+                            continue;
+                        }
+                        allowedToReplace.Add(topicId);
                     }
+
                     overwrite.Add(topicId);
                 }
 
@@ -402,10 +424,14 @@ public static partial class AssistantCapabilities
                     }));
                 }
 
+                // The op carries which topics were named, not a single flag, so
+                // an apply recomputed later can never overwrite a reader kind
+                // the reader did not name — a clear included.
                 var stageArgs = new SetTopicKindOp(
                     overwrite,
                     kind,
-                    OverwriteReaderKinds: kind is not null);
+                    OverwriteReaderKinds: allowedToReplace.Count > 0,
+                    NamedTopicIds: allowedToReplace);
                 var staged = await draft.StageAsync(stageArgs, dependsOn, ct);
                 if (!staged.Success || keptReaderKinds == 0)
                     return staged;

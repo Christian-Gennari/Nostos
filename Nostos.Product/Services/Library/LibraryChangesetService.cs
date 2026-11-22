@@ -359,12 +359,47 @@ public sealed class LibraryChangesetService(
 
         var kindId = op.Kind is { } reference ? ResolveKind(reference, refs) : (Guid?)null;
         var repository = new TopicRepository(db);
-        var outcome = await repository.SetTopicKindsAsync(
-            op.TopicIds.Distinct().Select(topicId => new TopicKindAssignment(topicId, kindId)).ToList(),
-            source: TopicKindSources.Assistant,
-            overwriteReaderKinds: op.OverwriteReaderKinds,
-            ignoreUnknownTopicIds: false,
-            ct);
+        var assignments = op.TopicIds.Distinct()
+            .Select(topicId => new TopicKindAssignment(topicId, kindId))
+            .ToList();
+
+        // A named topic may have its reader kind replaced (or cleared); an
+        // unnamed one may not. The named set is carried by the op, so this is
+        // true when the apply runs later, not only when it was staged.
+        SetTopicsKindOutcome outcome;
+        if (op.NamedTopicIds is { } namedIds)
+        {
+            var named = namedIds.ToHashSet();
+            var namedAssignments = assignments.Where(a => named.Contains(a.TopicId)).ToList();
+            var otherAssignments = assignments.Where(a => !named.Contains(a.TopicId)).ToList();
+
+            outcome = namedAssignments.Count > 0
+                ? await repository.SetTopicKindsAsync(
+                    namedAssignments,
+                    source: TopicKindSources.Assistant,
+                    overwriteReaderKinds: true,
+                    ignoreUnknownTopicIds: false,
+                    ct)
+                : new SetTopicsKindOutcome(SetTopicsKindStatus.Success);
+            if (outcome.Status == SetTopicsKindStatus.Success && otherAssignments.Count > 0)
+            {
+                outcome = await repository.SetTopicKindsAsync(
+                    otherAssignments,
+                    source: TopicKindSources.Assistant,
+                    overwriteReaderKinds: false,
+                    ignoreUnknownTopicIds: false,
+                    ct);
+            }
+        }
+        else
+        {
+            outcome = await repository.SetTopicKindsAsync(
+                assignments,
+                source: TopicKindSources.Assistant,
+                overwriteReaderKinds: op.OverwriteReaderKinds,
+                ignoreUnknownTopicIds: false,
+                ct);
+        }
 
         return outcome.Status switch
         {
@@ -447,6 +482,10 @@ public sealed class LibraryChangesetService(
                 var topics = await db.Topics
                     .Where(t => assignedTopicIds.Contains(t.Id))
                     .ToDictionaryAsync(t => t.Id, token);
+                var liveKindIds = (await db.TopicKinds.AsNoTracking()
+                        .Select(kind => kind.Id)
+                        .ToListAsync(token))
+                    .ToHashSet();
                 foreach (var snapshot in undo.TopicKindAssignments)
                 {
                     if (!topics.TryGetValue(snapshot.TopicId, out var topic))
@@ -456,6 +495,17 @@ public sealed class LibraryChangesetService(
                         || !string.Equals(topic.KindSource, snapshot.After.Source, StringComparison.Ordinal))
                     {
                         conflicts.Add($"Kept the kind of \"{snapshot.TopicName}\": it was changed after this was applied.");
+                        continue;
+                    }
+
+                    // The kind the topic had before may have been deleted since.
+                    // Restoring it would point a foreign key at a row that is
+                    // gone, so the undo would abort with SQLite Error 19 and the
+                    // whole request would fail. Say so and leave the topic alone.
+                    if (snapshot.Before.KindId is { } beforeKindId && !liveKindIds.Contains(beforeKindId))
+                    {
+                        var name = snapshot.Before.KindName ?? "it";
+                        conflicts.Add($"Kept the kind of “{snapshot.TopicName}”: the kind “{name}” was deleted after this was applied.");
                         continue;
                     }
 

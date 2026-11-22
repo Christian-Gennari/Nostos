@@ -163,6 +163,7 @@ public sealed class AssistantToolSchemaTests : IClassFixture<SqliteTestFixture>
                 ["topicIds"] = "array",
                 ["kind"] = "string",
                 ["clear"] = "boolean",
+                ["namedTopicIds"] = "array",
             },
             Required: ["topicIds"]),
         ["topics_search"] = new(

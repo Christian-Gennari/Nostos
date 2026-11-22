@@ -71,13 +71,17 @@ public sealed record CreateTopicKindOp(string Ref, string Name, string? ColorKey
 
 /// <summary>
 /// Gives one kind to many topics, or clears their kind when
-/// <paramref name="Kind"/> is null. A kind the reader set is kept unless
-/// <paramref name="OverwriteReaderKinds"/> says the user named that topic.
+/// <paramref name="Kind"/> is null. A kind the reader set is kept unless the op
+/// says that topic was named: <paramref name="NamedTopicIds"/> names exactly the
+/// topics the user named (the apply reads it, so a recomputed apply can never
+/// overwrite an unnamed reader kind), and <paramref name="OverwriteReaderKinds"/>
+/// is the older whole-batch flag, used only when the set is null.
 /// </summary>
 public sealed record SetTopicKindOp(
     IReadOnlyList<Guid> TopicIds,
     TopicKindRef? Kind,
-    bool OverwriteReaderKinds = false) : LibraryChangeOp;
+    bool OverwriteReaderKinds = false,
+    IReadOnlyList<Guid>? NamedTopicIds = null) : LibraryChangeOp;
 
 /// <summary>Edits a book's own fields. A null field is left unchanged.</summary>
 public sealed record UpdateBookOp(
@@ -151,7 +155,13 @@ public sealed record TopicKindAssignmentSnapshot(
     TopicKindAssignmentState Before,
     TopicKindAssignmentState After);
 
-public sealed record TopicKindAssignmentState(string TopicName, Guid? KindId, string? Source);
+public sealed record TopicKindAssignmentState(
+    string TopicName,
+    Guid? KindId,
+    string? Source,
+    // APPENDED (issue #1770 review): the kind's display name at that moment, so
+    // undo can name a kind the reader deleted after the apply.
+    string? KindName = null);
 
 /// <summary>A collection row; a null side means it did not exist then.</summary>
 public sealed record CollectionSnapshot(Guid Id, CollectionState? Before, CollectionState? After);
