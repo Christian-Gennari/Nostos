@@ -455,7 +455,8 @@ internal static class PortableLibraryCounts
             AssistantSettings: data.AssistantSettings is null ? 0 : 1,
             NoteImportBookLinks: data.NoteImportBookLinks?.Count ?? 0,
             MediaEntries: mediaEntries,
-            ReadingListEntries: data.ReadingListEntries?.Count ?? 0);
+            ReadingListEntries: data.ReadingListEntries?.Count ?? 0,
+            TopicKinds: data.TopicKinds?.Count ?? 0);
     }
 
     /// <summary>

@@ -3,6 +3,40 @@ import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import type { TopicLinkResult } from '../dtos/note.dtos';
 
+export type TopicKindSource = 'reader' | 'assistant' | 'connected-app';
+
+export interface TopicKindDto {
+  id: string;
+  name: string;
+  colorKey: string;
+  sortOrder: number;
+  createdAt: string;
+  topicCount: number;
+}
+
+export interface CreateTopicKindDto {
+  name: string;
+  colorKey: string;
+}
+
+export interface UpdateTopicKindDto {
+  name?: string | null;
+  colorKey?: string | null;
+  sortOrder?: number | null;
+  swapColor?: boolean;
+}
+
+export interface SetTopicsKindDto {
+  topicIds: string[];
+  kindId: string | null;
+}
+
+export interface SetTopicsKindResultDto {
+  updatedTopicIds: string[];
+  kindId: string | null;
+  kindSource: TopicKindSource | null;
+}
+
 export interface TopicDto {
   id: string;
   name: string;
@@ -14,6 +48,10 @@ export interface TopicDto {
   noteMatchSnippet?: string | null;
   /** Appended: the reader's own words about the topic, if any. */
   description?: string | null;
+  /** Appended (issue #1767): optional topic kind id. */
+  kindId?: string | null;
+  /** Appended (issue #1767): who assigned the kind; null when untyped. */
+  kindSource?: TopicKindSource | null;
 }
 
 export interface RelatedTopicDto {
@@ -28,6 +66,8 @@ export interface TopicGraphNodeDto {
   id: string;
   name: string;
   usageCount: number;
+  /** Appended (issue #1767): optional topic kind id. */
+  kindId?: string | null;
 }
 
 export interface TopicGraphEdgeDto {
@@ -146,5 +186,25 @@ export class TopicsService {
 
   delete(id: string): Observable<void> {
     return this.http.delete<void>(`/api/topics/${id}`);
+  }
+
+  listKinds(): Observable<TopicKindDto[]> {
+    return this.http.get<TopicKindDto[]>('/api/topic-kinds');
+  }
+
+  createKind(dto: CreateTopicKindDto): Observable<TopicKindDto> {
+    return this.http.post<TopicKindDto>('/api/topic-kinds', dto);
+  }
+
+  updateKind(id: string, dto: UpdateTopicKindDto): Observable<TopicKindDto> {
+    return this.http.put<TopicKindDto>(`/api/topic-kinds/${id}`, dto);
+  }
+
+  deleteKind(id: string): Observable<void> {
+    return this.http.delete<void>(`/api/topic-kinds/${id}`);
+  }
+
+  setTopicsKind(topicIds: string[], kindId: string | null): Observable<SetTopicsKindResultDto> {
+    return this.http.put<SetTopicsKindResultDto>('/api/topics/kind', { topicIds, kindId });
   }
 }

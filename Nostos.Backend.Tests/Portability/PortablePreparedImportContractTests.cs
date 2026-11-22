@@ -220,7 +220,8 @@ public sealed class PortablePreparedImportContractTests
         counts.NoteImportBookLinks.Should().Be(11);
         counts.MediaEntries.Should().Be(12);
         counts.ReadingListEntries.Should().Be(13);
-        counts.TotalRows.Should().Be(80);
+        counts.TopicKinds.Should().Be(14);
+        counts.TotalRows.Should().Be(94);
 
         foreach (var property in typeof(MigrationArchiveCounts)
             .GetProperties(BindingFlags.Public | BindingFlags.Instance))
@@ -251,6 +252,7 @@ public sealed class PortablePreparedImportContractTests
             nameof(PortableLibraryData.NoteTopics),
             nameof(PortableLibraryData.Notes),
             nameof(PortableLibraryData.ReadingListEntries),
+            nameof(PortableLibraryData.TopicKinds),
             nameof(PortableLibraryData.Topics),
             nameof(PortableLibraryData.Version),
             nameof(PortableLibraryData.Works),
@@ -376,6 +378,10 @@ public sealed class PortablePreparedImportContractTests
             ReadingListEntries: Enumerable.Range(0, 13)
                 .Select(_ => new PortableReadingListEntry(
                     Guid.NewGuid(), "Wanted", null, null, null, null, null, null, FixedUtc))
+                .ToList(),
+            TopicKinds: Enumerable.Range(0, 14)
+                .Select(i => new PortableTopicKind(
+                    Guid.NewGuid(), $"Kind {i}", $"kind-{(i % 12) + 1}", i + 1, FixedUtc))
                 .ToList());
 
     private static PortableBook Book() =>

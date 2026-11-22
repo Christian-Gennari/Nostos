@@ -35,6 +35,7 @@ internal static class PortableCandidateDatabaseVerifier
         var collections = await candidateDatabase.Collections.AsNoTracking().ToListAsync(ct).ConfigureAwait(false);
         var memberships = await candidateDatabase.BookCollections.AsNoTracking().ToListAsync(ct).ConfigureAwait(false);
         var notes = await candidateDatabase.Notes.AsNoTracking().ToListAsync(ct).ConfigureAwait(false);
+        var topicKinds = await candidateDatabase.TopicKinds.AsNoTracking().ToListAsync(ct).ConfigureAwait(false);
         var topics = await candidateDatabase.Topics.AsNoTracking().ToListAsync(ct).ConfigureAwait(false);
         var noteTopics = await candidateDatabase.NoteTopics.AsNoTracking().ToListAsync(ct).ConfigureAwait(false);
         var writings = await candidateDatabase.Writings.AsNoTracking().ToListAsync(ct).ConfigureAwait(false);
@@ -49,6 +50,7 @@ internal static class PortableCandidateDatabaseVerifier
         PortableCollectionComparisons.CompareCollections(data, collections, failures);
         PortableCollectionComparisons.CompareBookCollections(data, memberships, failures);
         PortableNoteComparisons.CompareNotes(data, notes, failures);
+        PortableNoteComparisons.CompareTopicKinds(data, topicKinds, failures);
         PortableNoteComparisons.CompareTopics(data, topics, failures);
         PortableNoteComparisons.CompareNoteTopics(data, noteTopics, failures);
         PortableWritingComparisons.CompareWritings(data, writings, failures);
@@ -59,9 +61,9 @@ internal static class PortableCandidateDatabaseVerifier
         PortableSettingsComparisons.CompareAssistantSettings(data, assistantSettings, failures);
 
         var rowsVerified =
-            works.Count + books.Count + collections.Count + memberships.Count + notes.Count + topics.Count
-            + noteTopics.Count + writings.Count + writingNotes.Count + acquisitions.Count + importLinks.Count
-            + readingList.Count + assistantSettings.Count;
+            works.Count + books.Count + collections.Count + memberships.Count + notes.Count + topicKinds.Count
+            + topics.Count + noteTopics.Count + writings.Count + writingNotes.Count + acquisitions.Count
+            + importLinks.Count + readingList.Count + assistantSettings.Count;
 
         return new CandidateDatabaseComparison(
             failures,
@@ -78,7 +80,8 @@ internal static class PortableCandidateDatabaseVerifier
                 acquisitions.Count,
                 importLinks.Count,
                 assistantSettings.Count,
-                readingList.Count),
+                readingList.Count,
+                topicKinds.Count),
             rowsVerified);
     }
 }

@@ -232,6 +232,26 @@ public sealed class PortableCompletenessInventoryTests
                     Excluded("NoteTopics", NavigationReason),
                 ]),
 
+            ["TopicKindModel"] = PortableEntity(
+                portable:
+                [
+                    "Id",
+                    "Name",
+                    "ColorKey",
+                    "SortOrder",
+                    "CreatedAt",
+                ],
+                excluded:
+                [
+                    Excluded(
+                        "NormalizedName",
+                        "Derived folded identity key; recomputed from Name on import/save."),
+                ],
+                excludedNavigations:
+                [
+                    Excluded("Topics", NavigationReason),
+                ]),
+
             ["TopicModel"] = PortableEntity(
                 portable:
                 [
@@ -240,6 +260,8 @@ public sealed class PortableCompletenessInventoryTests
                     // The reader's own words: a restore that dropped them
                     // would lose writing the notes do not hold.
                     "Description",
+                    "KindId",
+                    "KindSource",
                 ],
                 excluded:
                 [
@@ -249,6 +271,7 @@ public sealed class PortableCompletenessInventoryTests
                 ],
                 excludedNavigations:
                 [
+                    Excluded("Kind", NavigationReason),
                     Excluded("NoteTopics", NavigationReason),
                 ]),
 
@@ -561,7 +584,8 @@ public sealed class PortableCompletenessInventoryTests
                     ("AssistantSettings", "Optional top-level singleton containing PortableAssistantSettings."),
                     ("WritingNotes", "Version 2 optional top-level collection containing PortableWritingNote records."),
                     ("NoteImportBookLinks", "Version 3 optional top-level collection containing PortableNoteImportBookLink records."),
-                    ("ReadingListEntries", "Version 5 optional top-level collection containing PortableReadingListEntry records.")),
+                    ("ReadingListEntries", "Version 5 optional top-level collection containing PortableReadingListEntry records."),
+                    ("TopicKinds", "Optional top-level collection containing PortableTopicKind records.")),
 
                 [typeof(PortableArchiveManifest)] = StructuralRecord(
                     ("Format", "Archive format identifier in the manifest JSON root."),
@@ -652,6 +676,11 @@ public sealed class PortableCompletenessInventoryTests
                     ["NoteModel"],
                     incomingCountKind: "Notes",
                     destinationCountKind: "Notes"),
+
+                [typeof(PortableTopicKind)] = EntityRecord(
+                    ["TopicKindModel"],
+                    incomingCountKind: "TopicKinds",
+                    destinationCountKind: "TopicKinds"),
 
                 [typeof(PortableTopic)] = EntityRecord(
                     ["TopicModel"],

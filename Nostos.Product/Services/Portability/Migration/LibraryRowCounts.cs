@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Data;
+using Nostos.Backend.Data.Models;
 
 namespace Nostos.Backend.Services.Portability.Migration;
 
@@ -14,11 +15,13 @@ public static class LibraryRowCounts
     /// The rows that are the owner's data. The assistant settings row counts
     /// only once a capture mode has been chosen: a row holding <c>NULL</c>
     /// means "never chosen" and carries nothing an import could overwrite.
+    /// Likewise, untouched built-in topic kind defaults count as 0 so a fresh
+    /// seeded library is still treated as empty.
     /// </summary>
     public static Task<MigrationExistingCounts> ReadUserDataAsync(
         NostosDbContext db,
         CancellationToken ct) =>
-        ReadAsync(db, onlyChosenAssistantSettings: true, ct);
+        ReadAsync(db, onlyUserModifiedDefaults: true, ct);
 
     /// <summary>
     /// Every row, chosen or not. This is the second signal inside the
@@ -28,11 +31,11 @@ public static class LibraryRowCounts
     public static Task<MigrationExistingCounts> ReadAllAsync(
         NostosDbContext db,
         CancellationToken ct) =>
-        ReadAsync(db, onlyChosenAssistantSettings: false, ct);
+        ReadAsync(db, onlyUserModifiedDefaults: false, ct);
 
     private static async Task<MigrationExistingCounts> ReadAsync(
         NostosDbContext db,
-        bool onlyChosenAssistantSettings,
+        bool onlyUserModifiedDefaults,
         CancellationToken ct) =>
         new(
             Works: await db.Works.CountAsync(ct),
@@ -46,9 +49,12 @@ public static class LibraryRowCounts
             BookCollections: await db.BookCollections.CountAsync(ct),
             Acquisitions: await db.BookAcquisitions.CountAsync(ct),
             NoteImportBookLinks: await db.NoteImportBookLinks.CountAsync(ct),
-            AssistantSettings: onlyChosenAssistantSettings
+            AssistantSettings: onlyUserModifiedDefaults
                 ? await db.AssistantSettings.CountAsync(
                     settings => settings.CaptureProcessingMode != null, ct)
                 : await db.AssistantSettings.CountAsync(ct),
-            ReadingListEntries: await db.ReadingListEntries.CountAsync(ct));
+            ReadingListEntries: await db.ReadingListEntries.CountAsync(ct),
+            TopicKinds: onlyUserModifiedDefaults && await TopicKindModel.AreDefaultsUntouchedAsync(db, ct)
+                ? 0
+                : await db.TopicKinds.CountAsync(ct));
 }

@@ -45,6 +45,7 @@ public class NostosDbContext : DbContext
     public DbSet<BookCollectionModel> BookCollections => Set<BookCollectionModel>();
     public DbSet<ReadingListEntryModel> ReadingListEntries => Set<ReadingListEntryModel>();
     public DbSet<TopicModel> Topics => Set<TopicModel>();
+    public DbSet<TopicKindModel> TopicKinds => Set<TopicKindModel>();
     public DbSet<NoteTopicModel> NoteTopics => Set<NoteTopicModel>();
     public DbSet<BackupRecord> BackupRecords => Set<BackupRecord>();
 

@@ -23,6 +23,7 @@ function archiveCounts(overrides: Partial<MigrationArchiveCountsDto> = {}): Migr
     assistantSettings: 1,
     noteImportBookLinks: 0,
     readingListEntries: 0,
+    topicKinds: 0,
     mediaEntries: 126,
     totalRows: 1400,
     ...overrides,
@@ -46,6 +47,7 @@ function existingCounts(
     assistantSettings: 1,
     noteImportBookLinks: 0,
     readingListEntries: 0,
+    topicKinds: 0,
     totalRows: 700,
     ...overrides,
   };

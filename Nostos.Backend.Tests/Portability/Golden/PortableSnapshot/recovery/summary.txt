@@ -1,5 +1,5 @@
-dataBytes=9834
-dataSha256=de324eaa9b08552d9c030863172f6e913629d37dfe7299476555f290cce057f7
+dataBytes=10730
+dataSha256=fca4966e859f78c22b974d9e65e23e3ff3d6d8e6eef418bd5d5ffeb32904b3bb
 works=4
 books=5
 notes=2
@@ -14,3 +14,4 @@ assistantSettings=1
 noteImportBookLinks=1
 mediaEntries=9
 readingListEntries=2
+topicKinds=6

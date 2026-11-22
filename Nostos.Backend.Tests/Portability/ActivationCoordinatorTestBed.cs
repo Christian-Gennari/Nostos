@@ -708,7 +708,7 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
         var types = new[]
         {
             typeof(WorkModel), typeof(BookModel), typeof(CollectionModel), typeof(BookCollectionModel),
-            typeof(NoteModel), typeof(TopicModel), typeof(NoteTopicModel), typeof(WritingModel),
+            typeof(NoteModel), typeof(TopicKindModel), typeof(TopicModel), typeof(NoteTopicModel), typeof(WritingModel),
             typeof(WritingNoteModel), typeof(BookAcquisitionModel), typeof(NoteImportBookLink),
             typeof(AssistantSettingsModel), typeof(ReadingListEntryModel),
         };
@@ -1192,6 +1192,27 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
             return Convert.ToInt64(command.ExecuteScalar());
         }
 
+        long CountTopicKinds()
+        {
+            if (!tables.Contains("TopicKinds")) return 0;
+            var rows = new List<TopicKindModel>();
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT \"Id\", \"Name\", \"NormalizedName\", \"ColorKey\", \"SortOrder\" FROM \"TopicKinds\";";
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                rows.Add(new TopicKindModel
+                {
+                    Id = Guid.Parse(reader.GetString(0)),
+                    Name = reader.GetString(1),
+                    NormalizedName = reader.GetString(2),
+                    ColorKey = reader.GetString(3),
+                    SortOrder = reader.GetInt32(4),
+                });
+            }
+            return TopicKindModel.MatchesBuiltInDefaults(rows) ? 0 : rows.Count;
+        }
+
         return new MigrationExistingCounts(
             Works: Count("Works"),
             Books: Count("Books"),
@@ -1205,7 +1226,8 @@ internal sealed class ActivationCoordinatorTestBed : IAsyncDisposable
             Acquisitions: Count("BookAcquisitions"),
             NoteImportBookLinks: Count("NoteImportBookLinks"),
             AssistantSettings: Count("AssistantSettings", "\"CaptureProcessingMode\" IS NOT NULL"),
-            ReadingListEntries: Count("ReadingListEntries"));
+            ReadingListEntries: Count("ReadingListEntries"),
+            TopicKinds: CountTopicKinds());
     }
 
     public async ValueTask DisposeAsync()

@@ -484,7 +484,7 @@ public sealed class PortableLibraryVerifierGoldenTests
         $"noteTopics={counts.NoteTopics} writings={counts.Writings} writingNotes={counts.WritingNotes} " +
         $"acquisitions={counts.Acquisitions} assistantSettings={counts.AssistantSettings} " +
         $"importLinks={counts.NoteImportBookLinks} readingList={counts.ReadingListEntries} " +
-        $"media={counts.MediaEntries}";
+        $"topicKinds={counts.TopicKinds} media={counts.MediaEntries}";
 
     private static void AssertGolden(string relativePath, string actual)
     {

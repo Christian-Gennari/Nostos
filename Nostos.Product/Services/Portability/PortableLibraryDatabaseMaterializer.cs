@@ -73,12 +73,16 @@ internal static class PortableLibraryDatabaseMaterializer
         }
     }
 
+    internal sealed record TopicKindImportResult(
+        IReadOnlyList<string> SkippedTopicKinds,
+        PortableLibraryData EffectiveData);
+
     /// <summary>
     /// Adds the validated portable user-owned entities to <paramref name="db"/>.
     /// Reconstructible cache columns (for example epub.js locations) are left
     /// empty because they are regenerated after activation.
     /// </summary>
-    internal static async Task ApplyRelationalDataAsync(
+    internal static async Task<TopicKindImportResult> ApplyRelationalDataAsync(
         NostosDbContext db,
         PortableLibraryData data,
         IReadOnlyList<PortablePreparedMedia> stagedMedia,
@@ -276,13 +280,23 @@ internal static class PortableLibraryDatabaseMaterializer
             });
         db.Notes.AddRange(notes.Values);
 
+        var (kindIdMap, topicKindImportResult) = await ApplyTopicKindsAsync(db, data, ct);
+
         var topics = data.Topics.ToDictionary(
             x => x.Id,
-            x => new TopicModel
+            x =>
             {
-                Id = x.Id,
-                Topic = x.Topic,
-                Description = x.Description,
+                Guid? mappedKindId = x.KindId is { } kindId && kindIdMap.TryGetValue(kindId, out var resolved)
+                    ? resolved
+                    : null;
+                return new TopicModel
+                {
+                    Id = x.Id,
+                    Topic = x.Topic,
+                    Description = x.Description,
+                    KindId = mappedKindId,
+                    KindSource = mappedKindId is not null ? x.KindSource : null,
+                };
             });
         ParkCaseVariants(topics.Values, data.NoteTopics);
         db.Topics.AddRange(topics.Values);
@@ -388,6 +402,174 @@ internal static class PortableLibraryDatabaseMaterializer
             existing.CaptureProcessingMode = assistant.CaptureProcessingMode;
             existing.UpdatedAtUtc = assistant.UpdatedAtUtc;
         }
+
+        return topicKindImportResult;
+    }
+
+    private static async Task<(Dictionary<Guid, Guid?> KindMap, TopicKindImportResult Result)> ApplyTopicKindsAsync(
+        NostosDbContext db,
+        PortableLibraryData data,
+        CancellationToken ct)
+    {
+        var kindMap = new Dictionary<Guid, Guid?>();
+        if (data.TopicKinds is null)
+        {
+            // Legacy archive without topicKinds: leave existing seeded defaults
+            // untouched and keep every imported topic untyped.
+            var clearedTopics = data.Topics.Any(t => t.KindId is not null || t.KindSource is not null)
+                ? data with
+                {
+                    Topics = data.Topics
+                        .Select(t => t with { KindId = null, KindSource = null })
+                        .ToList(),
+                }
+                : data;
+            return (kindMap, new TopicKindImportResult([], clearedTopics));
+        }
+
+        var existingKinds = await db.TopicKinds.ToListAsync(ct);
+        var skipped = new List<string>();
+        var keptPortableKinds = new List<PortableTopicKind>();
+        var remapped = false;
+
+        if (existingKinds.Count == 0 || TopicKindModel.MatchesBuiltInDefaults(existingKinds))
+        {
+            if (existingKinds.Count > 0)
+            {
+                // Flush the deletion of default seed rows before inserting the archive's
+                // rows so SQLite unique constraints on NormalizedName / ColorKey and
+                // ChangeTracker key tracking do not collide on shared seed IDs/names.
+                db.TopicKinds.RemoveRange(existingKinds);
+                await db.SaveChangesAsync(ct);
+            }
+
+            var usedColors = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var source in data.TopicKinds)
+            {
+                if (keptPortableKinds.Count >= TopicKindModel.MaxKinds)
+                {
+                    kindMap[source.Id] = null;
+                    skipped.Add(source.Name);
+                    remapped = true;
+                    continue;
+                }
+
+                var colorKey = !usedColors.Contains(source.ColorKey)
+                    ? source.ColorKey
+                    : TopicKindModel.PaletteColorKeys.First(c => !usedColors.Contains(c));
+                usedColors.Add(colorKey);
+                if (!string.Equals(colorKey, source.ColorKey, StringComparison.Ordinal))
+                {
+                    remapped = true;
+                }
+
+                var model = new TopicKindModel
+                {
+                    Id = source.Id,
+                    Name = source.Name.Trim(),
+                    ColorKey = colorKey,
+                    SortOrder = source.SortOrder,
+                    CreatedAt = source.CreatedAt,
+                };
+                db.TopicKinds.Add(model);
+                kindMap[source.Id] = model.Id;
+                keptPortableKinds.Add(source with { Name = model.Name, ColorKey = colorKey });
+            }
+        }
+        else
+        {
+            var byNormalizedName = existingKinds.ToDictionary(
+                k => k.NormalizedName,
+                StringComparer.Ordinal);
+            var existingIds = existingKinds.Select(k => k.Id).ToHashSet();
+            var usedColors = existingKinds.Select(k => k.ColorKey).ToHashSet(StringComparer.Ordinal);
+            var totalKinds = existingKinds.Count;
+
+            foreach (var existing in existingKinds)
+            {
+                keptPortableKinds.Add(new PortableTopicKind(
+                    existing.Id,
+                    existing.Name,
+                    existing.ColorKey,
+                    existing.SortOrder,
+                    existing.CreatedAt));
+            }
+
+            foreach (var source in data.TopicKinds)
+            {
+                var normalizedName = TopicKindModel.NormalizeName(source.Name);
+                if (byNormalizedName.TryGetValue(normalizedName, out var matched))
+                {
+                    kindMap[source.Id] = matched.Id;
+                    if (matched.Id != source.Id)
+                    {
+                        remapped = true;
+                    }
+                    continue;
+                }
+
+                if (totalKinds >= TopicKindModel.MaxKinds)
+                {
+                    kindMap[source.Id] = null;
+                    skipped.Add(source.Name);
+                    remapped = true;
+                    continue;
+                }
+
+                var colorKey = !usedColors.Contains(source.ColorKey)
+                    ? source.ColorKey
+                    : TopicKindModel.PaletteColorKeys.First(c => !usedColors.Contains(c));
+                usedColors.Add(colorKey);
+                var newId = existingIds.Contains(source.Id) ? Guid.NewGuid() : source.Id;
+                existingIds.Add(newId);
+                totalKinds++;
+
+                var model = new TopicKindModel
+                {
+                    Id = newId,
+                    Name = source.Name.Trim(),
+                    ColorKey = colorKey,
+                    SortOrder = source.SortOrder,
+                    CreatedAt = source.CreatedAt,
+                };
+                db.TopicKinds.Add(model);
+                byNormalizedName[model.NormalizedName] = model;
+                kindMap[source.Id] = model.Id;
+                keptPortableKinds.Add(new PortableTopicKind(
+                    model.Id,
+                    model.Name,
+                    model.ColorKey,
+                    model.SortOrder,
+                    model.CreatedAt));
+                remapped = true;
+            }
+        }
+
+        if (!remapped && keptPortableKinds.Count == data.TopicKinds.Count)
+        {
+            return (kindMap, new TopicKindImportResult(skipped, data));
+        }
+
+        var effectiveData = data with
+        {
+            TopicKinds = keptPortableKinds,
+            Topics = data.Topics.Select(t =>
+            {
+                if (t.KindId is not { } kindId)
+                {
+                    return t.KindSource is null ? t : t with { KindSource = null };
+                }
+
+                var mapped = kindMap.GetValueOrDefault(kindId);
+                if (mapped is null)
+                {
+                    return t with { KindId = null, KindSource = null };
+                }
+
+                return mapped == kindId ? t : t with { KindId = mapped };
+            }).ToList(),
+        };
+        return (kindMap, new TopicKindImportResult(skipped, effectiveData));
     }
 
     private static string CoverVersionFromDigest(string sha256) =>
@@ -441,7 +623,7 @@ public static class PortableLibraryRelationalRestore
 
         var data = await PortableLibraryDatabaseMaterializer
             .ReadRelationalDataAsync(verifiedRelationalPayload, stagedMedia, cancellationToken);
-        await PortableLibraryDatabaseMaterializer
+        _ = await PortableLibraryDatabaseMaterializer
             .ApplyRelationalDataAsync(db, data, stagedMedia, cancellationToken);
     }
 }

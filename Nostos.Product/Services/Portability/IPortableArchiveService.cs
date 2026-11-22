@@ -62,7 +62,8 @@ public sealed record PortableImportResult(
     PortableArchiveCounts Counts,
     int MediaFiles,
     long MediaBytes,
-    bool IntegrityVerified);
+    bool IntegrityVerified,
+    IReadOnlyList<string>? SkippedTopicKinds = null);
 
 public sealed class PortableArchiveException : Exception
 {

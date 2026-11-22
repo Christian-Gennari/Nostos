@@ -12,6 +12,8 @@ public static class TopicsEndpoints
 {
     public static IEndpointRouteBuilder MapTopicsEndpoints(this IEndpointRouteBuilder routes)
     {
+        MapTopicKindRoutes(routes.MapGroup("/api/topic-kinds"));
+
         MapTopicRoutes(routes.MapGroup("/api/topics"));
 
         // Transition alias: clients built before the Concepts -> Topics rename
@@ -20,6 +22,61 @@ public static class TopicsEndpoints
         MapTopicRoutes(routes.MapGroup("/api/concepts"));
 
         return routes;
+    }
+
+    private static void MapTopicKindRoutes(RouteGroupBuilder group)
+    {
+        group.MapGet(
+            "/",
+            async (ITopicRepository repo, CancellationToken ct) =>
+                Results.Ok(await repo.GetAllKindsAsync(ct))
+        );
+
+        group.MapPost(
+            "/",
+            async (CreateTopicKindDto dto, ITopicRepository repo, CancellationToken ct) =>
+            {
+                var result = await repo.CreateKindAsync(dto.Name, dto.ColorKey, ct);
+                return result.Status switch
+                {
+                    TopicKindMutationStatus.Success =>
+                        Results.Created($"/api/topic-kinds/{result.Kind!.Id}", result.Kind),
+                    TopicKindMutationStatus.LimitReached =>
+                        ApiErrors.Error(result.ErrorMessage!, StatusCodes.Status422UnprocessableEntity),
+                    TopicKindMutationStatus.Conflict =>
+                        ApiErrors.Error(result.ErrorMessage!, StatusCodes.Status409Conflict),
+                    _ => ApiErrors.Error(result.ErrorMessage!),
+                };
+            }
+        );
+
+        group.MapPut(
+            "/{id:guid}",
+            async (Guid id, UpdateTopicKindDto dto, ITopicRepository repo, CancellationToken ct) =>
+            {
+                var result = await repo.UpdateKindAsync(
+                    id,
+                    dto.Name,
+                    dto.ColorKey,
+                    dto.SortOrder,
+                    dto.SwapColor,
+                    ct);
+                return result.Status switch
+                {
+                    TopicKindMutationStatus.Success => Results.Ok(result.Kind),
+                    TopicKindMutationStatus.NotFound => Results.NotFound(),
+                    TopicKindMutationStatus.Conflict =>
+                        ApiErrors.Error(result.ErrorMessage!, StatusCodes.Status409Conflict),
+                    _ => ApiErrors.Error(result.ErrorMessage!),
+                };
+            }
+        );
+
+        group.MapDelete(
+            "/{id:guid}",
+            async (Guid id, ITopicRepository repo, CancellationToken ct) =>
+                await repo.DeleteKindAsync(id, ct) ? Results.NoContent() : Results.NotFound()
+        );
     }
 
     private static void MapTopicRoutes(RouteGroupBuilder group)
@@ -88,6 +145,26 @@ public static class TopicsEndpoints
             "/graph",
             async (ITopicRepository repo, CancellationToken ct) =>
                 Results.Ok(await repo.GetGraphAsync(ct))
+        );
+
+        // BULK set or clear kind on one or many topics (registered before /{id})
+        group.MapPut(
+            "/kind",
+            async (SetTopicsKindDto dto, ITopicRepository repo, CancellationToken ct) =>
+            {
+                var outcome = await repo.SetTopicsKindAsync(
+                    dto.TopicIds,
+                    dto.KindId,
+                    TopicKindSources.Reader,
+                    ct);
+                return outcome.Status switch
+                {
+                    SetTopicsKindStatus.Success => Results.Ok(outcome.Result),
+                    SetTopicsKindStatus.KindNotFound or SetTopicsKindStatus.TopicNotFound =>
+                        ApiErrors.Error(outcome.ErrorMessage!, StatusCodes.Status404NotFound),
+                    _ => ApiErrors.Error(outcome.ErrorMessage!),
+                };
+            }
         );
 
         // UPDATE name, merging into an existing topic with the same name

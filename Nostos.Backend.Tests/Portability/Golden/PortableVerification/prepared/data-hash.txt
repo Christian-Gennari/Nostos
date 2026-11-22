@@ -1,8 +1,8 @@
 passed=false
 failures=2
-dataBytes=9834
-dataSha256=de324eaa9b08552d9c030863172f6e913629d37dfe7299476555f290cce057f7
-counts=works=4 books=5 collections=2 memberships=3 notes=2 topics=2 noteTopics=3 writings=2 writingNotes=1 acquisitions=1 assistantSettings=1 importLinks=1 readingList=2 media=9
+dataBytes=10730
+dataSha256=fca4966e859f78c22b974d9e65e23e3ff3d6d8e6eef418bd5d5ffeb32904b3bb
+counts=works=4 books=5 collections=2 memberships=3 notes=2 topics=2 noteTopics=3 writings=2 writingNotes=1 acquisitions=1 assistantSettings=1 importLinks=1 readingList=2 topicKinds=6 media=9
 media=9
 mediaBytes=12135
 descriptor|20000000-0000-0000-0000-000000000001|book|media/books/20000000000000000000000000000001/book.epub|book.epub|19|f1093bedf3e92cef328ac3fb75bec8bc5735ddcc571693204029215b0957ab31

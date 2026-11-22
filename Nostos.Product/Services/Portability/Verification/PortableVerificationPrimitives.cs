@@ -53,6 +53,8 @@ internal sealed record CollectionContext(CollectionModel Row, PortableCollection
 
 internal sealed record NoteContext(NoteModel Row, PortableNote Expected);
 
+internal sealed record TopicKindContext(TopicKindModel Row, PortableTopicKind Expected);
+
 internal sealed record TopicContext(TopicModel Row, PortableTopic Expected);
 
 internal sealed record WritingContext(WritingModel Row, PortableWriting Expected);

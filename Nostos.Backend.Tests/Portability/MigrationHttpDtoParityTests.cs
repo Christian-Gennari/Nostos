@@ -28,14 +28,14 @@ public sealed class MigrationHttpDtoParityTests
     [
         "works", "books", "notes", "topics", "noteTopics", "writings", "writingNotes",
         "collections", "collectionMemberships", "acquisitions", "assistantSettings",
-        "noteImportBookLinks", "mediaEntries", "readingListEntries", "totalRows",
+        "noteImportBookLinks", "mediaEntries", "readingListEntries", "topicKinds", "totalRows",
     ];
 
     private static readonly string[] ExistingCounts =
     [
         "works", "books", "notes", "topics", "noteTopics", "writings", "writingNotes",
         "collections", "bookCollections", "acquisitions", "noteImportBookLinks",
-        "assistantSettings", "readingListEntries", "totalRows",
+        "assistantSettings", "readingListEntries", "topicKinds", "totalRows",
     ];
 
     private static readonly string[] JobStatus =

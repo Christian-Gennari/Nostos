@@ -173,6 +173,7 @@ export interface MigrationArchiveCountsDto {
   readingListEntries: number;
   mediaEntries: number;
   totalRows: number;
+  topicKinds: number;
 }
 
 export interface MigrationExistingCountsDto {
@@ -190,6 +191,7 @@ export interface MigrationExistingCountsDto {
   readingListEntries: number;
   assistantSettings: number;
   totalRows: number;
+  topicKinds: number;
 }
 
 export interface MigrationPreflightRequestDto {

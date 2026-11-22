@@ -68,9 +68,30 @@ public sealed class LibraryRowCountsTests : IAsyncLifetime
         var userData = await LibraryRowCounts.ReadUserDataAsync(_db, CancellationToken.None);
         var all = await LibraryRowCounts.ReadAllAsync(_db, CancellationToken.None);
 
-        userData.Should().Be(all);
+        userData.Should().Be(all with { TopicKinds = 0 });
+        all.TopicKinds.Should().Be(TopicKindModel.BuiltInSeedCount);
         userData.Topics.Should().Be(1);
         userData.Collections.Should().Be(1);
         userData.TotalRows.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task Customized_topic_kinds_are_counted_as_user_data()
+    {
+        _db.TopicKinds.Add(new TopicKindModel
+        {
+            Id = Guid.NewGuid(),
+            Name = "Movement",
+            ColorKey = "kind-7",
+            SortOrder = 7,
+        });
+        await _db.SaveChangesAsync();
+
+        var userData = await LibraryRowCounts.ReadUserDataAsync(_db, CancellationToken.None);
+        var all = await LibraryRowCounts.ReadAllAsync(_db, CancellationToken.None);
+
+        userData.TopicKinds.Should().Be(TopicKindModel.BuiltInSeedCount + 1);
+        all.TopicKinds.Should().Be(TopicKindModel.BuiltInSeedCount + 1);
+        userData.Should().Be(all);
     }
 }

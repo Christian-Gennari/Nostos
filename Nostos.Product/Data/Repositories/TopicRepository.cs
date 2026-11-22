@@ -22,7 +22,15 @@ public class TopicRepository : ITopicRepository
         return await _db
             .Topics.OrderByDescending(c => c.NoteTopics.Count())
             .ThenBy(c => c.Topic)
-            .Select(c => new TopicDto(c.Id, c.Topic, c.NoteTopics.Count(), 0, null, c.Description))
+            .Select(c => new TopicDto(
+                c.Id,
+                c.Topic,
+                c.NoteTopics.Count(),
+                0,
+                null,
+                c.Description,
+                c.KindId,
+                c.KindSource))
             .ToListAsync(cancellationToken);
     }
 
@@ -124,6 +132,8 @@ public class TopicRepository : ITopicRepository
                 nc.TopicId,
                 TopicName = nc.Topic.Topic,
                 nc.Topic.Description,
+                nc.Topic.KindId,
+                nc.Topic.KindSource,
                 TotalUsageCount = nc.Topic.NoteTopics.Count(),
                 nc.NoteId,
                 nc.Note.Content,
@@ -137,7 +147,15 @@ public class TopicRepository : ITopicRepository
             return [];
 
         return matchingRows
-            .GroupBy(row => new { row.TopicId, row.TopicName, row.Description, row.TotalUsageCount })
+            .GroupBy(row => new
+            {
+                row.TopicId,
+                row.TopicName,
+                row.Description,
+                row.KindId,
+                row.KindSource,
+                row.TotalUsageCount
+            })
             .Select(group =>
             {
                 var noteGroups = group.GroupBy(row => row.NoteId).ToList();
@@ -156,7 +174,9 @@ public class TopicRepository : ITopicRepository
                     group.Key.TotalUsageCount,
                     noteGroups.Count,
                     snippet,
-                    group.Key.Description);
+                    group.Key.Description,
+                    group.Key.KindId,
+                    group.Key.KindSource);
             })
             .OrderByDescending(topic => topic.NoteMatchCount)
             .ThenBy(topic => topic.Name)
@@ -323,7 +343,7 @@ public class TopicRepository : ITopicRepository
         var nodes = await _db
             .Topics.OrderByDescending(c => c.NoteTopics.Count())
             .ThenBy(c => c.Topic)
-            .Select(c => new TopicGraphNodeDto(c.Id, c.Topic, c.NoteTopics.Count()))
+            .Select(c => new TopicGraphNodeDto(c.Id, c.Topic, c.NoteTopics.Count(), c.KindId))
             .ToListAsync(cancellationToken);
 
         // All note-topic pairs (note → topic id) in one query.
@@ -501,6 +521,11 @@ public class TopicRepository : ITopicRepository
         RewriteReferences(source, content => TopicReferences.Rename(content, source.Topic, target.Topic));
         MoveLinks(source, target);
         target.Description = MergeDescriptions(target.Description, source.Description);
+        if (target.KindId is null && source.KindId is not null)
+        {
+            target.KindId = source.KindId;
+            target.KindSource = source.KindSource;
+        }
         _db.Topics.Remove(source);
     }
 
@@ -800,5 +825,317 @@ public class TopicRepository : ITopicRepository
             .ExecuteDeleteAsync(ct);
         await transaction.CommitAsync(ct);
         return deleted;
+    }
+
+    // --- Topic kinds (issue #1767) ---
+
+    public async Task<List<TopicKindDto>> GetAllKindsAsync(CancellationToken cancellationToken = default)
+    {
+        return await _db.TopicKinds
+            .AsNoTracking()
+            .OrderBy(k => k.SortOrder)
+            .ThenBy(k => k.Name)
+            .ThenBy(k => k.Id)
+            .Select(k => new TopicKindDto(
+                k.Id,
+                k.Name,
+                k.ColorKey,
+                k.SortOrder,
+                k.CreatedAt,
+                k.Topics.Count()))
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<TopicKindMutationResult> CreateKindAsync(
+        string name,
+        string colorKey,
+        CancellationToken cancellationToken = default)
+    {
+        var trimmedName = name?.Trim() ?? string.Empty;
+        if (trimmedName.Length == 0)
+        {
+            return new TopicKindMutationResult(
+                TopicKindMutationStatus.InvalidInput,
+                ErrorMessage: "Topic kind name cannot be empty.");
+        }
+
+        if (trimmedName.Length > TopicKindModel.MaxNameLength)
+        {
+            return new TopicKindMutationResult(
+                TopicKindMutationStatus.InvalidInput,
+                ErrorMessage: $"Topic kind name is at most {TopicKindModel.MaxNameLength} characters.");
+        }
+
+        var trimmedColor = colorKey?.Trim() ?? string.Empty;
+        if (!TopicKindModel.IsValidColorKey(trimmedColor))
+        {
+            return new TopicKindMutationResult(
+                TopicKindMutationStatus.InvalidInput,
+                ErrorMessage: "ColorKey must be one of kind-1 through kind-12.");
+        }
+
+        var existing = await _db.TopicKinds
+            .AsNoTracking()
+            .Select(k => new { k.NormalizedName, k.ColorKey, k.SortOrder })
+            .ToListAsync(cancellationToken);
+
+        if (existing.Count >= TopicKindModel.MaxKinds)
+        {
+            return new TopicKindMutationResult(
+                TopicKindMutationStatus.LimitReached,
+                ErrorMessage: $"At most {TopicKindModel.MaxKinds} topic kinds are allowed.");
+        }
+
+        var normalizedName = TopicKindModel.NormalizeName(trimmedName);
+        if (existing.Any(k => string.Equals(k.NormalizedName, normalizedName, StringComparison.Ordinal)))
+        {
+            return new TopicKindMutationResult(
+                TopicKindMutationStatus.Conflict,
+                ErrorMessage: "A topic kind with this name already exists.");
+        }
+
+        if (existing.Any(k => string.Equals(k.ColorKey, trimmedColor, StringComparison.Ordinal)))
+        {
+            return new TopicKindMutationResult(
+                TopicKindMutationStatus.Conflict,
+                ErrorMessage: "This color is already used by another topic kind.");
+        }
+
+        var kind = new TopicKindModel
+        {
+            Id = Guid.NewGuid(),
+            Name = trimmedName,
+            ColorKey = trimmedColor,
+            SortOrder = existing.Count == 0 ? 1 : existing.Max(k => k.SortOrder) + 1,
+            CreatedAt = DateTime.UtcNow,
+        };
+
+        _db.TopicKinds.Add(kind);
+        await _db.SaveChangesAsync(cancellationToken);
+
+        return new TopicKindMutationResult(
+            TopicKindMutationStatus.Success,
+            new TopicKindDto(kind.Id, kind.Name, kind.ColorKey, kind.SortOrder, kind.CreatedAt, 0));
+    }
+
+    public async Task<TopicKindMutationResult> UpdateKindAsync(
+        Guid id,
+        string? name,
+        string? colorKey,
+        int? sortOrder,
+        bool swapColor,
+        CancellationToken cancellationToken = default)
+    {
+        var kind = await _db.TopicKinds.FirstOrDefaultAsync(k => k.Id == id, cancellationToken);
+        if (kind is null)
+        {
+            return new TopicKindMutationResult(TopicKindMutationStatus.NotFound);
+        }
+
+        string? trimmedName = null;
+        if (name is not null)
+        {
+            trimmedName = name.Trim();
+            if (trimmedName.Length == 0)
+            {
+                return new TopicKindMutationResult(
+                    TopicKindMutationStatus.InvalidInput,
+                    ErrorMessage: "Topic kind name cannot be empty.");
+            }
+
+            if (trimmedName.Length > TopicKindModel.MaxNameLength)
+            {
+                return new TopicKindMutationResult(
+                    TopicKindMutationStatus.InvalidInput,
+                    ErrorMessage: $"Topic kind name is at most {TopicKindModel.MaxNameLength} characters.");
+            }
+
+            var normalizedName = TopicKindModel.NormalizeName(trimmedName);
+            var nameConflict = await _db.TopicKinds
+                .AnyAsync(k => k.Id != id && k.NormalizedName == normalizedName, cancellationToken);
+            if (nameConflict)
+            {
+                return new TopicKindMutationResult(
+                    TopicKindMutationStatus.Conflict,
+                    ErrorMessage: "A topic kind with this name already exists.");
+            }
+        }
+
+        string? trimmedColor = null;
+        TopicKindModel? otherWithColor = null;
+        if (colorKey is not null)
+        {
+            trimmedColor = colorKey.Trim();
+            if (!TopicKindModel.IsValidColorKey(trimmedColor))
+            {
+                return new TopicKindMutationResult(
+                    TopicKindMutationStatus.InvalidInput,
+                    ErrorMessage: "ColorKey must be one of kind-1 through kind-12.");
+            }
+
+            if (!string.Equals(trimmedColor, kind.ColorKey, StringComparison.Ordinal))
+            {
+                otherWithColor = await _db.TopicKinds
+                    .FirstOrDefaultAsync(k => k.Id != id && k.ColorKey == trimmedColor, cancellationToken);
+                if (otherWithColor is not null && !swapColor)
+                {
+                    return new TopicKindMutationResult(
+                        TopicKindMutationStatus.Conflict,
+                        ErrorMessage: "This color is already used by another topic kind.");
+                }
+            }
+        }
+
+        if (otherWithColor is not null)
+        {
+            var oldColor = kind.ColorKey;
+            var ownsTransaction = _db.Database.CurrentTransaction is null;
+            await using var transaction = ownsTransaction
+                ? await _db.Database.BeginTransactionAsync(cancellationToken)
+                : null;
+            try
+            {
+                // SQLite checks the unique ColorKey index per-statement, so park the
+                // swapped row under a unique <=16-char sentinel first.
+                otherWithColor.ColorKey = $"~{Guid.NewGuid():N}"[..15];
+                await _db.SaveChangesAsync(cancellationToken);
+
+                if (trimmedName is not null)
+                    kind.Name = trimmedName;
+                if (sortOrder is not null)
+                    kind.SortOrder = sortOrder.Value;
+                kind.ColorKey = trimmedColor!;
+                await _db.SaveChangesAsync(cancellationToken);
+
+                otherWithColor.ColorKey = oldColor;
+                await _db.SaveChangesAsync(cancellationToken);
+
+                if (transaction is not null)
+                    await transaction.CommitAsync(cancellationToken);
+            }
+            catch
+            {
+                if (transaction is not null)
+                    await transaction.RollbackAsync(CancellationToken.None);
+                throw;
+            }
+        }
+        else
+        {
+            if (trimmedName is not null)
+                kind.Name = trimmedName;
+            if (trimmedColor is not null)
+                kind.ColorKey = trimmedColor;
+            if (sortOrder is not null)
+                kind.SortOrder = sortOrder.Value;
+
+            await _db.SaveChangesAsync(cancellationToken);
+        }
+
+        var topicCount = await _db.Topics.CountAsync(t => t.KindId == kind.Id, cancellationToken);
+        return new TopicKindMutationResult(
+            TopicKindMutationStatus.Success,
+            new TopicKindDto(kind.Id, kind.Name, kind.ColorKey, kind.SortOrder, kind.CreatedAt, topicCount));
+    }
+
+    public async Task<bool> DeleteKindAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var kind = await _db.TopicKinds.FirstOrDefaultAsync(k => k.Id == id, cancellationToken);
+        if (kind is null)
+            return false;
+
+        var ownsTransaction = _db.Database.CurrentTransaction is null;
+        await using var transaction = ownsTransaction
+            ? await _db.Database.BeginTransactionAsync(cancellationToken)
+            : null;
+        try
+        {
+            // FK SetNull would clear KindId in the DB, but KindSource must also
+            // become null whenever a topic becomes untyped.
+            var affectedTopics = await _db.Topics
+                .Where(t => t.KindId == id)
+                .ToListAsync(cancellationToken);
+            foreach (var topic in affectedTopics)
+            {
+                topic.KindId = null;
+                topic.KindSource = null;
+            }
+
+            _db.TopicKinds.Remove(kind);
+            await _db.SaveChangesAsync(cancellationToken);
+
+            if (transaction is not null)
+                await transaction.CommitAsync(cancellationToken);
+            return true;
+        }
+        catch
+        {
+            if (transaction is not null)
+                await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
+    }
+
+    public async Task<SetTopicsKindOutcome> SetTopicsKindAsync(
+        IReadOnlyList<Guid> topicIds,
+        Guid? kindId,
+        string source = TopicKindSources.Reader,
+        CancellationToken cancellationToken = default)
+    {
+        if (topicIds is null || topicIds.Count == 0)
+        {
+            return new SetTopicsKindOutcome(
+                SetTopicsKindStatus.InvalidInput,
+                ErrorMessage: "At least one topic id is required.");
+        }
+
+        if (topicIds.Count > 500)
+        {
+            return new SetTopicsKindOutcome(
+                SetTopicsKindStatus.InvalidInput,
+                ErrorMessage: "At most 500 topics can be updated in a single request.");
+        }
+
+        if (kindId is not null && !TopicKindSources.IsValid(source))
+        {
+            return new SetTopicsKindOutcome(
+                SetTopicsKindStatus.InvalidInput,
+                ErrorMessage: "Invalid topic kind source.");
+        }
+
+        if (kindId is { } targetKindId)
+        {
+            var kindExists = await _db.TopicKinds.AnyAsync(k => k.Id == targetKindId, cancellationToken);
+            if (!kindExists)
+            {
+                return new SetTopicsKindOutcome(
+                    SetTopicsKindStatus.KindNotFound,
+                    ErrorMessage: "Topic kind not found.");
+            }
+        }
+
+        var distinctIds = topicIds.Distinct().ToList();
+        var topics = await _db.Topics
+            .Where(t => distinctIds.Contains(t.Id))
+            .ToListAsync(cancellationToken);
+        if (topics.Count != distinctIds.Count)
+        {
+            return new SetTopicsKindOutcome(
+                SetTopicsKindStatus.TopicNotFound,
+                ErrorMessage: "One or more topics were not found.");
+        }
+
+        var resolvedSource = kindId.HasValue ? source : null;
+        foreach (var topic in topics)
+        {
+            topic.KindId = kindId;
+            topic.KindSource = resolvedSource;
+        }
+
+        await _db.SaveChangesAsync(cancellationToken);
+
+        return new SetTopicsKindOutcome(
+            SetTopicsKindStatus.Success,
+            new SetTopicsKindResultDto(distinctIds, kindId, resolvedSource));
     }
 }

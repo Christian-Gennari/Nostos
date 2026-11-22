@@ -3,6 +3,7 @@ using System.Runtime.ExceptionServices;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Nostos.Backend.Data;
+using Nostos.Backend.Data.Models;
 using Nostos.Backend.Services.Library;
 using Nostos.Backend.Services.Portability.Verification;
 using Nostos.Product.BookText;
@@ -100,7 +101,7 @@ internal sealed class PortableArchiveImportReader(
             try
             {
                 await EnsureDestinationIsEmptyAsync(cancellationToken);
-                await ApplyRelationalDataAsync(data, prepared.Media, cancellationToken);
+                var topicKindImport = await ApplyRelationalDataAsync(data, prepared.Media, cancellationToken);
                 await _db.SaveChangesAsync(cancellationToken);
 
                 foreach (var media in prepared.Media)
@@ -130,7 +131,7 @@ internal sealed class PortableArchiveImportReader(
                     _db,
                     _assets,
                     _tracks,
-                    data,
+                    topicKindImport.EffectiveData,
                     manifest.Counts,
                     manifest.Media,
                     cancellationToken);
@@ -195,7 +196,10 @@ internal sealed class PortableArchiveImportReader(
                     manifest.Counts,
                     prepared.MediaFiles,
                     prepared.MediaBytes,
-                    IntegrityVerified: true);
+                    IntegrityVerified: true,
+                    SkippedTopicKinds: topicKindImport.SkippedTopicKinds.Count > 0
+                        ? topicKindImport.SkippedTopicKinds
+                        : null);
             }
             catch (Exception exception)
             {
@@ -339,6 +343,7 @@ internal sealed class PortableArchiveImportReader(
             || await _db.BookCollections.AnyAsync(ct)
             || await _db.Notes.AnyAsync(ct)
             || await _db.Topics.AnyAsync(ct)
+            || !await TopicKindModel.AreDefaultsUntouchedAsync(_db, ct)
             || await _db.NoteTopics.AnyAsync(ct)
             || await _db.Writings.AnyAsync(ct)
             || await _db.WritingNotes.AnyAsync(ct)
@@ -357,7 +362,7 @@ internal sealed class PortableArchiveImportReader(
         }
     }
 
-    private Task ApplyRelationalDataAsync(
+    private Task<PortableLibraryDatabaseMaterializer.TopicKindImportResult> ApplyRelationalDataAsync(
         PortableLibraryData data,
         IReadOnlyList<PortablePreparedMedia> stagedMedia,
         CancellationToken ct) =>

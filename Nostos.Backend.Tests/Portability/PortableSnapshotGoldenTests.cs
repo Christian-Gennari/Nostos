@@ -100,6 +100,7 @@ public sealed class PortableSnapshotGoldenTests
              noteImportBookLinks={recovered.Counts.NoteImportBookLinks}
              mediaEntries={recovered.Counts.MediaEntries}
              readingListEntries={recovered.Counts.ReadingListEntries}
+             topicKinds={recovered.Counts.TopicKinds}
 
              """);
     }
@@ -450,6 +451,8 @@ internal static class PortableSnapshotGoldenLibrary
             Id = TopicOneId,
             Topic = "Portability",
             Description = "Moving a library between hosts without losing anything.",
+            KindId = TopicKindModel.FieldId,
+            KindSource = TopicKindSources.Reader,
         };
         var topicTwo = new TopicModel
         {

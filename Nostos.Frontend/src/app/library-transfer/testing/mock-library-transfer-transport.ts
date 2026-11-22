@@ -177,6 +177,7 @@ const DEFAULT_EXISTING_COUNTS: MigrationExistingCountsDto = {
   readingListEntries: 0,
   assistantSettings: 0,
   totalRows: 0,
+  topicKinds: 0,
 };
 
 const ERROR_MESSAGES: Partial<Record<MigrationErrorCode, string>> = {
@@ -1238,7 +1239,8 @@ function existingCountsTotal(counts: MigrationExistingCountsDto): number {
     counts.acquisitions +
     counts.noteImportBookLinks +
     counts.readingListEntries +
-    counts.assistantSettings
+    counts.assistantSettings +
+    counts.topicKinds
   );
 }
 
