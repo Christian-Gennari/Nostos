@@ -20,7 +20,7 @@ const NOTE: NoteSearchHit = {
   imports: [BrainNoteRowComponent],
   template: `
     <app-brain-note-row
-      [note]="note"
+      [note]="note()"
       [selected]="selected()"
       [selectable]="selectable()"
       [checked]="checked()"
@@ -30,7 +30,7 @@ const NOTE: NoteSearchHit = {
   `,
 })
 class RowHarnessComponent {
-  readonly note = NOTE;
+  readonly note = signal(NOTE);
   readonly selected = signal(false);
   readonly selectable = signal(false);
   readonly checked = signal(false);
@@ -114,5 +114,17 @@ describe('BrainNoteRowComponent', () => {
     fixture.detectChanges();
     expect(row.getAttribute('aria-selected')).toBe('false');
     expect(box()?.checked).toBe(true);
+  });
+
+  it('shows an inline topic link by its word instead of dropping it', () => {
+    host.note.update((note) => ({
+      ...note,
+      content: 'Tolkien is not in this book, but [[Friendship]] is.',
+    }));
+    fixture.detectChanges();
+
+    expect(row.querySelector('.row-excerpt')?.textContent).toBe(
+      'Tolkien is not in this book, but Friendship is.',
+    );
   });
 });

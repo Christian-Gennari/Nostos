@@ -1,5 +1,5 @@
 import type { NoteContextDto, TopicWritingUsageDto } from '../core/services/topics.service';
-import { relatedNotesFrom, writingsCitingNote } from './brain-note-detail.helpers';
+import { plainNoteText, relatedNotesFrom, writingsCitingNote } from './brain-note-detail.helpers';
 
 const note = (id: string, content: string, createdAt = '2026-10-01T00:00:00Z'): NoteContextDto => ({
   noteId: id,
@@ -7,6 +7,26 @@ const note = (id: string, content: string, createdAt = '2026-10-01T00:00:00Z'): 
   bookId: 'book-1',
   bookTitle: 'Book',
   createdAt,
+});
+
+describe('plainNoteText', () => {
+  it('keeps the words of an inline topic link', () => {
+    expect(plainNoteText('Tolkien is not in this book, but [[Friendship]] is.')).toBe(
+      'Tolkien is not in this book, but Friendship is.',
+    );
+  });
+
+  it('drops the topic-only lines a card already shows as chips', () => {
+    expect(plainNoteText('One thought about [[Virtue]].\n\n[[Virtue]]\n\n[[Choice]]')).toBe(
+      'One thought about Virtue.',
+    );
+  });
+
+  it('leaves a syntax the app does not support exactly as typed', () => {
+    expect(plainNoteText('A [[Name|alias]] is not a link here.')).toBe(
+      'A [[Name|alias]] is not a link here.',
+    );
+  });
 });
 
 describe('brain note detail helpers', () => {
