@@ -2,11 +2,14 @@
 /**
  * Screenshots for the topic-kind review fixes (follow-up to #1786 and #1789).
  *
- * The four states a person can see, captured at 1:1 from a production build:
+ * The states a person can see, captured at 1:1 from a production build:
  *   - the phone map, zoomed in, after "Center on selection";
  *   - the map with the selected topic's kind hidden;
- *   - "Select all" over more than the 500-topic bulk limit;
- *   - `/api/topic-kinds` failing, on the map, the kinds page and the picker.
+ *   - "Select all" over more than the 500-topic bulk limit, with the toast;
+ *   - `/api/topic-kinds` failing, on the map, the kinds page (with the bulk
+ *     "Set kind" panel open) and the picker;
+ *   - a filtered map whose count must not claim a cap after an in-place kind
+ *     change (round 2 of the review).
  *
  * It seeds a throwaway backend (e2e/support/launch-fixture.mjs) with two kinds
  * and 501 untyped topics, then serves the build with scripts/preview.mjs once
@@ -32,7 +35,11 @@ const api = args.api;
 const out = args.out;
 const side = args.side ?? 'after';
 const ONLY = new Set(
-  (typeof args.only === 'string' ? args.only : 'phone,hidden-kind,select-all,kinds-failed,map-failed,picker-failed')
+  (
+    typeof args.only === 'string'
+      ? args.only
+      : 'phone,hidden-kind,select-all,kinds-failed,map-failed,picker-failed,map-capped'
+  )
     .split(',')
     .filter(Boolean),
 );
@@ -199,7 +206,10 @@ async function measureCentre(page) {
 }
 
 async function shot(page, file, options = {}) {
-  await page.screenshot({ path: path.join(out, `${side}-${file}.png`), ...options });
+  // The folder already says before/after; the name says it too, so a file that
+  // is copied out of the tree still cannot be mistaken for the other side.
+  const name = `${side}-${file.replace(/\.png$/, '')}.png`;
+  await page.screenshot({ path: path.join(out, name), ...options });
 }
 
 async function capture(browser, base, cloud, width, theme, seed) {
@@ -259,11 +269,82 @@ async function capture(browser, base, cloud, width, theme, seed) {
       .locator('.selection-bar, nostos-selection-bar')
       .first()
       .textContent();
+    // The toast must clear the bar: compare the two boxes in the same frame.
+    const overlap = await page.evaluate(() => {
+      const bar = document.querySelector('.selection-bar');
+      const toast = document.querySelector('.toast');
+      if (!bar || !toast) return null;
+      const b = bar.getBoundingClientRect();
+      const t = toast.getBoundingClientRect();
+      return {
+        barTop: Math.round(b.top),
+        toastBottom: Math.round(t.bottom),
+        overlaps: t.bottom > b.top && t.top < b.bottom,
+      };
+    });
     console.log(
       `${side} ${slug} select-all label="${selectAllLabel}" ` +
-        `bar="${String(selectionCount).replace(/\s+/g, ' ').trim()}"`,
+        `bar="${String(selectionCount).replace(/\s+/g, ' ').trim()}" ` +
+        `toast/bar=${JSON.stringify(overlap)}`,
     );
     await shot(page, `${slug}-kinds-select-all.png`, { fullPage: true });
+  }
+
+  // 3b. A filtered map that is not capped must stay uncapped when a kind is
+  // re-saved in place. The old path counted all 607 topics and the map claimed
+  // "Showing 3 of 3 topics." over a filter that had hidden 604.
+  if (ONLY.has('map-capped')) {
+    await page.goto(
+      `${base}/brain/map?focus=${seed.personTopicId}&kinds=${seed.personKindId},none`,
+      { waitUntil: 'networkidle' },
+    );
+    await page.waitForTimeout(1500);
+    const cappedBefore = await page.evaluate(
+      () => document.querySelector('.map-legend-metrics .map-limit-note')?.textContent?.trim() ?? null,
+    );
+    // The preview refuses every write, so the write and the list it would leave
+    // behind are answered here: the page's own in-place update still runs.
+    const listed = await page.evaluate(async () => {
+      const res = await fetch('/api/topics');
+      return res.ok ? res.json() : null;
+    });
+    const patched = listed?.map((topic) =>
+      topic.id === seed.personTopicId ? { ...topic, kindId: null, kindSource: null } : topic,
+    );
+    await page.route('**/api/topics/kind', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          updatedTopicIds: [seed.personTopicId],
+          kindId: null,
+          kindSource: null,
+        }),
+      }),
+    );
+    await page.route(
+      (url) => url.pathname === '/api/topics',
+      (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(patched ?? []),
+        }),
+    );
+    await page.locator('.map-card-kind-pill.is-picker').first().click();
+    await page.waitForTimeout(400);
+    await page.locator('.kind-choice', { hasText: 'No kind' }).first().click();
+    await page.waitForTimeout(900);
+    const cappedAfter = await page.evaluate(() => ({
+      note: document.querySelector('.map-legend-metrics .map-limit-note')?.textContent?.trim() ?? null,
+      count: document.querySelector('.map-controls-count')?.textContent?.trim() ?? null,
+    }));
+    console.log(
+      `${side} ${slug} map-capped: before=${JSON.stringify(cappedBefore)} after=${JSON.stringify(cappedAfter)}`,
+    );
+    await page
+      .locator('.brain-map')
+      .screenshot({ path: path.join(out, `${side}-${slug}-map-capped-filter.png`) });
   }
 
   // 4. `/api/topic-kinds` failing: the map, the kinds page and the picker.
@@ -299,9 +380,22 @@ async function capture(browser, base, cloud, width, theme, seed) {
         .slice(0, 3)
         .map((pill) => pill.textContent?.trim()),
     }));
+    // The bulk "Set kind" panel opened over the same failure: it must explain
+    // the list is missing, not show an empty list of choices.
+    await page.locator('.row-check').first().click();
+    await page.waitForTimeout(300);
+    await page.locator('button[aria-label="Set kind…"]').click();
+    await page.waitForTimeout(500);
+    const bulkFailed = await page.evaluate(() => ({
+      panel: !!document.querySelector('.bulk-kind-failed'),
+      text: document.querySelector('.bulk-kind-failed')?.textContent?.replace(/\s+/g, ' ').trim() ?? null,
+      choices: document.querySelectorAll('.bulk-kind-panel .kind-choice').length,
+      retry: document.querySelector('.bulk-kind-failed button')?.textContent?.trim() ?? null,
+    }));
     console.log(
       `${side} ${slug} failed-kinds page: error=${kindsError.error} ` +
-        `newKindDisabled=${kindsError.newKindDisabled} rows=${JSON.stringify(kindsError.rowPills)}`,
+        `newKindDisabled=${kindsError.newKindDisabled} rows=${JSON.stringify(kindsError.rowPills)} ` +
+        `bulk=${JSON.stringify(bulkFailed)}`,
     );
     await shot(page, `${slug}-kinds-failed.png`, { fullPage: true });
   }
@@ -314,8 +408,15 @@ async function capture(browser, base, cloud, width, theme, seed) {
     const pickerError = await page.evaluate(() => ({
       error: !!document.querySelector('.kind-picker-failed'),
       newKind: !!document.querySelector('.kind-picker-action'),
+      trigger: document.querySelector('.kind-trigger')?.textContent?.replace(/\s+/g, ' ').trim() ?? null,
+      failureMessages: (document.body.textContent?.match(/Could not load your kinds\./g) ?? []).length,
+      createNote: !!document.body.textContent?.includes('Your kinds have not loaded yet'),
     }));
-    console.log(`${side} ${slug} failed-kinds picker: error=${pickerError.error} newKind=${pickerError.newKind}`);
+    console.log(
+      `${side} ${slug} failed-kinds picker: error=${pickerError.error} newKind=${pickerError.newKind} ` +
+        `trigger=${JSON.stringify(pickerError.trigger)} messages=${pickerError.failureMessages} ` +
+        `createNote=${pickerError.createNote}`,
+    );
     await shot(page, `${slug}-picker-failed.png`);
   }
 
