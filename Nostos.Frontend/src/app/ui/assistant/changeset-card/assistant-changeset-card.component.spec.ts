@@ -239,7 +239,7 @@ describe('AssistantChangesetCardComponent topic kinds', () => {
   });
 
   it('lists only the applied topics, as plain rows, once the card is applied', () => {
-    const changeset = withSteps(reviewWithKinds(), { 1: false });
+    const changeset = partialClaimReview();
     const applied: AssistantChangesetDto = {
       ...changeset,
       status: 'applied',
@@ -329,4 +329,247 @@ describe('AssistantChangesetCardComponent topic kinds', () => {
 
     expect(headline).toContain('give 2 topics a kind, change the kind of 2 topics and remove the kind from 1 topic');
   });
+
+  it('says nothing is left to apply, and disables Apply, when the server kept every step', () => {
+    // Every staged topic was claimed before the apply: the server keeps them,
+    // says why, and the diff is empty (issue #1770 review, round 3).
+    const fixture = setup(allKeptReview());
+    const element = fixture.nativeElement as HTMLElement;
+
+    const headline = element.querySelector('[data-testid="assistant-changeset-headline"]')!.textContent;
+    expect(headline).toBe('Nothing left to apply: these changes are already in the library.');
+    // Never "This will ." — the empty sentence the reader used to see.
+    expect(headline).not.toMatch(/will\s*\./);
+
+    const apply = element.querySelector('[data-testid="assistant-changeset-apply"]') as HTMLButtonElement;
+    expect(apply.disabled).toBe(true);
+  });
+
+  it('shows every kept topic unticked, with the reason, instead of ticking it', () => {
+    const fixture = setup(allKeptReview());
+    const element = fixture.nativeElement as HTMLElement;
+    (element.querySelector('[data-testid="assistant-changeset-details-toggle"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    const details = element.querySelector('[data-testid="assistant-changeset-details"]') as HTMLElement;
+    const ticks = [...details.querySelectorAll('[data-testid="assistant-changeset-topic-toggle"]')]
+      .map((input) => (input as HTMLInputElement).checked);
+    expect(ticks).toEqual([false, false, false]);
+
+    const reasons = [...details.querySelectorAll('[data-testid="assistant-changeset-topic-skipped"]')]
+      .map((note) => note.textContent?.trim());
+    expect(reasons).toEqual([
+      'kept: you set this kind yourself',
+      'kept: you set this kind yourself',
+      'kept: you set this kind yourself',
+    ]);
+  });
+
+  it('counts only the topics that are still left after a partial claim', () => {
+    const fixture = setup(partialClaimReview());
+    const element = fixture.nativeElement as HTMLElement;
+
+    const headline = element.querySelector('[data-testid="assistant-changeset-headline"]')!.textContent;
+    expect(headline).toContain('2 topics a kind');
+    expect(headline).not.toContain('3 topics a kind');
+
+    // The group still shows both topics: the kept one unticked, with its reason.
+    const group = element.querySelector('.changeset__kind-group') as HTMLElement;
+    expect(group.textContent).toContain('(1/2)');
+
+    const apply = element.querySelector('[data-testid="assistant-changeset-apply"]') as HTMLButtonElement;
+    expect(apply.disabled).toBe(false);
+
+    (element.querySelector('[data-testid="assistant-changeset-details-toggle"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    const details = element.querySelector('[data-testid="assistant-changeset-details"]') as HTMLElement;
+    const freire = [...details.querySelectorAll('li.changeset__topic--off')]
+      .find((row) => row.textContent?.includes('Freire')) as HTMLElement;
+    expect((freire.querySelector('input') as HTMLInputElement).checked).toBe(false);
+    expect(freire.querySelector('[data-testid="assistant-changeset-topic-skipped"]')?.textContent)
+      .toContain('kept: you set this kind yourself');
+  });
+
+  it('lists only the applied topics once the card is applied, even if a step is still ticked', () => {
+    // The diff is the truth after an apply. A step the server kept (the reader
+    // set that kind themselves) must not be listed as applied.
+    const review = partialClaimReview(true);
+    const fixture = setup({ ...review, status: 'applied', canUndo: true });
+    const element = fixture.nativeElement as HTMLElement;
+    (element.querySelector('[data-testid="assistant-changeset-details-toggle"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    const details = element.querySelector('[data-testid="assistant-changeset-details"]') as HTMLElement;
+    const topics = [...details.querySelectorAll('.changeset__topic-name')]
+      .map((topic) => topic.textContent?.trim());
+    expect(topics).toContain('Montessori');
+    expect(topics).toContain('Paulo Freire');
+    expect(topics).not.toContain('Freire');
+    expect(details.querySelectorAll('input')).toHaveLength(0);
+  });
+
+  it('still says a sentence when the counts are all zero', () => {
+    // A server whose counts and lists disagree must not produce "This will .".
+    const changeset = reviewWithKinds();
+    changeset.diff = {
+      collections: [],
+      memberships: [],
+      bookEdits: [],
+      counts: {
+        collectionsCreated: 0,
+        collectionsDeleted: 0,
+        collectionsUpdated: 0,
+        booksTouched: 0,
+        membershipsAdded: 0,
+        membershipsRemoved: 0,
+        booksLosingMembership: 0,
+        bookEdits: 0,
+        topicKindsCreated: 0,
+        topicKindChanges: 0,
+        topicKindsGiven: 0,
+        topicKindsChanged: 0,
+        topicKindsCleared: 0,
+      },
+      topicKinds: [],
+      topicKindAssignments: [
+        {
+          topicId: 't1',
+          topicName: 'Freire',
+          kindId: 'kind-school',
+          kindName: 'School of thought',
+          previousKindName: null,
+          source: 'assistant',
+          stepIndex: 1,
+          kindColorKey: 'kind-7',
+        },
+      ],
+    };
+    const fixture = setup(changeset);
+    const headline = (fixture.nativeElement as HTMLElement)
+      .querySelector('[data-testid="assistant-changeset-headline"]')!.textContent;
+
+    expect(headline).toBe('This will change nothing.');
+  });
+
+  it('shows the reason on a kept step that has no kind group of its own', () => {
+    const changeset = reviewWithKinds();
+    const kept: AssistantChangesetDto = {
+      ...changeset,
+      steps: [
+        {
+          index: 0,
+          summary: 'Create the topic kind “School of thought”',
+          included: false,
+          dependsOn: [],
+          skippedReason: 'kept: no topic still needs this kind',
+          topicKind: {
+            kindKey: 'kind-school',
+            kindName: 'School of thought',
+            colorKey: 'kind-7',
+            createsKind: true,
+            isNewKind: true,
+            topicId: null,
+            topicName: null,
+            previousKindName: null,
+          },
+        },
+      ],
+      diff: {
+        collections: [],
+        memberships: [],
+        bookEdits: [],
+        counts: {
+          collectionsCreated: 0,
+          collectionsDeleted: 0,
+          collectionsUpdated: 0,
+          booksTouched: 0,
+          membershipsAdded: 0,
+          membershipsRemoved: 0,
+          booksLosingMembership: 0,
+          bookEdits: 0,
+          topicKindsCreated: 0,
+          topicKindChanges: 0,
+          topicKindsGiven: 0,
+          topicKindsChanged: 0,
+          topicKindsCleared: 0,
+        },
+        topicKinds: [],
+        topicKindAssignments: [],
+      },
+    };
+    const fixture = setup(kept);
+    const element = fixture.nativeElement as HTMLElement;
+
+    const notes = [...element.querySelectorAll('[data-testid="assistant-changeset-step-skipped"]')]
+      .map((note) => note.textContent?.trim());
+    expect(notes).toEqual(['kept: no topic still needs this kind']);
+    const apply = element.querySelector('[data-testid="assistant-changeset-apply"]') as HTMLButtonElement;
+    expect(apply.disabled).toBe(true);
+  });
 });
+
+const ZERO_COUNTS = {
+  collectionsCreated: 0,
+  collectionsDeleted: 0,
+  collectionsUpdated: 0,
+  booksTouched: 0,
+  membershipsAdded: 0,
+  membershipsRemoved: 0,
+  booksLosingMembership: 0,
+  bookEdits: 0,
+  topicKindsCreated: 0,
+  topicKindChanges: 0,
+  topicKindsGiven: 0,
+  topicKindsChanged: 0,
+  topicKindsCleared: 0,
+};
+
+/** The review with every step kept by the server: nothing left to apply. */
+function allKeptReview(): AssistantChangesetDto {
+  const base = reviewWithKinds();
+  return {
+    ...base,
+    steps: base.steps.map((step) => ({
+      ...step,
+      included: false,
+      skippedReason: 'kept: you set this kind yourself',
+    })),
+    diff: {
+      collections: [],
+      memberships: [],
+      bookEdits: [],
+      counts: ZERO_COUNTS,
+      topicKinds: [],
+      topicKindAssignments: [],
+    },
+  };
+}
+
+/**
+ * The review after the reader claimed Freire's kind: the server kept that step
+ * and the diff no longer contains it. `stepsStillTicked` keeps the step ticked,
+ * as a server that has not learned to mark it would leave it.
+ */
+function partialClaimReview(stepsStillTicked = false): AssistantChangesetDto {
+  const base = reviewWithKinds();
+  return {
+    ...base,
+    steps: base.steps.map((step) =>
+      step.index === 1 && !stepsStillTicked
+        ? { ...step, included: false, skippedReason: 'kept: you set this kind yourself' }
+        : step,
+    ),
+    diff: {
+      ...base.diff,
+      counts: {
+        ...base.diff.counts,
+        topicKindChanges: 2,
+        topicKindsGiven: 2,
+      },
+      topicKinds: base.diff.topicKinds!.map((kind) => ({ ...kind, topicCount: 1 })),
+      topicKindAssignments: base.diff.topicKindAssignments!.filter(
+        (assignment) => assignment.topicId !== 't1',
+      ),
+    },
+  };
+}

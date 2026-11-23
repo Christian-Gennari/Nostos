@@ -4,6 +4,7 @@ import { ButtonComponent } from '../../button/button.component';
 import type {
   AssistantChangesetDto,
   LibraryChangesetCountsDto,
+  LibraryChangesetDiffDto,
   LibraryCollectionChangeDto,
 } from '../assistant.service';
 import { CheckboxDirective } from '../../check/check.directive';
@@ -23,6 +24,8 @@ interface KindGroupTopic {
   topicName: string;
   previousKindName: string | null;
   included: boolean;
+  /** Why the server kept this step out of the review itself, when it did. */
+  skippedReason: string | null;
 }
 
 /** A kind's topics as one review group with one checkbox. */
@@ -102,15 +105,47 @@ export class AssistantChangesetCardComponent {
     // longer stand, so the card says what became of them instead.
     if (this.status() === 'undone') return 'These changes were undone.';
     if (this.status() === 'discarded') return 'These changes were not applied. Nothing changed.';
-    const nothingLeft = this.inReview()
-      ? this.includedCount() === 0
-      : diff.collections.length + diff.memberships.length + diff.bookEdits.length
-        + (diff.topicKinds?.length ?? 0) + (diff.topicKindAssignments?.length ?? 0) === 0;
-    if (nothingLeft) {
-      return this.inReview() ? 'Every step is left out.' : 'Nothing changed.';
+
+    if (this.inReview()) {
+      // Nothing ticked and nothing in the diff are two different states: the
+      // reader left everything out, or the library no longer needs any of it
+      // (they set those kinds themselves before the apply).
+      if (this.includedCount() === 0) {
+        return this.skippedCount() > 0
+          ? 'Nothing left to apply: these changes are already in the library.'
+          : 'Every step is left out.';
+      }
+      if (this.diffEmpty()) return 'Nothing left to apply: these changes would do nothing.';
+      return describe(diff.counts, diff.memberships.length, true);
     }
-    return describe(changeset.diff.counts, diff.memberships.length, this.inReview());
+
+    if (this.diffEmpty()) return 'Nothing changed.';
+    return describe(diff.counts, diff.memberships.length, false);
   });
+
+  /**
+   * True when the diff the server last computed changes nothing at all: every
+   * collection, book, edit and topic-kind list is empty and every count is
+   * zero. A review with an empty diff cannot be applied — an apply would run no
+   * change, and the server refuses one that would leave the library as it is.
+   */
+  readonly diffEmpty = computed(() => {
+    const diff = this.changeset().diff;
+    const counts = diff.counts;
+    const counted = counts.collectionsCreated + counts.collectionsDeleted + counts.collectionsUpdated
+      + counts.membershipsAdded + counts.membershipsRemoved + counts.bookEdits
+      + (counts.topicKindsCreated ?? 0) + (counts.topicKindChanges ?? 0);
+    return counted === 0
+      && diff.collections.length === 0
+      && diff.memberships.length === 0
+      && diff.bookEdits.length === 0
+      && (diff.topicKinds?.length ?? 0) === 0
+      && (diff.topicKindAssignments?.length ?? 0) === 0;
+  });
+
+  /** How many steps the server itself kept out because they would change nothing. */
+  readonly skippedCount = computed(() =>
+    this.changeset().steps.filter((step) => step.skippedReason).length);
 
   /**
    * The steps an apply would actually run. A kind's create step only counts
@@ -118,7 +153,8 @@ export class AssistantChangesetCardComponent {
    * included set drops it once every topic is left out.
    */
   readonly includedCount = computed(() => this.effectiveIncluded().length);
-  readonly canApply = computed(() => this.inReview() && this.includedCount() > 0 && !this.disabled());
+  readonly canApply = computed(() =>
+    this.inReview() && !this.diffEmpty() && this.includedCount() > 0 && !this.disabled());
 
   /**
    * Groups are built from every stored step, not from the diff a preview
@@ -162,6 +198,7 @@ export class AssistantChangesetCardComponent {
         topicName: info.topicName ?? step.summary,
         previousKindName: info.previousKindName,
         included: step.included,
+        skippedReason: step.skippedReason ?? null,
       });
       group.stepIndexes.push(step.index);
     }
@@ -211,16 +248,15 @@ export class AssistantChangesetCardComponent {
   /**
    * The kind groups "Show every change" lists: while in review every stored
    * topic keeps its place (ticked or not), so a wrong guess can still be
-   * unticked. Once the card is applied, undone or set aside, only the topics
-   * that were actually applied are shown, as plain rows — a checkbox there
-   * would offer a change the card can no longer make.
+   * unticked. Once the card is applied, undone or set aside, the rows come from
+   * the diff itself — the same place the collection, book and edit lines come
+   * from — so only what happened is listed. A topic the server kept out of the
+   * apply (the reader set its kind themselves) never made it into the diff and
+   * so is not listed as applied.
    */
   readonly detailKindGroups = computed<KindGroup[]>(() => {
-    const groups = this.kindGroups();
-    if (this.inReview()) return groups;
-    return groups
-      .map((group) => ({ ...group, topics: group.topics.filter((topic) => topic.included) }))
-      .filter((group) => group.topics.length > 0);
+    if (this.inReview()) return this.kindGroups();
+    return appliedKindGroups(this.changeset().diff);
   });
 
   toggleDetails(): void {
@@ -331,6 +367,9 @@ function describe(counts: LibraryChangesetCountsDto, booksRefiled: number, futur
   const sentence = parts.length > 1
     ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`
     : parts[0] ?? '';
+  // A diff whose counts are all zero still gets a sentence, never "This will .":
+  // the server and this card must not disagree about a change that does nothing.
+  if (!sentence) return `${future ? 'This will ' : 'I '}${verb('change', 'changed')} nothing.`;
   return `${future ? 'This will ' : 'I '}${sentence}.`;
 }
 
@@ -357,6 +396,55 @@ function kindChangeParts(
   if (changed) parts.push(`${verb('change', 'changed')} the kind of ${plural(changed, 'topic')}`);
   if (cleared) parts.push(`${verb('remove', 'removed')} the kind from ${plural(cleared, 'topic')}`);
   return parts;
+}
+
+/**
+ * The kind groups a card that is no longer in review lists: straight from the
+ * diff the server computed, the same source as its collection, book and edit
+ * lines. A step the server kept out is not in the diff, so it cannot be listed
+ * as applied.
+ */
+function appliedKindGroups(diff: LibraryChangesetDiffDto): KindGroup[] {
+  const createdIds = new Set(
+    (diff.topicKinds ?? [])
+      .filter((kind) => kind.kind === 'created')
+      .map((kind) => kind.id));
+  const groups = new Map<string, KindGroup>();
+
+  for (const assignment of diff.topicKindAssignments ?? []) {
+    const key = assignment.kindId ?? 'none';
+    let group = groups.get(key);
+    if (!group) {
+      group = {
+        key,
+        name: assignment.kindName ?? 'No kind',
+        color: assignment.kindColorKey ? kindCssVar(assignment.kindColorKey) : null,
+        isNew: assignment.kindId !== null && createdIds.has(assignment.kindId),
+        topics: [],
+        stepIndexes: [],
+        createStepIndex: null,
+        included: true,
+      };
+      groups.set(key, group);
+    }
+    group.topics.push({
+      stepIndex: assignment.stepIndex ?? null,
+      topicId: assignment.topicId,
+      topicName: assignment.topicName,
+      previousKindName: assignment.previousKindName,
+      included: true,
+      skippedReason: null,
+    });
+  }
+
+  const ordered = [...groups.values()];
+  ordered.sort((a, b) => {
+    if (a.isNew !== b.isNew) return a.isNew ? -1 : 1;
+    if (a.key === 'none') return 1;
+    if (b.key === 'none') return -1;
+    return a.name.localeCompare(b.name);
+  });
+  return ordered;
 }
 
 function collectionLine(change: LibraryCollectionChangeDto): { key: string; text: string; note: string | null } {

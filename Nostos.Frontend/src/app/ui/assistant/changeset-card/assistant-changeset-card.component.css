@@ -73,8 +73,24 @@
   line-height: 1.45;
 }
 
+/*
+ * A left-out step reads as off through muted ink and a strike-through. The
+ * decoration goes on the words only: the sentence that says why the server kept
+ * the step must stay legible, and a strike cannot be undone on a descendant.
+ */
 .changeset__step--off {
   color: var(--color-text-muted);
+}
+
+.changeset__step--off .changeset__step-summary {
+  text-decoration: line-through;
+}
+
+.changeset__topic--off {
+  color: var(--color-text-muted);
+}
+
+.changeset__topic--off .changeset__topic-name {
   text-decoration: line-through;
 }
 
@@ -129,10 +145,27 @@
   opacity: 0.35;
 }
 
-.changeset__kind-topics--off {
+.changeset__kind-topics {
+  min-width: 0;
+  margin: 0 0 0 24px;
   color: var(--color-text-muted);
-  text-decoration: line-through;
-  text-decoration-thickness: 1px;
+  font-size: 0.74rem;
+  line-height: 1.4;
+  /* A long topic name wraps inside the card instead of widening it. */
+  overflow-wrap: anywhere;
+}
+
+/* "kept: you set this kind yourself" — the server's reason for a step it left
+   out of the review, on its own line under the words it belongs to and aligned
+   with them (the checkbox and its gap). */
+.changeset__skipped {
+  display: block;
+  margin-left: 24px;
+  color: var(--color-text-muted);
+  font-size: 0.74rem;
+  font-style: italic;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 .changeset__kind-head {

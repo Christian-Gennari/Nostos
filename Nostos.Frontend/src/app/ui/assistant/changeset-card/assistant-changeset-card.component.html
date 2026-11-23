@@ -46,7 +46,7 @@
         @if (group.isNew) {<span class="changeset__kind-new">New</span>}
       </label>
       @if (groupPreview(group); as preview) {
-      <p class="changeset__kind-topics" [class.changeset__kind-topics--off]="!group.included">{{ preview }}</p>
+      <p class="changeset__kind-topics">{{ preview }}</p>
       }
     </li>
     }
@@ -66,10 +66,13 @@
           (change)="toggleStep(step.index, $event)"
           data-testid="assistant-changeset-step-toggle"
         />
-        <span>{{ step.summary }}</span>
+        <span class="changeset__step-summary">{{ step.summary }}</span>
       </label>
       } @else {
-      <span>{{ step.summary }}</span>
+      <span class="changeset__step-summary">{{ step.summary }}</span>
+      }
+      @if (step.skippedReason) {
+      <span class="changeset__skipped" [attr.data-testid]="'assistant-changeset-step-skipped'">{{ step.skippedReason }}</span>
       }
     </li>
     }
@@ -109,7 +112,7 @@
         <ul>
           @for (topic of group.topics; track topic.stepIndex ?? topic.topicId) {
           @if (inReview()) {
-          <li [class.changeset__step--off]="!topic.included">
+          <li [class.changeset__topic--off]="!topic.included">
             <label class="changeset__topic-control">
               <input
                 type="checkbox"
@@ -124,6 +127,9 @@
               <span class="changeset__note"> · was {{ topic.previousKindName }}</span>
               }
             </label>
+            @if (topic.skippedReason) {
+            <span class="changeset__skipped" [attr.data-testid]="'assistant-changeset-topic-skipped'">{{ topic.skippedReason }}</span>
+            }
           </li>
           } @else {
           <!-- Applied, undone or set aside: only what happened, with no

@@ -317,6 +317,8 @@ export interface AssistantChangeStepDto {
   included: boolean;
   dependsOn: number[];
   topicKind?: AssistantStepTopicKindDto | null;
+  /** Why the server left this step out of the review itself, if it did. */
+  skippedReason?: string | null;
 }
 
 export type AssistantChangesetStatus = 'review' | 'applied' | 'undone' | 'discarded';
