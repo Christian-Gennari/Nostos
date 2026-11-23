@@ -872,6 +872,40 @@ public sealed class AssistantTopicKindReaderProtectionTests : IClassFixture<Sqli
     }
 
     [Fact]
+    public async Task Two_created_kinds_whose_chosen_colours_are_taken_fall_back_to_different_colours()
+    {
+        using var h = CreateHarness();
+        var dewey = await SeedTopicAsync(h, "Dewey");
+        var freire = await SeedTopicAsync(h, "Freire");
+        var draft = new AssistantChangesetDraft(h.Library, h.Library);
+        (await h.Registry.InvokeAsync("topics_create_kind", Args("""{"name":"Movement","colorKey":"kind-9"}"""),
+            new AssistantToolContext("client", "stage", draft, "x"))).Success.Should().BeTrue();
+        (await h.Registry.InvokeAsync("topics_create_kind", Args("""{"name":"School","colorKey":"kind-10"}"""),
+            new AssistantToolContext("client", "stage", draft, "x"))).Success.Should().BeTrue();
+        (await StageAsync(h, draft, [dewey], "Movement")).Success.Should().BeTrue();
+        (await StageAsync(h, draft, [freire], "School")).Success.Should().BeTrue();
+        var review = await h.Coordinator.FinishTurnAsync("c", "t", draft, false, false, default);
+        review.AwaitingReview.Should().BeTrue();
+        var id = review.Changeset!.ChangesetId;
+        var token = review.Changeset.ActionToken;
+
+        await StealAsync(h, "kind-9", "R1");
+        await StealAsync(h, "kind-10", "R2");
+        var refreshed = await h.Coordinator.ApplyAsync(id, new(token, [], review.Changeset.DiffHash), default);
+        refreshed.ErrorCode.Should().Be(LibraryChangesetErrorCodes.DiffChanged);
+        var applied = await h.Coordinator.ApplyAsync(id, new(token, [], refreshed.Changeset!.DiffHash), default);
+        applied.Success.Should().BeTrue(applied.ErrorMessage);
+
+        await using var db = await h.Factory.CreateDbContextAsync();
+        var colours = await db.TopicKinds.AsNoTracking()
+            .Where(k => k.Name == "Movement" || k.Name == "School")
+            .Select(k => k.ColorKey)
+            .ToListAsync();
+        colours.Should().HaveCount(2).And.OnlyHaveUniqueItems()
+            .And.NotContain(["kind-9", "kind-10"]);
+    }
+
+    [Fact]
     public async Task When_all_twelve_colours_are_taken_a_chosen_colour_hits_the_limit()
     {
         using var h = CreateHarness();

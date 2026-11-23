@@ -222,6 +222,9 @@ public sealed class AssistantChangesetDraft(ILibraryChangesetService changesets,
         LibraryChangesetResult? rawPreview,
         CancellationToken ct)
     {
+        // A replan that fails below commits nothing, so it drops nothing: clear
+        // the last call's list first, or a refused stage would repeat its names.
+        LastDroppedCreatedKinds = [];
         var plan = AssistantChangesetPlanBuilder.Build(previewState, rawCandidate, _namedCreatedKindRefs);
         if (plan.Ops.Count == 0)
         {
