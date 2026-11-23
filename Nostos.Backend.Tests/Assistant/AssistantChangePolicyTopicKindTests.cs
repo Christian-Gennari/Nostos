@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Nostos.Backend.Configuration;
 using Nostos.Backend.Integrations.Assistant;
+using Nostos.Backend.Tests.Support;
 using Nostos.Shared.Dtos;
 using Xunit;
 
@@ -55,6 +56,17 @@ public sealed class AssistantChangePolicyTopicKindTests
     {
         AssistantChangePolicy.Evaluate(Diff(3), Options, false, false)
             .RequiresReview.Should().BeFalse();
+    }
+
+    [Fact]
+    public void A_diff_from_a_host_without_the_appended_fields_is_judged_without_throwing()
+    {
+        // The policy reads the counts and the created kinds; an old host's diff
+        // carries neither topic-kind list, and must not be thrown on.
+        var decision = AssistantChangePolicy.Evaluate(LegacyDiffJson.Read(), Options, false, false);
+
+        decision.RequiresReview.Should().BeFalse("it changes one collection and one book");
+        decision.Reasons.Should().BeEmpty();
     }
 
     [Fact]

@@ -270,8 +270,10 @@ internal sealed class AssistantTurnFinalizer(
     /// part way. Built from the server's own diff, never the model's narration:
     /// how many topics it sorted, and — when the library was read — how many
     /// still have no kind, so the reader knows a second run continues there.
+    /// Internal so the old-host diff (no topic-kind fields at all) is covered
+    /// directly (issue #1770 review, round 3).
     /// </summary>
-    private static string? SizedReviewNote(LibraryChangesetDiffDto? diff, int? unkindedTopicCount)
+    internal static string? SizedReviewNote(LibraryChangesetDiffDto? diff, int? unkindedTopicCount)
     {
         if (diff is null)
             return null;

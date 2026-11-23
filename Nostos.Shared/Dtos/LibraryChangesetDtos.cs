@@ -14,12 +14,19 @@ public sealed record LibraryChangesetDiffDto(
     LibraryChangesetCountsDto Counts,
     // APPENDED (issue #1770): topic kinds the changeset creates and the topics
     // whose kind it gives, changes or clears. They default to null so JSON from
-    // a host that predates them still deserialises; IsEmpty reads them safely.
-    IReadOnlyList<LibraryTopicKindChangeDto> TopicKinds = null!,
-    IReadOnlyList<LibraryTopicKindAssignmentDto> TopicKindAssignments = null!)
+    // a host that predates them still deserialises; the properties below turn
+    // that null into an empty list once, so every reader (the hash, the stored
+    // changeset, the review note and the policy) can treat them as plain lists.
+    IReadOnlyList<LibraryTopicKindChangeDto>? TopicKinds = null,
+    IReadOnlyList<LibraryTopicKindAssignmentDto>? TopicKindAssignments = null)
 {
+    public IReadOnlyList<LibraryTopicKindChangeDto> TopicKinds { get; init; } = TopicKinds ?? [];
+
+    public IReadOnlyList<LibraryTopicKindAssignmentDto> TopicKindAssignments { get; init; } =
+        TopicKindAssignments ?? [];
+
     public bool IsEmpty => Collections.Count == 0 && Memberships.Count == 0 && BookEdits.Count == 0
-        && (TopicKinds?.Count ?? 0) == 0 && (TopicKindAssignments?.Count ?? 0) == 0;
+        && TopicKinds.Count == 0 && TopicKindAssignments.Count == 0;
 }
 
 /// <summary>

@@ -1,6 +1,8 @@
 using FluentAssertions;
 using Nostos.Backend.Services.Library;
+using Nostos.Backend.Tests.Support;
 using Nostos.Shared.Dtos;
+using System.Text.Json;
 using Xunit;
 
 namespace Nostos.Backend.Tests.Services.Library;
@@ -95,10 +97,63 @@ public sealed class LibraryChangesetDiffTests
     [Fact]
     public void A_diff_from_a_host_without_the_appended_fields_is_empty_and_does_not_throw()
     {
-        var diff = new LibraryChangesetDiffDto([], [], [], Counts, null!, null!);
+        var diff = new LibraryChangesetDiffDto([], [], [], Counts, null, null);
 
         diff.IsEmpty.Should().BeTrue();
+        diff.TopicKinds.Should().NotBeNull().And.BeEmpty();
+        diff.TopicKindAssignments.Should().NotBeNull().And.BeEmpty();
     }
+
+    [Fact]
+    public void A_diff_from_a_host_without_the_appended_fields_hashes_like_one_with_empty_lists()
+    {
+        var older = WithoutTopicKindFields();
+        // The same content, with the appended lists present but empty.
+        var current = new LibraryChangesetDiffDto(
+            older.Collections, older.Memberships, older.BookEdits, older.Counts, [], []);
+
+        // The hash never reads a null list: the record turns them into empty
+        // lists of its own, so an old host's JSON is not thrown on.
+        LibraryChangesetDiff.Hash(older).Should().Be(LibraryChangesetDiff.Hash(current));
+    }
+
+    [Fact]
+    public void A_diff_round_trips_with_its_topic_kinds()
+    {
+        var kindId = Guid.NewGuid();
+        var topicId = Guid.NewGuid();
+        var original = Diff() with
+        {
+            TopicKinds = [new LibraryTopicKindChangeDto(kindId, "created", "School of thought", null, "kind-7", 1)],
+            TopicKindAssignments =
+            [
+                new LibraryTopicKindAssignmentDto(topicId, "Freire", kindId, "School of thought", null, "assistant"),
+            ],
+        };
+
+        var back = Read(JsonSerializer.Serialize(original, JsonOptions));
+
+        back.Should().BeEquivalentTo(original);
+        back.TopicKinds.Should().ContainSingle();
+        back.TopicKindAssignments.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void A_diff_from_a_host_without_the_appended_fields_reads_back_as_empty_lists_not_null()
+    {
+        var back = WithoutTopicKindFields();
+
+        back.TopicKinds.Should().NotBeNull().And.BeEmpty();
+        back.TopicKindAssignments.Should().NotBeNull().And.BeEmpty();
+        back.IsEmpty.Should().BeFalse("it still carries a created collection");
+    }
+
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
+    private static LibraryChangesetDiffDto WithoutTopicKindFields() => LegacyDiffJson.Read();
+
+    private static LibraryChangesetDiffDto Read(string json) =>
+        JsonSerializer.Deserialize<LibraryChangesetDiffDto>(json, JsonOptions)!;
 
     private static LibraryChangesetDiffDto Diff(Guid? createdCollectionId = null) =>
         new(

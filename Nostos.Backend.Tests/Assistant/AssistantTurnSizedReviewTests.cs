@@ -168,6 +168,15 @@ public sealed class AssistantTurnSizedReviewTests : IClassFixture<SqliteTestFixt
         final.Reply.Should().NotContain("ask again");
     }
 
+    [Fact]
+    public void A_diff_from_a_host_without_the_appended_fields_has_no_sized_note()
+    {
+        // The note counts the diff's topic-kind assignments; an old host's JSON
+        // leaves that list out, and the note must not be thrown on.
+        AssistantTurnFinalizer.SizedReviewNote(LegacyDiffJson.Read(), unkindedTopicCount: 3)
+            .Should().BeNull("that diff sorts no topic");
+    }
+
     private static async Task<AssistantTurnFinal> FinishAsync(
         Harness h,
         AssistantChangesetDraft draft,
