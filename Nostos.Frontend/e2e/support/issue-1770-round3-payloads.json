@@ -1,6 +1,6 @@
 {
   "allKept": {
-    "changesetId": "8270cab0e9af4ed8ba714d54e215626c",
+    "changesetId": "round3-fixture-changeset-1",
     "status": "review",
     "steps": [
       {
@@ -63,15 +63,15 @@
       "topicKindAssignments": [],
       "isEmpty": true
     },
-    "diffHash": "0317103bb43052280ebb863b5b451ced47acbb7aac3572b17d8d1aa1d3b5add1",
-    "actionToken": "fdd8cb96e5203dc8efdc2768469f05dfce75235a4b210ec6",
+    "diffHash": "round3-fixture-diff-hash",
+    "actionToken": "round3-fixture-token",
     "reviewReasons": [
       "The library changed while I was working, so check this before applying."
     ],
     "canUndo": false
   },
   "partialClaim": {
-    "changesetId": "675c48baf643409bad3a85b59ec260e3",
+    "changesetId": "round3-fixture-changeset-2",
     "status": "review",
     "steps": [
       {
@@ -205,8 +205,8 @@
       ],
       "isEmpty": false
     },
-    "diffHash": "5f8b6bacc3d22aa8e86ae32f82813c54df788e99705d19274affbdc05d58f70c",
-    "actionToken": "cd2496c88fe969201d7f7e5f4b07ef3115c18719e7ba0f31",
+    "diffHash": "round3-fixture-diff-hash",
+    "actionToken": "round3-fixture-token",
     "reviewReasons": [
       "The library changed while I was working, so check this before applying.",
       "Creates the topic kind “School of thought”, so you decide what it means.",
@@ -215,7 +215,7 @@
     "canUndo": false
   },
   "partialClaimApplied": {
-    "changesetId": "675c48baf643409bad3a85b59ec260e3",
+    "changesetId": "round3-fixture-changeset-2",
     "status": "applied",
     "steps": [
       {
@@ -349,8 +349,8 @@
       ],
       "isEmpty": false
     },
-    "diffHash": "5f8b6bacc3d22aa8e86ae32f82813c54df788e99705d19274affbdc05d58f70c",
-    "actionToken": "cd2496c88fe969201d7f7e5f4b07ef3115c18719e7ba0f31",
+    "diffHash": "round3-fixture-diff-hash",
+    "actionToken": "round3-fixture-token",
     "reviewReasons": [
       "The library changed while I was working, so check this before applying.",
       "Creates the topic kind “School of thought”, so you decide what it means.",
@@ -359,7 +359,7 @@
     "canUndo": true
   },
   "partialTick": {
-    "changesetId": "492f251cde354e5b94f1a027049fe9bb",
+    "changesetId": "round3-fixture-changeset-4",
     "status": "review",
     "steps": [
       {
@@ -493,8 +493,8 @@
       ],
       "isEmpty": false
     },
-    "diffHash": "78a8207346e0a33aa75f8a39026024c254b6a0ec10e3bc88ab7e5b8005664722",
-    "actionToken": "9d542480c0ac4d93379be525cefc5783590463d06a74fd7f",
+    "diffHash": "round3-fixture-diff-hash",
+    "actionToken": "round3-fixture-token",
     "reviewReasons": [
       "Creates the topic kind “School of thought”, so you decide what it means.",
       "Gives 2 topics a kind."
@@ -502,7 +502,7 @@
     "canUndo": false
   },
   "groupUnticked": {
-    "changesetId": "492f251cde354e5b94f1a027049fe9bb",
+    "changesetId": "round3-fixture-changeset-5",
     "status": "review",
     "steps": [
       {
@@ -603,8 +603,8 @@
       "topicKindAssignments": [],
       "isEmpty": true
     },
-    "diffHash": "0317103bb43052280ebb863b5b451ced47acbb7aac3572b17d8d1aa1d3b5add1",
-    "actionToken": "9d542480c0ac4d93379be525cefc5783590463d06a74fd7f",
+    "diffHash": "round3-fixture-diff-hash",
+    "actionToken": "round3-fixture-token",
     "reviewReasons": [],
     "canUndo": false
   }
