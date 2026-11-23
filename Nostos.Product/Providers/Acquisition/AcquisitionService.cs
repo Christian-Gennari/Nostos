@@ -517,9 +517,6 @@ public sealed class AcquisitionService(
                 $"The source delivered a '{artifact.FileExtension}' file where '{expected}' was expected.");
     }
 
-    /// <summary>Cover artwork is small enough to hold in memory, unlike a book file.</summary>
-    private const long MaxCoverBytes = 12L * 1024 * 1024;
-
     private async Task<byte[]?> TryDownloadCoverAsync(
         ProviderAcquisitionPlan plan,
         IProviderDownloadPolicy policy,
@@ -528,32 +525,18 @@ public sealed class AcquisitionService(
         if (plan.Cover is null)
             return null;
 
-        try
-        {
-            var bytes = await downloader.DownloadBytesAsync(plan.Cover.Url, policy, MaxCoverBytes, ct);
+        // The shared path (also used by the MCP book tools) validates the image
+        // and bounds the download. Cover art is a nicety: a failure here must
+        // never cost the user the book, so it only skips the cover.
+        var cover = await CoverDownload.TryAsync(downloader, plan.Cover.Url, policy, logger, ct);
+        if (cover.Succeeded)
+            return cover.Bytes;
 
-            // A cover is rendered by the image pipeline, so a source that hands
-            // back an HTML error page must not get stored as one: that would
-            // poison the thumbnail cache and every later list render.
-            using var probe = new MemoryStream(bytes);
-            var info = await CoverImageProcessor.InspectAsync(probe, ct);
-            if (info is null)
-            {
-                logger.LogWarning("Cover art for {ExternalId} was not a recognisable image; skipping it.", plan.ExternalId);
-                return null;
-            }
-
-            return bytes;
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            // Cover art is a nicety. It must never cost the user the book.
-            logger.LogWarning(
-                "Could not fetch cover art for {ExternalId}; importing without it. Exception type {ExceptionType}; details suppressed.",
-                plan.ExternalId,
-                ex.GetType().Name);
-            return null;
-        }
+        logger.LogWarning(
+            "Could not fetch cover art for {ExternalId}; importing without it: {Reason}",
+            plan.ExternalId,
+            cover.Failure);
+        return null;
     }
 
     // ------------------------------------------------------------------

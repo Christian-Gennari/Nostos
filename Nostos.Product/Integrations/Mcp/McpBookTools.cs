@@ -2,10 +2,13 @@ using System.ComponentModel;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol;
 using ModelContextProtocol.Server;
 using Nostos.Backend.Data.Interfaces;
 using Nostos.Backend.Integrations.Assistant;
+using Nostos.Backend.Providers.Acquisition;
+using Nostos.Backend.Services;
 using Nostos.Backend.Services.Knowledge;
 using Nostos.Backend.Services.Library;
 using Nostos.Backend.Services.ReadingList;
@@ -109,8 +112,8 @@ public sealed class McpBookTools(IHttpContextAccessor http) : NostosMcpTool(http
             citations.ForBook(info));
     }
 
-    [McpServerTool(Name = "add_book", Title = "Add a book to the library", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
-    [Description("Adds a book to the user's library from the details you give: a paper book by default, or an ebook or audiobook entry without its file. Use it only when the user asks to add a book. Nostos looks nothing up elsewhere, so pass the details you have. A book already in the library (same ISBN, or same title and author) comes back with `duplicate: true` and no second copy is made. When Nostos cannot tell, it returns `candidates` and adds nothing: ask the user, then call again with `confirmedBookId` or `forceCreate: true`. A To read entry for a book this call adds moves to the library, and its reason stays as a note on the book. An entry that was already in the library before the call stays on To read and comes back in `onToRead`.")]
+    [McpServerTool(Name = "add_book", Title = "Add a book to the library", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = true)]
+    [Description("Adds a book to the user's library from the details you give: a paper book by default, or an ebook or audiobook entry without its file. Use it only when the user asks to add a book. Nostos looks nothing else up, so pass the details you have. An `https` `coverUrl` is fetched as the book's cover; when it cannot be used the book is still added and the result says why. A book already in the library (same ISBN, or same title and author) comes back with `duplicate: true` and no second copy is made. When Nostos cannot tell, it returns `candidates` and adds nothing: ask the user, then call again with `confirmedBookId` or `forceCreate: true`. A To read entry for a book this call adds moves to the library, and its reason stays as a note on the book. An entry that was already in the library before the call stays on To read and comes back in `onToRead`.")]
     public async Task<McpAddedBook> AddBookAsync(
         [Description("The title.")] string title,
         [Description("The author or authors.")] string? author = null,
@@ -125,6 +128,7 @@ public sealed class McpBookTools(IHttpContextAccessor http) : NostosMcpTool(http
         [Description("The number of pages.")] int? pageCount = null,
         [Description("The series it belongs to.")] string? series = null,
         [Description("Its number in the series.")] string? volumeNumber = null,
+        [Description("An https URL of the cover image. Nostos downloads it; the book is added without a cover if it cannot be used.")] string? coverUrl = null,
         [Description("After `candidates`: the id of the book the user says it is. Nothing is added.")] Guid? confirmedBookId = null,
         [Description("After `candidates`: true when the user wants it added as a separate book.")] bool forceCreate = false,
         CancellationToken cancellationToken = default)
@@ -235,6 +239,19 @@ public sealed class McpBookTools(IHttpContextAccessor http) : NostosMcpTool(http
             message = (message is null ? "" : message + " ")
                 + "It is also on To read and stays there: the user takes a book they own off the list themselves, in the app.";
 
+        string? warning = null;
+        if (!string.IsNullOrWhiteSpace(coverUrl))
+        {
+            var cover = await ApplyCoverAsync(book.Id, coverUrl, replace: false, cancellationToken);
+            warning = cover.Outcome switch
+            {
+                CoverOutcome.Failed when matched => "the cover was not changed: " + cover.Failure,
+                CoverOutcome.Failed => "added without cover: " + cover.Failure,
+                CoverOutcome.Kept => "the book already has a cover, so it was kept",
+                _ => null,
+            };
+        }
+
         return new McpAddedBook(
             matched ? "matched" : "created",
             matched,
@@ -242,11 +259,12 @@ public sealed class McpBookTools(IHttpContextAccessor http) : NostosMcpTool(http
             moved.Count > 0 ? moved : null,
             null,
             message,
-            stillOnToRead.Count > 0 ? stillOnToRead : null);
+            stillOnToRead.Count > 0 ? stillOnToRead : null,
+            warning);
     }
 
-    [McpServerTool(Name = "update_book", Title = "Fill in or correct a book's details", ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
-    [Description("Fills in or corrects one book's details: title, subtitle, author, description, year, ISBN, publisher, language and series. Use it only when the user asks. Pass only the details to set. A detail the book already has is kept unless you pass `replace: true`, which only the user's request to change it allows. The result lists every changed detail with its old value, and `undo` holds the arguments that put them back.")]
+    [McpServerTool(Name = "update_book", Title = "Fill in or correct a book's details", ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = true)]
+    [Description("Fills in or corrects one book's details: title, subtitle, author, description, year, ISBN, publisher, language, series, and the cover from an `https` `coverUrl`. Use it only when the user asks. Pass only the details to set. A detail the book already has is kept unless you pass `replace: true`, which only the user's request to change it allows. An existing cover is kept unless `replace: true` is passed when `coverUrl` is; the previous cover cannot be restored by this tool. The result lists every changed detail with its old value, and `undo` holds the arguments that put them back.")]
     public async Task<McpUpdatedBook> UpdateBookAsync(
         [Description("The book (id from `list_books` or `add_book`).")] Guid bookId,
         [Description("The title.")] string? title = null,
@@ -259,9 +277,15 @@ public sealed class McpBookTools(IHttpContextAccessor http) : NostosMcpTool(http
         [Description("The language.")] string? language = null,
         [Description("The series it belongs to.")] string? series = null,
         [Description("Its number in the series.")] string? volumeNumber = null,
-        [Description("True to change details the book already has. With it, an empty string clears a detail.")] bool replace = false,
+        [Description("An https URL of a new cover image. Sets a cover the book has none of; replaces an existing cover only with `replace: true`.")] string? coverUrl = null,
+        [Description("True to change details the book already has. With it, an empty string clears a detail, and a `coverUrl` replaces an existing cover.")] bool replace = false,
         CancellationToken cancellationToken = default)
     {
+        var detailsGiven = title is not null || subtitle is not null || author is not null
+            || description is not null || publishedDate is not null || isbn is not null
+            || publisher is not null || language is not null || series is not null
+            || volumeNumber is not null;
+
         var args = new Dictionary<string, object?>
         {
             ["bookId"] = bookId,
@@ -275,41 +299,165 @@ public sealed class McpBookTools(IHttpContextAccessor http) : NostosMcpTool(http
             ["language"] = language,
             ["series"] = series,
             ["volumeNumber"] = volumeNumber,
+            ["coverUrl"] = McpText.Blank(coverUrl),
             ["replace"] = replace,
         };
 
-        var edit = await RunAsync<BookDetailsEdit>(
-            AssistantCapabilities.EditBookDetailsName,
-            args,
-            cancellationToken,
-            new AssistantToolContext(NostosMcp.ClientId, McpToolKeys.RequestKey("update_book", args)));
-
-        // The old values as update_book arguments: an empty one was empty.
-        Dictionary<string, object?>? undo = null;
-        if (edit.Changed.Count > 0)
+        // A cover-only call has no detail for the capability to edit, and it
+        // refuses an empty edit, so it is asked only when a detail is given.
+        // When neither is given the capability's refusal is the answer.
+        BookDetailsEdit? edit = null;
+        if (detailsGiven || string.IsNullOrWhiteSpace(coverUrl))
         {
-            undo = new Dictionary<string, object?> { ["bookId"] = bookId, ["replace"] = true };
-            foreach (var change in edit.Changed)
-                undo[change.Field] = change.From ?? string.Empty;
+            edit = await RunAsync<BookDetailsEdit>(
+                AssistantCapabilities.EditBookDetailsName,
+                args,
+                cancellationToken,
+                new AssistantToolContext(NostosMcp.ClientId, McpToolKeys.RequestKey("update_book", args)));
         }
 
-        var words = new List<string>
+        var cover = await ApplyCoverAsync(bookId, coverUrl, replace, cancellationToken);
+        var coverChanged = cover.Outcome is CoverOutcome.Set or CoverOutcome.Replaced;
+
+        var book = edit?.Book;
+        if (book is null)
         {
-            edit.Changed.Count > 0
-                ? $"Changed {string.Join(", ", edit.Changed.Select(c => c.Field))}. `undo` puts the old values back."
-                : "Nothing changed.",
-        };
-        if (edit.Kept.Count > 0)
-            words.Add($"Kept what the book already has for {string.Join(", ", edit.Kept.Select(k => k.Field))}. Pass `replace: true` only if the user asked to change it.");
+            var current = await Services.GetRequiredService<ILibraryService>().GetBookAsync(bookId, cancellationToken);
+            book = current.Data as BookDto ?? throw new McpException("No book in the library has that id.");
+        }
+
+        var detailChanged = edit?.Changed ?? [];
+        var changed = detailChanged.ToList();
+        if (coverChanged)
+            changed.Add(new BookFieldChange("cover", cover.PreviousUrl, "a new cover image"));
+
+        var kept = (edit?.Kept ?? []).ToList();
+        if (cover.Outcome == CoverOutcome.Kept)
+            kept.Add(new BookFieldKept("cover", cover.PreviousUrl ?? "a cover", coverUrl!.Trim()));
+
+        // The old values as update_book arguments: an empty one was empty. A
+        // cover's bytes are gone once replaced, so undo says it cannot restore
+        // them instead of naming an argument that would.
+        Dictionary<string, object?>? undo = null;
+        if (detailChanged.Count > 0 || coverChanged)
+        {
+            undo = new Dictionary<string, object?> { ["bookId"] = bookId, ["replace"] = true };
+            foreach (var change in detailChanged)
+                undo[change.Field] = change.From ?? string.Empty;
+            if (coverChanged)
+                undo["cover"] = cover.Outcome == CoverOutcome.Replaced
+                    ? "The previous cover was replaced and cannot be restored by this tool."
+                    : "The cover was added and cannot be removed by this tool.";
+        }
+
+        var words = new List<string>();
+        if (detailChanged.Count > 0)
+            words.Add($"Changed {string.Join(", ", detailChanged.Select(c => c.Field))}. `undo` puts the old values back.");
+        else if (!coverChanged)
+            words.Add("Nothing changed.");
+        if (coverChanged)
+        {
+            words.Add(cover.Outcome == CoverOutcome.Replaced ? "Cover replaced." : "Cover set.");
+            words.Add((string)undo!["cover"]!);
+        }
+        if (kept.Count > 0)
+            words.Add($"Kept what the book already has for {string.Join(", ", kept.Select(k => k.Field))}. Pass `replace: true` only if the user asked to change it.");
 
         return new McpUpdatedBook(
-            edit.Book.Id,
-            edit.Book.Title,
-            Citations.BookUrl(edit.Book.Id),
-            edit.Changed,
-            edit.Kept.Count > 0 ? edit.Kept : null,
-            edit.Unchanged.Count > 0 ? edit.Unchanged : null,
+            book.Id,
+            book.Title,
+            Citations.BookUrl(book.Id),
+            changed,
+            kept.Count > 0 ? kept : null,
+            edit is { Unchanged.Count: > 0 } ? edit.Unchanged : null,
             undo,
-            string.Join(' ', words));
+            string.Join(' ', words),
+            cover.Outcome == CoverOutcome.Failed ? "the cover was not changed: " + cover.Failure : null);
+    }
+
+    // ------------------------------------------------------------------
+    // Covers
+    // ------------------------------------------------------------------
+
+    private enum CoverOutcome
+    {
+        None,
+        Set,
+        Replaced,
+        Kept,
+        Failed,
+    }
+
+    private sealed record CoverApply(CoverOutcome Outcome, string? Failure = null, string? PreviousUrl = null);
+
+    /// <summary>
+    /// Sets a book's cover from a URL, the way <c>POST /api/books/{id}/cover</c>
+    /// does: the bytes are downloaded through the acquisition path, stored by
+    /// <see cref="IBookAssetStorage"/>, then recorded with <c>SetCover</c>.
+    ///
+    /// A cover the book already has is kept unless <paramref name="replace"/>
+    /// is true. Anything that goes wrong is a reason in the result, never an
+    /// error: the book itself is already added or edited by the time this runs.
+    /// </summary>
+    private async Task<CoverApply> ApplyCoverAsync(
+        Guid bookId,
+        string? coverUrl,
+        bool replace,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(coverUrl))
+            return new CoverApply(CoverOutcome.None);
+
+        var wanted = coverUrl.Trim();
+        if (!Uri.TryCreate(wanted, UriKind.Absolute, out var url)
+            || !string.Equals(url.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+        {
+            return new CoverApply(CoverOutcome.Failed, "the cover URL must be an absolute https URL");
+        }
+
+        var repo = Services.GetRequiredService<IBookRepository>();
+        var book = await repo.GetByIdAsync(bookId, ct);
+        if (book is null)
+            return new CoverApply(CoverOutcome.Failed, "the book is no longer in the library");
+
+        var hadCover = !string.IsNullOrWhiteSpace(book.FileDetails.CoverFileName);
+        var previous = hadCover ? $"/api/books/{bookId:D}/cover" : null;
+        if (hadCover && !replace)
+            return new CoverApply(CoverOutcome.Kept, PreviousUrl: previous);
+
+        var logger = Services.GetRequiredService<ILogger<McpBookTools>>();
+        try
+        {
+            var downloader = Services.GetRequiredService<IProviderContentDownloader>();
+            var fetched = await CoverDownload.TryAsync(
+                downloader,
+                url,
+                new CoverUrlDownloadPolicy(url.Host),
+                logger,
+                ct);
+            if (!fetched.Succeeded)
+                return new CoverApply(CoverOutcome.Failed, fetched.Failure, previous);
+
+            var storage = Services.GetRequiredService<IBookAssetStorage>();
+            var fileName = $"cover{fetched.FileExtension}";
+            await using (var stream = new MemoryStream(fetched.Bytes!))
+                await storage.SaveBookCoverAsync(bookId, stream, fileName, ct);
+
+            book.FileDetails.SetCover(fileName);
+            await repo.UpdateAsync(book, ct);
+            return new CoverApply(hadCover ? CoverOutcome.Replaced : CoverOutcome.Set, PreviousUrl: previous);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(
+                "Storing cover art for book {BookId} failed; the book itself is unaffected. Exception type {ExceptionType}; details suppressed.",
+                bookId,
+                ex.GetType().Name);
+            return new CoverApply(CoverOutcome.Failed, "the cover could not be saved", previous);
+        }
     }
 }
