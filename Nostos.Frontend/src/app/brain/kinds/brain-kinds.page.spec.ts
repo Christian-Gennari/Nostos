@@ -282,6 +282,7 @@ describe('BrainKindsPage', () => {
 
   it('reorders kinds with one request that lists the whole order', () => {
     reorderKinds.mockReturnValue(of([{ ...idea, sortOrder: 1 }, { ...person, sortOrder: 2 }]));
+    const reads = listKinds.mock.calls.length;
 
     component().moveKind(person, 1);
 
@@ -291,6 +292,8 @@ describe('BrainKindsPage', () => {
     expect(component().busy()).toBe(false);
     expect(component().kinds().map((item) => item.id)).toEqual(['k2', 'k1']);
     expect(component().kinds().map((item) => item.sortOrder)).toEqual([1, 2]);
+    // No read was open, so the answered order is enough: no extra request.
+    expect(listKinds).toHaveBeenCalledTimes(reads);
   });
 
   it('asks before deleting and keeps the topics', () => {
@@ -443,7 +446,7 @@ describe('BrainKindsPage', () => {
       'Could not reorder the kinds. Try again.');
   });
 
-  it('says why a reorder was refused and reads the order back', () => {
+  it('tells the reader when the kinds changed elsewhere, and reads the order back', () => {
     const state = TestBed.inject(BrainStateService);
     const refresh = vi.spyOn(state, 'refresh');
     reorderKinds.mockReturnValue(throwError(() => new HttpErrorResponse({
@@ -454,8 +457,9 @@ describe('BrainKindsPage', () => {
     component().moveKind(person, 1);
 
     expect(refresh).toHaveBeenCalled();
+    // The server's words describe an invariant, not what the reader can do.
     expect(TestBed.inject(ToastService).error).toHaveBeenCalledWith(
-      'The order must list every topic kind exactly once.');
+      'Your kinds changed somewhere else, so the list was refreshed. Try the move again.');
   });
 
   it('ignores a rename answer for a kind whose field has since closed', () => {
@@ -639,6 +643,48 @@ describe('BrainKindsPage', () => {
     expect(component().busy()).toBe(false);
     expect(component().kinds().map((item) => item.id)).toEqual(['k2', 'k1']);
     expect(component().kinds().map((item) => item.sortOrder)).toEqual([1, 2]);
+  });
+
+  it('replaces the kinds read a write started, so a finished move is not reverted', () => {
+    const state = TestBed.inject(BrainStateService);
+    const reads = listKinds.mock.calls.length;
+
+    // A rename closes while its kinds read is still on its way.
+    const firstRead = new Subject<TopicKindDto[]>();
+    const queuedRead = new Subject<TopicKindDto[]>();
+    listKinds.mockReturnValueOnce(firstRead).mockReturnValueOnce(queuedRead);
+    component().startRename(person);
+    component().commitRename('k1', 'People');
+    expect(listKinds).toHaveBeenCalledTimes(reads + 1);
+    expect(state.kindsLoading()).toBe(true);
+
+    // The move goes out and lands before that read answers.
+    const put = new Subject<TopicKindDto[]>();
+    reorderKinds.mockReturnValue(put);
+    component().moveKind(person, 1);
+    put.next([{ ...idea, sortOrder: 1 }, { ...person, sortOrder: 2 }]);
+    put.complete();
+
+    const ids = (): string[] => component().kinds().map((item) => item.id);
+    expect(component().busy()).toBe(false);
+    expect(ids()).toEqual(['k2', 'k1']);
+    // The read that was open is replaced by a queued one, not sent twice at once.
+    expect(listKinds).toHaveBeenCalledTimes(reads + 1);
+
+    // That read answers with the order from before the move. Applied, it would
+    // revert the list while nothing is busy, and the next arrow click would
+    // then move from the order the reader no longer sees.
+    firstRead.next([{ ...person, sortOrder: 1 }, { ...idea, sortOrder: 2 }]);
+    firstRead.complete();
+    expect(ids()).toEqual(['k2', 'k1']);
+    expect(listKinds).toHaveBeenCalledTimes(reads + 2);
+
+    // The queued read carries the order the server holds, and its names.
+    queuedRead.next([{ ...idea, sortOrder: 1 }, { ...person, name: 'People', sortOrder: 2 }]);
+    queuedRead.complete();
+    expect(ids()).toEqual(['k2', 'k1']);
+    expect(component().kinds().map((item) => item.name)).toEqual(['Idea', 'People']);
+    expect(state.kindsLoading()).toBe(false);
   });
 
   it('drops a superseded kinds read and then sends the whole order on screen', () => {

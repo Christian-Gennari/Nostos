@@ -509,6 +509,11 @@ export class BrainKindsPage {
             })
             .sort((first, second) => first.sortOrder - second.sortOrder),
         );
+        // A read opened before this answer holds the order from before the
+        // move. Left alone, it would land with that order and put it back on
+        // screen, so the next arrow click would move from the reverted list.
+        // Replacing it makes the fresh read carry the order the server holds.
+        if (this.state.kindsLoading()) this.state.reloadKinds();
         this.busy.set(false);
       },
       error: (error: unknown) => {
@@ -517,7 +522,11 @@ export class BrainKindsPage {
         // created or deleted meanwhile); read it back so the arrows start from
         // the list the server actually holds.
         this.state.refresh();
-        this.toast.error(serverMessage(error) ?? 'Could not reorder the kinds. Try again.');
+        this.toast.error(
+          isConflict(error)
+            ? 'Your kinds changed somewhere else, so the list was refreshed. Try the move again.'
+            : serverMessage(error) ?? 'Could not reorder the kinds. Try again.',
+        );
       },
     });
   }
@@ -903,6 +912,11 @@ function serverMessage(error: unknown): string | null {
   if (!(error instanceof HttpErrorResponse)) return null;
   const body = error.error as { error?: unknown } | null;
   return typeof body?.error === 'string' ? body.error : null;
+}
+
+/** The server refused a write because what it holds changed since the screen read it. */
+function isConflict(error: unknown): boolean {
+  return error instanceof HttpErrorResponse && error.status === 409;
 }
 
 /** The authors named by a set of book pages, skipping the pages that failed. */
