@@ -215,6 +215,12 @@ export interface LibraryChangesetCountsDto {
   membershipsRemoved: number;
   booksLosingMembership: number;
   bookEdits: number;
+  topicKindsCreated?: number;
+  topicKindChanges?: number;
+  /** Of topicKindChanges: given, changed and cleared, so the copy can say which. */
+  topicKindsGiven?: number;
+  topicKindsChanged?: number;
+  topicKindsCleared?: number;
 }
 
 export interface LibraryCollectionChangeDto {
@@ -254,6 +260,54 @@ export interface LibraryChangesetDiffDto {
   memberships: LibraryMembershipChangeDto[];
   bookEdits: LibraryBookEditDto[];
   counts: LibraryChangesetCountsDto;
+  topicKinds?: LibraryTopicKindChangeDto[];
+  topicKindAssignments?: LibraryTopicKindAssignmentDto[];
+}
+
+/** One topic kind a changeset creates. */
+export interface LibraryTopicKindChangeDto {
+  id: string;
+  kind: 'created' | 'updated' | string;
+  name: string;
+  previousName: string | null;
+  colorKey: string;
+  topicCount: number;
+  stepIndex?: number | null;
+}
+
+/**
+ * One topic whose kind a changeset changes; a null kind clears it. `stepIndex`
+ * names the review step this topic belongs to, so the card can untick exactly
+ * this topic without the rest of the kind group.
+ */
+export interface LibraryTopicKindAssignmentDto {
+  topicId: string;
+  topicName: string;
+  kindId: string | null;
+  kindName: string | null;
+  previousKindName: string | null;
+  source: string | null;
+  stepIndex: number | null;
+  /** The target kind's palette key, so an existing kind shows its colour too. */
+  kindColorKey?: string | null;
+  /** Who set the kind before this changeset (issue #1770 review, round 2). */
+  previousSource?: string | null;
+}
+
+/**
+ * What one step does to topic kinds. The card groups and unticks from the
+ * steps, not from a diff a preview recomputes without the left-out ones, so a
+ * kind's create step is included only while one of its topics is.
+ */
+export interface AssistantStepTopicKindDto {
+  kindKey: string;
+  kindName: string;
+  colorKey: string | null;
+  createsKind: boolean;
+  isNewKind: boolean;
+  topicId: string | null;
+  topicName: string | null;
+  previousKindName: string | null;
 }
 
 /** One step of a changeset, which the user can leave out while it is in review. */
@@ -262,6 +316,9 @@ export interface AssistantChangeStepDto {
   summary: string;
   included: boolean;
   dependsOn: number[];
+  topicKind?: AssistantStepTopicKindDto | null;
+  /** Why the server left this step out of the review itself, if it did. */
+  skippedReason?: string | null;
 }
 
 export type AssistantChangesetStatus = 'review' | 'applied' | 'undone' | 'discarded';
@@ -683,6 +740,24 @@ export class AssistantService {
     this.persistSession();
   }
 
+  /**
+   * Adds a prepared request (the map legend's sort request, say) to the
+   * composer without discarding what the reader already typed: an empty draft
+   * becomes the request, a draft that already holds it is left alone, and
+   * anything else is kept above it. The reader reviews and sends it themselves.
+   */
+  appendToDraft(value: string): void {
+    const prepared = value.trim();
+    if (!prepared) return;
+    const current = this.draft().trim();
+    if (!current) {
+      this.updateDraft(prepared);
+      return;
+    }
+    if (current.includes(prepared)) return;
+    this.updateDraft(`${current}\n\n${prepared}`);
+  }
+
   updateDraft(value: string): void {
     const retry = this.retry.retryableTurn();
     if (retry && value.trim() !== retry.text) {
@@ -958,11 +1033,19 @@ export class AssistantService {
    * remaining steps would do.
    */
   setChangesetStepIncluded(changesetId: string, index: number, included: boolean): void {
+    this.setChangesetStepsIncluded(changesetId, [index], included);
+  }
+
+  /** Ticks or unticks several steps in one preview, for a whole kind group. */
+  setChangesetStepsIncluded(changesetId: string, indexes: readonly number[], included: boolean): void {
     const found = this.findChangeset(changesetId);
     if (!found || found.changeset.status !== 'review') return;
     const excluded = new Set(excludedSteps(found.changeset));
-    if (included) excluded.delete(index);
-    else excluded.add(index);
+    for (const index of indexes) {
+      if (found.changeset.steps[index]?.skippedReason) continue;
+      if (included) excluded.delete(index);
+      else excluded.add(index);
+    }
     this.runChangesetAction(changesetId, 'preview', {
       actionToken: found.changeset.actionToken,
       excluded: [...excluded].sort((a, b) => a - b),

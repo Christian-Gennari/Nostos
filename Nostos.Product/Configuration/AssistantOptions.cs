@@ -158,4 +158,12 @@ public sealed class AssistantOptions
 
     /// <summary>Most empty collections a changeset may delete without review.</summary>
     public int AutoApplyMaxEmptyCollectionDeletes { get; set; } = 3;
+
+    /// <summary>
+    /// Most topics a changeset may give, change or clear a kind on without
+    /// review. Classifying a library is exactly the work a person should look
+    /// over, so this is deliberately low. Creating a kind always waits for
+    /// review, whatever this says.
+    /// </summary>
+    public int AutoApplyTopicKinds { get; set; } = 10;
 }

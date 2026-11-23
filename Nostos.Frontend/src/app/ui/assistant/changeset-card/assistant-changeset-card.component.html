@@ -24,27 +24,62 @@
   }
 
   @if (inReview()) {
+  @if (kindGroups().length) {
+  <ul class="changeset__kind-groups" data-testid="assistant-changeset-kind-groups">
+    @for (group of kindGroups(); track group.key) {
+    <li class="changeset__kind-group" [class.changeset__kind-group--off]="!group.included">
+      <label class="changeset__kind-head">
+        <input
+          #kindToggle
+          type="checkbox"
+          appCheckbox
+          [checked]="groupChecked(group)"
+          [indeterminate]="groupIndeterminate(group)"
+          [disabled]="groupDisabled(group)"
+          (change)="toggleKindGroup(group, $event)"
+          data-testid="assistant-changeset-kind-toggle"
+        />
+        @if (group.color) {
+        <span class="changeset__kind-swatch" aria-hidden="true" [style.background]="group.color"></span>
+        }
+        <span class="changeset__kind-name">{{ group.name }}</span>
+        <span class="changeset__kind-count">({{ groupCountLabel(group) }})</span>
+        @if (group.isNew) {<span class="changeset__kind-new">New</span>}
+      </label>
+      @if (groupPreview(group); as preview) {
+      <p class="changeset__kind-topics">{{ preview }}</p>
+      }
+    </li>
+    }
+  </ul>
+  }
+  @if (otherSteps().length) {
   <ol class="changeset__steps" data-testid="assistant-changeset-steps">
-    @for (step of changeset().steps; track step.index) {
+    @for (step of otherSteps(); track step.index) {
     <li class="changeset__step" [class.changeset__step--off]="!step.included">
       @if (changeset().steps.length > 1) {
       <label class="changeset__step-control">
         <input
+          #stepToggle
           type="checkbox"
           appCheckbox
           [checked]="step.included"
-          [disabled]="disabled() || (!step.included && stepBlocked(step.index))"
+          [disabled]="stepDisabled(step)"
           (change)="toggleStep(step.index, $event)"
           data-testid="assistant-changeset-step-toggle"
         />
-        <span>{{ step.summary }}</span>
+        <span class="changeset__step-summary">{{ step.summary }}</span>
       </label>
       } @else {
-      <span>{{ step.summary }}</span>
+      <span class="changeset__step-summary">{{ step.summary }}</span>
+      }
+      @if (step.skippedReason) {
+      <span class="changeset__skipped" [attr.data-testid]="'assistant-changeset-step-skipped'">{{ step.skippedReason }}</span>
       }
     </li>
     }
   </ol>
+  }
   }
 
   @if (hasDetails()) {
@@ -63,6 +98,58 @@
 
   @if (detailsOpen()) {
   <div class="changeset__details" data-testid="assistant-changeset-details">
+    @if (detailKindGroups().length) {
+    <section class="changeset__group">
+      <h4>Topics</h4>
+      @for (group of detailKindGroups(); track group.key) {
+      <div class="changeset__kind-detail">
+        <p class="changeset__kind-detail-head">
+          @if (group.color) {
+          <span class="changeset__kind-swatch" aria-hidden="true" [style.background]="group.color"></span>
+          }
+          <span>{{ group.name }}</span>
+          <span class="changeset__kind-count">({{ groupCountLabel(group) }})</span>
+          @if (group.isNew) {<span class="changeset__kind-new">New</span>}
+        </p>
+        <ul>
+          @for (topic of group.topics; track topic.stepIndex ?? topic.topicId) {
+          @if (inReview()) {
+          <li [class.changeset__topic--off]="!topic.included">
+            <label class="changeset__topic-control">
+              <input
+                #topicToggle
+                type="checkbox"
+                appCheckbox
+                [checked]="topic.included"
+                [disabled]="topicDisabled(topic)"
+                (change)="toggleKindTopic(topic.stepIndex, $event)"
+                [attr.data-testid]="'assistant-changeset-topic-toggle'"
+              />
+              <span class="changeset__topic-name">{{ topic.topicName }}</span>
+              @if (topic.previousKindName) {
+              <span class="changeset__note"> · was {{ topic.previousKindName }}</span>
+              }
+            </label>
+            @if (topic.skippedReason) {
+            <span class="changeset__skipped" [attr.data-testid]="'assistant-changeset-topic-skipped'">{{ topic.skippedReason }}</span>
+            }
+          </li>
+          } @else {
+          <!-- Applied, undone or set aside: only what happened, with no
+               checkbox offering a change the card can no longer make. -->
+          <li>
+            <span class="changeset__topic-name">{{ topic.topicName }}</span>
+            @if (topic.previousKindName) {
+            <span class="changeset__note"> · was {{ topic.previousKindName }}</span>
+            }
+          </li>
+          }
+          }
+        </ul>
+      </div>
+      }
+    </section>
+    }
     @if (collectionLines().length) {
     <section class="changeset__group">
       <h4>Collections</h4>

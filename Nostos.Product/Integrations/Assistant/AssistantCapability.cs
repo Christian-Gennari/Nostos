@@ -10,7 +10,11 @@ namespace Nostos.Backend.Integrations.Assistant;
 public sealed record AssistantToolContext(
     string? ClientId = null,
     string? IdempotencyKey = null,
-    AssistantChangesetDraft? Changeset = null);
+    AssistantChangesetDraft? Changeset = null,
+    // APPENDED (issue #1770): the reader's own words for this turn, so a rule
+    // that depends on the user naming something ("unless the user named that
+    // topic") is decided by what they wrote, not by the model's claim.
+    string? UserText = null);
 
 /// <summary>
 /// Outcome of an assistant capability. Failures are data, never exceptions, so

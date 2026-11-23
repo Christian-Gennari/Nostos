@@ -116,6 +116,7 @@
     [kindsLoaded]="state.kindsLoaded()"
     [visibleKindKeys]="visibleKindKeys()"
     [kindPickerEnabled]="true"
+    [assistantAvailable]="assistantAvailable()"
     [camera]="startCamera"
     [centerOnLoad]="!startCamera"
     notesLabel="Open topic"
@@ -129,6 +130,7 @@
     (kindToggled)="onToggleKind($event)"
     (clearKindFilter)="onClearKindFilter()"
     (kindPickerRequested)="openKindPicker($event)"
+    (sortWithAssistant)="sortUnkindedWithAssistant()"
   >
     <div mapHudControls class="map-hud-controls">
       @if (aroundTopic(); as root) {
@@ -205,8 +207,10 @@
         <app-map-kind-legend
           [entries]="legendEntries()"
           [hiddenByKindCount]="hiddenByKindCount()"
+          [assistantAvailable]="assistantAvailable()"
           (toggled)="onToggleKind($event)"
           (cleared)="onClearKindFilter()"
+          (sortWithAssistant)="sortUnkindedWithAssistant()"
         />
       </div>
       }

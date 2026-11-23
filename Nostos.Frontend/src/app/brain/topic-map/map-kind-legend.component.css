@@ -35,9 +35,24 @@
 
 .map-legend-untyped-group {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.35rem;
   max-width: 100%;
+}
+
+/* The two ways to sort, side by side: by hand, or with Ask Nostos. */
+.map-legend-sort-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.map-legend-separator {
+  color: var(--color-text-light);
+  font-size: 0.8rem;
+  line-height: 1;
 }
 
 .map-legend-kind.nostos-chip {
@@ -122,35 +137,65 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Both ways to sort are chips, not two links that read as one sentence. The
+   manual one keeps the accent chip recipe; Ask Nostos is the secondary one. */
 .map-legend-sort {
-  color: var(--color-brand-accent);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  min-height: 24px;
+  padding: 0.14rem 0.55rem;
+  border-radius: var(--radius-pill);
+  font-family: inherit;
   font-size: 0.72rem;
   font-weight: var(--fw-medium);
-  text-decoration: underline;
-  text-underline-offset: 2px;
+  line-height: normal;
+  text-decoration: none;
   white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
 }
 
-.map-legend-sort:hover {
+.map-legend-sort-manual {
+  border: 1px solid color-mix(in srgb, var(--color-brand-accent) 35%, transparent);
+  background: color-mix(in srgb, var(--color-brand-accent) 12%, transparent);
+  color: var(--color-brand-accent);
+}
+
+.map-legend-sort-manual:hover {
+  background: color-mix(in srgb, var(--color-brand-accent) 22%, transparent);
+}
+
+.map-legend-ask.nostos-chip {
+  min-height: 24px;
+  padding: 0.14rem 0.55rem;
+  border-color: var(--border-color);
+  background: var(--bg-surface);
   color: var(--color-text-main);
+  font-size: 0.72rem;
+  font-weight: var(--fw-medium);
+}
+
+.map-legend-ask.nostos-chip:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--color-text-muted);
 }
 
 .map-legend-sort:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: 2px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-pill);
 }
 
 /* Inside the phone's Controls sheet the chips are the primary controls, so
    they get a real tap target rather than the map's quiet 22 px row. */
 @media (max-width: 768px) {
   .map-legend-kind.nostos-chip,
-  .map-legend-clear.nostos-chip {
+  .map-legend-clear.nostos-chip,
+  .map-legend-sort,
+  .map-legend-ask.nostos-chip {
     min-height: 32px;
-    font-size: 0.75rem;
-  }
-
-  .map-legend-sort {
     font-size: 0.75rem;
   }
 }

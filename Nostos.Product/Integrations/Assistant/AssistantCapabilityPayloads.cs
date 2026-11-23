@@ -91,11 +91,21 @@ internal static class AssistantCapabilityPayloads
 
     /// <summary>The topics <c>topics_list</c> / <c>topics_search</c> answered with.</summary>
     public static IReadOnlyList<TopicDto>? ReadTopics(JsonElement? data) =>
-        Read<List<TopicDto>>(data);
+        // topics_list answers with one page; topics_search still answers with a
+        // bare array. Both are a topic read for the proposal-evidence rule.
+        Read<TopicPageDto>(data)?.Items ?? Read<List<TopicDto>>(data);
 
     /// <summary>The topic ids those rows name, skipping a row that named none.</summary>
     public static IEnumerable<Guid> ReadTopicIds(JsonElement? data) =>
         ReadTopics(data)?.Select(topic => topic.Id).Where(id => id != Guid.Empty) ?? [];
+
+    /// <summary>
+    /// How many topics still had no kind when <c>topics_list</c> answered, for
+    /// the sentence a turn cut short adds above its review card. Null when the
+    /// shape does not say.
+    /// </summary>
+    public static int? ReadUnkindedTotal(JsonElement? data) =>
+        Read<TopicPageDto>(data)?.UnkindedTotal;
 
     /// <summary>The <c>noteId</c> a read capability was called with.</summary>
     public static Guid? ReadNoteId(JsonElement args) =>

@@ -11,6 +11,58 @@ public interface ITopicRepository
     Task<List<TopicDto>> GetAllWithUsageCountAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// One page of topics, ordered by usage desc then name asc, optionally only
+    /// topics with no kind or only one kind. The assistant's large-library
+    /// classification reads the library in pages rather than all at once.
+    /// </summary>
+    async Task<TopicPageDto> GetPageWithUsageAsync(
+        int page,
+        int pageSize,
+        bool unkindedOnly,
+        Guid? kindId,
+        CancellationToken cancellationToken = default)
+    {
+        // A host or test double that does not page still answers: the whole
+        // library is one list, sliced here. The product repository overrides
+        // this with a real query page.
+        var all = await GetAllWithUsageCountAsync(cancellationToken);
+        // Count the untyped topics before any kind filter: a page filtered to
+        // one kind would otherwise report that no topic is untyped.
+        var unkindedTotal = all.Count(topic => topic.KindId is null);
+        if (unkindedOnly)
+            all = all.Where(topic => topic.KindId is null).ToList();
+        else if (kindId is { } only)
+            all = all.Where(topic => topic.KindId == only).ToList();
+
+        var safePage = Math.Max(1, page);
+        var safeSize = Math.Clamp(pageSize, 1, 250);
+        var total = all.Count;
+        var totalPages = total == 0 ? 0 : (int)Math.Ceiling(total / (double)safeSize);
+        return new TopicPageDto(
+            all.Skip((safePage - 1) * safeSize).Take(safeSize).ToList(),
+            safePage,
+            safeSize,
+            total,
+            totalPages,
+            unkindedTotal,
+            safePage < totalPages ? safePage + 1 : null);
+    }
+
+    /// <summary>
+    /// The topics with these ids, with their usage count; ids that do not exist
+    /// are absent. Used to classify a batch without reading the whole library.
+    /// </summary>
+    async Task<List<TopicDto>> GetByIdsAsync(
+        IReadOnlyList<Guid> ids,
+        CancellationToken cancellationToken = default)
+    {
+        var wanted = ids.Distinct().ToHashSet();
+        return (await GetAllWithUsageCountAsync(cancellationToken))
+            .Where(topic => wanted.Contains(topic.Id))
+            .ToList();
+    }
+
+    /// <summary>
     /// Returns topics whose linked notes match the given term in Content, SelectedText, or Book Title.
     /// </summary>
     Task<List<TopicDto>> SearchByNoteTextAsync(string term, CancellationToken cancellationToken = default);

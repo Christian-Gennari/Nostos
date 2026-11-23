@@ -24,7 +24,10 @@ internal sealed record AssistantTurnFinalInput(
     AssistantTurnErrorDto? TerminalError,
     IReadOnlySet<string> SuccessfulCapabilities,
     int EvidenceCount,
-    AssistantTurnExecution? Execution);
+    AssistantTurnExecution? Execution,
+    // APPENDED (issue #1770 review): the library's own count of topics with no
+    // kind, so a turn cut short by a ceiling can say how many are left.
+    int? UnkindedTopicCount = null);
 
 /// <summary>The turn's ending: the one thing the person sees.</summary>
 internal sealed record AssistantTurnFinal(
@@ -171,11 +174,17 @@ internal sealed class AssistantTurnFinalizer(
             // A turn that answered a question from the user's material and also
             // proposed a change keeps its answer above the review card (#1745).
             // A turn that only organised keeps the fixed sentence alone.
+            // A turn the ceiling stopped says what the diff it staged did and
+            // what to do next, rather than letting the fixed sentence hide it.
             var answer = input.LastAssistantContent?.Trim();
             var answered = input.EvidenceCount > 0 && !string.IsNullOrWhiteSpace(answer);
-            reply = answered
-                ? $"{answer}\n\n{AssistantChangesetCoordinator.ReviewReply}"
+            var review = stoppedByExecutionGuard
+                ? SizedReviewNote(changeOutcome.Changeset?.Diff, input.UnkindedTopicCount)
+                    is { } sized
+                    ? $"{sized}\n\n{AssistantChangesetCoordinator.ReviewReply}"
+                    : AssistantChangesetCoordinator.ReviewReply
                 : AssistantChangesetCoordinator.ReviewReply;
+            reply = answered ? $"{answer}\n\n{review}" : review;
             replyCutShort = answered && input.ReplyCutShort;
         }
         else if (changeOutcome.Error is { } changeError)
@@ -254,5 +263,41 @@ internal sealed class AssistantTurnFinalizer(
             terminalError,
             changeOutcome.Changeset,
             stopReason);
+    }
+
+    /// <summary>
+    /// The sentence above a review card when the turn's ceiling stopped it
+    /// part way. Built from the server's own diff, never the model's narration:
+    /// how many topics it sorted, and — when the library was read — how many
+    /// still have no kind, so the reader knows a second run continues there.
+    /// Internal so the old-host diff (no topic-kind fields at all) is covered
+    /// directly (issue #1770 review, round 3).
+    /// </summary>
+    internal static string? SizedReviewNote(LibraryChangesetDiffDto? diff, int? unkindedTopicCount)
+    {
+        if (diff is null)
+            return null;
+
+        var sorted = diff.TopicKindAssignments.Count(assignment => assignment.KindId is not null);
+        if (sorted == 0)
+            return null;
+
+        var head = sorted == 1
+            ? "I sorted 1 topic before this turn's limit"
+            : $"I sorted {sorted} topics before this turn's limit";
+        // Only a topic that had no kind before this changeset is subtracted from
+        // the library's count; a changed kind was never part of it.
+        var given = diff.TopicKindAssignments.Count(assignment =>
+            assignment.KindId is not null && assignment.PreviousKindName is null);
+        var remaining = unkindedTopicCount is { } total ? Math.Max(0, total - given) : (int?)null;
+        return remaining switch
+        {
+            // The count is unknown: keep the generic sentence.
+            null => $"{head}. Apply these, then ask again.",
+            // Nothing is left to sort: there is no second run to ask for.
+            0 => $"{head}. Apply these.",
+            1 => $"{head}; 1 still has no kind. Apply these, then ask again.",
+            _ => $"{head}; {remaining} still have no kind. Apply these, then ask again.",
+        };
     }
 }

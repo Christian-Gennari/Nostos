@@ -144,7 +144,28 @@ public sealed class AssistantToolSchemaTests : IClassFixture<SqliteTestFixture>
         ["notes_read_for_review"] = new(
             Properties: new() { ["noteId"] = "string" },
             Required: ["noteId"]),
-        ["topics_list"] = new(Properties: new(), Required: []),
+        ["topics_list"] = new(
+            Properties: new()
+            {
+                ["page"] = "integer",
+                ["pageSize"] = "integer",
+                ["untyped"] = "boolean",
+                ["kindId"] = "string",
+            },
+            Required: []),
+        ["topics_list_kinds"] = new(Properties: new(), Required: []),
+        ["topics_create_kind"] = new(
+            Properties: new() { ["name"] = "string", ["colorKey"] = "string" },
+            Required: ["name"]),
+        ["topics_set_kind"] = new(
+            Properties: new()
+            {
+                ["topicIds"] = "array",
+                ["kind"] = "string",
+                ["clear"] = "boolean",
+                ["namedTopicIds"] = "array",
+            },
+            Required: ["topicIds"]),
         ["topics_search"] = new(
             Properties: new() { ["term"] = "string" },
             Required: ["term"]),
@@ -388,11 +409,11 @@ public sealed class AssistantToolSchemaTests : IClassFixture<SqliteTestFixture>
             .ToDictionary(group => group.Key, group => group.Count())
             .Should().BeEquivalentTo(new Dictionary<AssistantCapabilityCategory, int>
             {
-                [AssistantCapabilityCategory.KnowledgeRetrieval] = 9,
+                [AssistantCapabilityCategory.KnowledgeRetrieval] = 10,
                 [AssistantCapabilityCategory.SourceNavigation] = 2,
                 [AssistantCapabilityCategory.LibraryRead] = 5,
                 [AssistantCapabilityCategory.Capture] = 2,
-                [AssistantCapabilityCategory.Organization] = 12,
+                [AssistantCapabilityCategory.Organization] = 14,
                 [AssistantCapabilityCategory.OrdinaryAction] = 3,
                 [AssistantCapabilityCategory.Writing] = 3,
             });
@@ -414,7 +435,7 @@ public sealed class AssistantToolSchemaTests : IClassFixture<SqliteTestFixture>
     {
         var measurement = AssistantCapabilityCatalogueMetrics.Measure(CreateHarness().Registry.All);
 
-        measurement.CapabilityCount.Should().Be(36);
+        measurement.CapabilityCount.Should().Be(39);
         measurement.SerializedToolSchemaUtf8Bytes.Should().BeGreaterThan(0);
         measurement.ToolDescriptionUtf8Bytes.Should().BeGreaterThan(0);
         measurement.LegacyDuplicateAbilitiesPromptUtf8Bytes.Should().BeGreaterThan(

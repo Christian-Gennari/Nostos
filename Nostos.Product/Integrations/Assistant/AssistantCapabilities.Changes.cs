@@ -1,4 +1,7 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using Nostos.Backend.Data.Interfaces;
+using Nostos.Backend.Data.Models;
 using Nostos.Backend.Services.Library;
 
 namespace Nostos.Backend.Integrations.Assistant;
@@ -14,7 +17,10 @@ public static partial class AssistantCapabilities
     private const string CollectionArgument =
         "An existing collection's id, or the name of a collection created earlier in this turn.";
 
-    private static IReadOnlyList<AssistantCapability> BuildChangeCapabilities() =>
+    private const string TopicKindArgument =
+        "An existing kind's id or name, or the name of a kind created earlier in this turn.";
+
+    private static IReadOnlyList<AssistantCapability> BuildChangeCapabilities(ITopicRepository topics) =>
     [
         Stage(
             "library_create_collection",
@@ -273,7 +279,184 @@ public static partial class AssistantCapabilities
 
                 return await draft.StageAsync(op, [], ct);
             }),
+
+        Stage(
+            "topics_create_kind",
+            "Creates a new topic kind. Propose a new kind only when many topics need it, and use a kind the library already has when one fits. Creating a kind always waits for the reader's review.",
+            """
+            {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string", "description": "The kind's name, for example Person or Place. Required." },
+                "colorKey": { "type": "string", "description": "One of kind-1 through kind-12. Omit it and Nostos takes the first free palette colour." }
+              },
+              "required": ["name"],
+              "additionalProperties": true
+            }
+            """,
+            async (draft, args, ct) =>
+            {
+                var name = Str(args, "name")?.Trim();
+                if (string.IsNullOrWhiteSpace(name))
+                    return Invalid("'name' is required.");
+
+                var colorKey = Str(args, "colorKey")?.Trim();
+                if (colorKey is { Length: > 0 } && !TopicKindModel.IsValidColorKey(colorKey))
+                    return Invalid("'colorKey' must be one of kind-1 through kind-12.");
+
+                return await draft.StageAsync(
+                    new CreateTopicKindOp(name, name, colorKey), [], ct);
+            }),
+
+        StageWithContext(
+            "topics_set_kind",
+            "Gives one topic kind to many topics, or clears their kind. A kind the reader set is kept unless the user named that topic in this request; the result says how many were kept. Pass the topics the user named in namedTopicIds; omit it when the user named no topic, because an omitted list protects every reader kind. The server checks each id against the user's words.",
+            $$"""
+            {
+              "type": "object",
+              "properties": {
+                "topicIds": { "type": "array", "items": { "type": "string", "format": "uuid" }, "description": "The topics to classify, up to 250 (one page of topics_list). Required." },
+                "kind": { "type": "string", "description": "{{TopicKindArgument}} Omit it with clear true to remove the kind." },
+                "clear": { "type": "boolean", "description": "True to remove the topics' kind instead of setting one." },
+                "namedTopicIds": { "type": "array", "items": { "type": "string", "format": "uuid" }, "description": "Only the topicIds whose topic name the user wrote in this request. A kind the reader set is replaced or cleared only for these ids, and each one is checked against the user's words. Omit it when the user named no topic: an omitted list protects every reader kind." }
+              },
+              "required": ["topicIds"],
+              "additionalProperties": true
+            }
+            """,
+            async (context, draft, args, ct) =>
+            {
+                if (!TryIds(args, "topicIds", out var topicIds) || topicIds is not { Count: > 0 })
+                    return Invalid("'topicIds' must be a non-empty array of topic ids.");
+                // One page of topics_list is at most 250 topics, so a batch
+                // that matches a page classifies it in a single call while the
+                // preview stays bounded.
+                if (topicIds.Count > 250)
+                    return Invalid("At most 250 topics can be classified in one call; ask for the next page and stage it too.");
+                if (!TryIds(args, "namedTopicIds", out var namedTopicIds))
+                    return Invalid("'namedTopicIds' must be an array of topic ids when it is given.");
+
+                var clear = Bool(args, "clear") ?? false;
+                TopicKindRef? kind = null;
+                var dependsOn = new List<int>();
+                if (!clear)
+                {
+                    var kindArg = Str(args, "kind");
+                    if (kindArg is null)
+                        return Invalid("'kind' is required unless 'clear' is true.");
+                    if (!draft.TryResolveTopicKind(kindArg, out var resolved, out var createdBy))
+                    {
+                        var existing = (await topics.GetAllKindsAsync(ct))
+                            .FirstOrDefault(candidate => string.Equals(
+                                candidate.Name, kindArg.Trim(), StringComparison.OrdinalIgnoreCase));
+                        if (existing is null)
+                        {
+                            return AssistantToolResult.Fail(
+                                LibraryChangesetErrorCodes.TopicKindNotFound,
+                                $"'{kindArg}' is neither a kind id nor a kind created earlier in this turn. Use topics_list_kinds for the existing kinds.");
+                        }
+                        resolved = TopicKindRef.Existing(existing.Id);
+                    }
+                    kind = resolved;
+                    if (createdBy is { } step)
+                        dependsOn.Add(step);
+                }
+
+                // The reader's own kinds are theirs. Only a topic the user named
+                // in their request may have one replaced or cleared. The model
+                // says which topics it believes the user named, and each id is
+                // checked against the reader's own words. An omitted list means
+                // no topic was named: the prose is never guessed at here, so
+                // every reader kind stays protected.
+                var distinct = topicIds.Distinct().ToList();
+                var states = await topics.GetByIdsAsync(distinct, ct);
+                var byId = states.ToDictionary(topic => topic.Id);
+                var userText = context.UserText ?? string.Empty;
+                var verifiedNames = AssistantNamedTopics.Verified(
+                    namedTopicIds, byId, topic => topic.Name, userText);
+                var allowedToReplace = new List<Guid>();
+                var overwrite = new List<Guid>();
+                var keptReaderKinds = 0;
+                var unknown = new List<Guid>();
+                foreach (var topicId in distinct)
+                {
+                    if (!byId.TryGetValue(topicId, out var topic))
+                    {
+                        unknown.Add(topicId);
+                        continue;
+                    }
+
+                    var readerKind = topic.KindSource == TopicKindSources.Reader;
+                    if (readerKind)
+                    {
+                        if (!verifiedNames.Contains(topicId))
+                        {
+                            keptReaderKinds++;
+                            continue;
+                        }
+                        allowedToReplace.Add(topicId);
+                    }
+
+                    overwrite.Add(topicId);
+                }
+
+                if (unknown.Count > 0)
+                {
+                    return AssistantToolResult.Fail(
+                        LibraryChangesetErrorCodes.TopicNotFound,
+                        unknown.Count == 1
+                            ? "One of the topics was not found. Use topics_list for the topics that exist."
+                            : $"{unknown.Count} of the topics were not found. Use topics_list for the topics that exist.");
+                }
+
+                if (overwrite.Count == 0)
+                {
+                    if (kind is { Ref: { } kindRef })
+                        await draft.NoteTopicKindNamedAsync(kindRef, ct);
+
+                    return AssistantToolResult.Ok(Element(new
+                    {
+                        status = "kept_reader_kinds",
+                        kept = keptReaderKinds,
+                        note = keptReaderKinds == 1
+                            ? "Kept 1 kind you set yourself."
+                            : $"Kept {keptReaderKinds} kinds you set yourself.",
+                    }));
+                }
+
+                // The op carries which topics were named, not a single flag, so
+                // an apply recomputed later can never overwrite a reader kind
+                // the reader did not name — a clear included.
+                var stageArgs = new SetTopicKindOp(
+                    overwrite,
+                    kind,
+                    OverwriteReaderKinds: allowedToReplace.Count > 0,
+                    NamedTopicIds: allowedToReplace);
+                var staged = await draft.StageAsync(stageArgs, dependsOn, ct);
+                if (!staged.Success || keptReaderKinds == 0)
+                    return staged;
+
+                return staged with
+                {
+                    Data = WithReaderKindNote(staged.Data, keptReaderKinds),
+                };
+            }),
     ];
+
+    private static JsonElement? WithReaderKindNote(JsonElement? data, int kept)
+    {
+        if (data is not { } value)
+            return data;
+
+        if (JsonNode.Parse(value.GetRawText()) is not JsonObject node)
+            return data;
+
+        node["keptReaderKinds"] = kept;
+        node["note"] = kept == 1
+            ? "Kept 1 kind you set yourself."
+            : $"Kept {kept} kinds you set yourself.";
+        return JsonSerializer.SerializeToElement(node);
+    }
 
     private static AssistantCapability Stage(
         string name,
@@ -287,6 +470,19 @@ public static partial class AssistantCapabilities
             summary,
             schema,
             (context, args, ct) => stage(context.Changeset!, args, ct));
+
+    private static AssistantCapability StageWithContext(
+        string name,
+        string summary,
+        string schema,
+        Func<AssistantToolContext, AssistantChangesetDraft, JsonElement, CancellationToken, Task<AssistantToolResult>> stage) =>
+        new(
+            name,
+            AssistantTrustClass.Stage,
+            AssistantCapabilityCategory.Organization,
+            summary,
+            schema,
+            (context, args, ct) => stage(context, context.Changeset!, args, ct));
 
     private static bool TryCollection(
         AssistantChangesetDraft draft,

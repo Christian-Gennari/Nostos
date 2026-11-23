@@ -47,6 +47,7 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
         "notes_list_unlinked",
         "notes_read_for_review",
         "topics_list",
+        "topics_list_kinds",
         "topics_search",
         "topics_get",
         "topics_propose_links",
@@ -68,6 +69,8 @@ public sealed class AssistantCapabilityRegistryTests : IClassFixture<SqliteTestF
         "library_remove_books_from_collection",
         "library_set_book_collections",
         "library_update_book",
+        "topics_create_kind",
+        "topics_set_kind",
     ];
 
     private readonly SqliteTestFixture _fixture;

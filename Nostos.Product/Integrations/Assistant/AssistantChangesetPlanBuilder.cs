@@ -21,7 +21,8 @@ internal static class AssistantChangesetPlanBuilder
 
     public static CanonicalPlan Build(
         LibraryChangesetPreviewState state,
-        IReadOnlyList<LibraryChangeOp> rawOps)
+        IReadOnlyList<LibraryChangeOp> rawOps,
+        IReadOnlySet<string>? namedCreatedKindRefs = null)
     {
         var before = state.Before;
         var after = state.After;
@@ -54,7 +55,7 @@ internal static class AssistantChangesetPlanBuilder
                 out var moveStepByCollection,
                 out var deletedDescendantCounts))
         {
-            return FallbackToRaw(rawOps, before.Collections);
+            return FallbackToRaw(rawOps, before, after, state.CreatedRefs, namedCreatedKindRefs);
         }
 
         LibraryCollectionRef RefOf(Guid id) =>
@@ -116,6 +117,8 @@ internal static class AssistantChangesetPlanBuilder
             if (BuildUpdateBookOp(bookId, was, after.Books[bookId]) is { } update)
                 ops.Add(update);
         }
+
+        ops.AddRange(BuildTopicKindOps(before, after, rawOps, state.CreatedRefs, namedCreatedKindRefs));
 
         var dependsOn = ComputeDependencies(ops, before.Collections, moveStepByCollection);
         return new CanonicalPlan(ops, dependsOn, deletedDescendantCounts);
@@ -282,17 +285,30 @@ internal static class AssistantChangesetPlanBuilder
 
     private static CanonicalPlan FallbackToRaw(
         IReadOnlyList<LibraryChangeOp> rawOps,
-        IReadOnlyDictionary<Guid, CollectionState> beforeCollections)
+        LibraryChangesetDiff.LibrarySnapshot before,
+        LibraryChangesetDiff.LibrarySnapshot after,
+        IReadOnlyDictionary<string, Guid>? createdRefs,
+        IReadOnlySet<string>? namedCreatedKindRefs)
     {
-        var dependsOn = ComputeDependencies(rawOps, beforeCollections, moveStepByCollection: null);
+        // The collection sequence is the model's raw one because a name swap or
+        // a parent cycle has no canonical order. Topic-kind operations have no
+        // such cycles, so keep them canonical even here: one op per topic is
+        // what lets the review card tick a topic on its own and makes the
+        // client's included set agree with the server's.
+        var ops = rawOps
+            .Where(op => op is not SetTopicKindOp and not CreateTopicKindOp)
+            .ToList();
+        ops.AddRange(BuildTopicKindOps(before, after, rawOps, createdRefs, namedCreatedKindRefs));
+
+        var dependsOn = ComputeDependencies(ops, before.Collections, moveStepByCollection: null);
         var deletedDescendantCounts = new Dictionary<Guid, int>();
-        foreach (var op in rawOps)
+        foreach (var op in ops)
         {
-            if (op is DeleteCollectionOp { Collection.Id: { } id } && beforeCollections.ContainsKey(id))
-                deletedDescendantCounts[id] = DescendantsOf(beforeCollections, id).Count;
+            if (op is DeleteCollectionOp { Collection.Id: { } id } && before.Collections.ContainsKey(id))
+                deletedDescendantCounts[id] = DescendantsOf(before.Collections, id).Count;
         }
 
-        return new CanonicalPlan(rawOps, dependsOn, deletedDescendantCounts);
+        return new CanonicalPlan(ops, dependsOn, deletedDescendantCounts);
     }
 
     private static List<IReadOnlyList<int>> ComputeDependencies(
@@ -301,10 +317,13 @@ internal static class AssistantChangesetPlanBuilder
         IReadOnlyDictionary<Guid, int>? moveStepByCollection)
     {
         var createStepByRef = new Dictionary<string, int>(StringComparer.Ordinal);
+        var createKindStepByRef = new Dictionary<string, int>(StringComparer.Ordinal);
         for (var i = 0; i < ops.Count; i++)
         {
             if (ops[i] is CreateCollectionOp create)
                 createStepByRef[create.Ref] = i;
+            if (ops[i] is CreateTopicKindOp createKind)
+                createKindStepByRef[createKind.Ref] = i;
         }
 
         var result = new List<IReadOnlyList<int>>(ops.Count);
@@ -316,6 +335,13 @@ internal static class AssistantChangesetPlanBuilder
             {
                 if (reference.Ref is { } name && createStepByRef.TryGetValue(name, out var createStep) && createStep < i)
                     deps.Add(createStep);
+            }
+
+            if (op is SetTopicKindOp { Kind.Ref: { } kindRef }
+                && createKindStepByRef.TryGetValue(kindRef, out var createKindStep)
+                && createKindStep < i)
+            {
+                deps.Add(createKindStep);
             }
 
             // If a surviving child was moved out of a deleted collection's subtree,
@@ -348,6 +374,131 @@ internal static class AssistantChangesetPlanBuilder
         RemoveBooksFromCollectionOp remove => [remove.Collection],
         _ => [],
     };
+
+    /// <summary>
+    /// The canonical topic-kind operations for a before/after pair. A topic is
+    /// named only when a raw operation allowed it — either its
+    /// <see cref="SetTopicKindOp.NamedTopicIds"/> contains it or, when that set
+    /// is absent, the op overwrites reader kinds. Every other topic gets a
+    /// non-null, empty named set, which is what tells the apply to protect a
+    /// reader kind even if the reader sets one after staging.
+    /// </summary>
+    internal static List<LibraryChangeOp> BuildTopicKindOps(
+        LibraryChangesetDiff.LibrarySnapshot before,
+        LibraryChangesetDiff.LibrarySnapshot after,
+        IReadOnlyList<LibraryChangeOp> rawOps,
+        IReadOnlyDictionary<string, Guid>? createdRefs = null,
+        IReadOnlySet<string>? namedCreatedKindRefs = null)
+    {
+        var ops = new List<LibraryChangeOp>();
+        var createdRefById = new Dictionary<Guid, string>();
+        var usedRefs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var namedByRaw = NamedTopicIds(rawOps);
+
+        var rawCreateById = new Dictionary<Guid, CreateTopicKindOp>();
+        var rawCreateByName = new Dictionary<string, CreateTopicKindOp>(StringComparer.OrdinalIgnoreCase);
+        foreach (var rawCreate in rawOps.OfType<CreateTopicKindOp>())
+        {
+            rawCreateByName.TryAdd(rawCreate.Name, rawCreate);
+            if (createdRefs is not null && createdRefs.TryGetValue(rawCreate.Ref, out var createdId))
+                rawCreateById[createdId] = rawCreate;
+        }
+
+        var allNamedKindRefs = namedCreatedKindRefs is not null
+            ? new HashSet<string>(namedCreatedKindRefs, StringComparer.Ordinal)
+            : new HashSet<string>(StringComparer.Ordinal);
+        foreach (var setOp in rawOps.OfType<SetTopicKindOp>())
+        {
+            if (setOp.Kind?.Ref is { } kindRef)
+                allNamedKindRefs.Add(kindRef);
+        }
+
+        var usedKindIds = after.TopicKindAssignments.Values
+            .Where(assignment => assignment.KindId is not null)
+            .Select(assignment => assignment.KindId!.Value)
+            .ToHashSet();
+
+        var createdKinds = after.TopicKinds
+            .Where(pair => !before.TopicKinds.ContainsKey(pair.Key))
+            .OrderBy(pair => pair.Value.SortOrder)
+            .ThenBy(pair => pair.Value.Name, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(pair => pair.Value.Name, StringComparer.Ordinal)
+            .ThenBy(pair => pair.Key)
+            .ToList();
+        foreach (var (id, kind) in createdKinds)
+        {
+            if (!rawCreateById.TryGetValue(id, out var rawCreate))
+                rawCreateByName.TryGetValue(kind.Name, out rawCreate);
+
+            var wasNamed = rawCreate is not null && allNamedKindRefs.Contains(rawCreate.Ref);
+            if (!usedKindIds.Contains(id) && wasNamed)
+                continue;
+
+            var reference = AllocateRef($"kind:{kind.Name}", usedRefs);
+            createdRefById[id] = reference;
+            // Keep the raw op's ColorKey (null when the model omitted it) so
+            // apply picks a free palette colour instead of failing if the colour
+            // chosen during staging is taken while the review waits.
+            ops.Add(new CreateTopicKindOp(reference, kind.Name, rawCreate?.ColorKey));
+        }
+
+        var assignments = before.TopicKindAssignments.Keys
+            .Union(after.TopicKindAssignments.Keys)
+            .Where(topicId => before.TopicKindAssignments.GetValueOrDefault(topicId)
+                != after.TopicKindAssignments.GetValueOrDefault(topicId))
+            .OrderBy(topicId => KindName(after, after.TopicKindAssignments.GetValueOrDefault(topicId)?.KindId) ?? "\uFFFF",
+                StringComparer.OrdinalIgnoreCase)
+            .ThenBy(topicId => after.TopicKindAssignments.GetValueOrDefault(topicId)?.TopicName
+                ?? before.TopicKindAssignments.GetValueOrDefault(topicId)?.TopicName ?? string.Empty,
+                StringComparer.OrdinalIgnoreCase)
+            .ThenBy(topicId => topicId)
+            .ToList();
+
+        foreach (var topicId in assignments)
+        {
+            var now = after.TopicKindAssignments.GetValueOrDefault(topicId);
+            TopicKindRef? kind = null;
+            if (now?.KindId is { } kindId)
+            {
+                kind = createdRefById.TryGetValue(kindId, out var reference)
+                    ? TopicKindRef.Created(reference)
+                    : TopicKindRef.Existing(kindId);
+            }
+
+            // Only a topic a raw operation allowed may have a reader kind
+            // replaced. Every other topic carries a non-null, empty named set,
+            // which is how the apply always protects it, even if the reader
+            // sets a kind after this plan was staged.
+            IReadOnlyList<Guid> named = namedByRaw.Contains(topicId) ? [topicId] : [];
+            ops.Add(new SetTopicKindOp([topicId], kind, NamedTopicIds: named));
+        }
+
+        return ops;
+    }
+
+    /// <summary>
+    /// The topics a raw operation allowed to have a reader kind replaced. A set
+    /// on the op wins: the model's verified ids are exactly what may change. A
+    /// whole-batch <see cref="SetTopicKindOp.OverwriteReaderKinds"/> counts only
+    /// when the op carries no set (an older caller), never as a way to widen a
+    /// set the model did pass.
+    /// </summary>
+    private static HashSet<Guid> NamedTopicIds(IReadOnlyList<LibraryChangeOp> rawOps)
+    {
+        var named = new HashSet<Guid>();
+        foreach (var op in rawOps.OfType<SetTopicKindOp>())
+        {
+            if (op.NamedTopicIds is { } ids)
+                named.UnionWith(ids);
+            else if (op.OverwriteReaderKinds)
+                named.UnionWith(op.TopicIds);
+        }
+
+        return named;
+    }
+
+    private static string? KindName(LibraryChangesetDiff.LibrarySnapshot snapshot, Guid? kindId) =>
+        kindId is { } id && snapshot.TopicKinds.TryGetValue(id, out var kind) ? kind.Name : null;
 
     private static UpdateBookOp? BuildUpdateBookOp(Guid bookId, BookFieldsState was, BookFieldsState now)
     {

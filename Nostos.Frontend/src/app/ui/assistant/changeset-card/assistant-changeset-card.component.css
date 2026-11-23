@@ -73,8 +73,24 @@
   line-height: 1.45;
 }
 
+/*
+ * A left-out step reads as off through muted ink and a strike-through. The
+ * decoration goes on the words only: the sentence that says why the server kept
+ * the step must stay legible, and a strike cannot be undone on a descendant.
+ */
 .changeset__step--off {
   color: var(--color-text-muted);
+}
+
+.changeset__step--off .changeset__step-summary {
+  text-decoration: line-through;
+}
+
+.changeset__topic--off {
+  color: var(--color-text-muted);
+}
+
+.changeset__topic--off .changeset__topic-name {
   text-decoration: line-through;
 }
 
@@ -91,6 +107,152 @@
 
 .changeset__step-control input:disabled {
   cursor: not-allowed;
+}
+
+.changeset__kind-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.changeset__kind-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/*
+ * A left-out kind keeps its place but reads as off through muted ink, a dashed
+ * edge and a strike-through — the same off-state recipe as the map legend's
+ * chips. Fading the whole group to 0.6 dropped its text under the contrast
+ * floor, so the state is carried by ink and decoration instead of opacity.
+ */
+.changeset__kind-group--off .changeset__kind-head {
+  border-color: var(--border-color);
+  background: var(--bg-hover);
+  color: var(--color-text-muted);
+}
+
+.changeset__kind-group--off .changeset__kind-name {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+.changeset__kind-group--off .changeset__kind-swatch {
+  opacity: 0.35;
+}
+
+/* "kept: you set this kind yourself" — the server's reason for a step it left
+   out of the review, on its own line under the words it belongs to and aligned
+   with them (the checkbox and its gap). */
+.changeset__skipped {
+  display: block;
+  flex: 0 0 100%;
+  box-sizing: border-box;
+  padding-left: 24px;
+  color: var(--color-text-muted);
+  font-size: 0.74rem;
+  font-style: italic;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.changeset__kind-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  /* The off state only recolours this border, so the checkbox does not shift
+     sideways when a whole group is unticked. */
+  padding: 2px 6px;
+  border: 1px dashed transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--color-text-main);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.changeset__kind-head:has(input:disabled),
+.changeset__step-control:has(input:disabled),
+.changeset__topic-control:has(input:disabled),
+.changeset__kind-head input:disabled,
+.changeset__topic-control input:disabled {
+  cursor: not-allowed;
+}
+
+.changeset__kind-swatch {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.changeset__kind-name {
+  font-weight: 600;
+}
+
+.changeset__kind-count {
+  color: var(--color-text-muted);
+}
+
+.changeset__kind-new {
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--bg-surface-alt);
+  color: var(--color-text-muted);
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* The details panel is --bg-surface-alt too, so the pill needs its own
+   surface there or it disappears into the panel. */
+.changeset__details .changeset__kind-new {
+  background: var(--bg-surface);
+}
+
+.changeset__kind-topics {
+  min-width: 0;
+  margin: 0 0 0 24px;
+  color: var(--color-text-muted);
+  font-size: 0.74rem;
+  line-height: 1.4;
+  /* A long topic name wraps inside the card instead of widening it. */
+  overflow-wrap: anywhere;
+}
+
+.changeset__topic-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.changeset__kind-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 6px;
+}
+
+.changeset__kind-detail-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--color-text-main);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.changeset__topic-control {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  cursor: pointer;
 }
 
 .changeset__details-toggle {

@@ -67,9 +67,11 @@ export class AssistantChangesetGateway {
   }
 }
 
-/** The steps of a changeset the user has left out. */
+/** The steps of a changeset the user has left out (never server-kept steps). */
 export function excludedSteps(changeset: AssistantChangesetDto): number[] {
-  return changeset.steps.filter((step) => !step.included).map((step) => step.index);
+  return changeset.steps
+    .filter((step) => !step.included && !step.skippedReason)
+    .map((step) => step.index);
 }
 
 /**

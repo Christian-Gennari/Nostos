@@ -13,6 +13,18 @@ public record TopicDto(
     Guid? KindId = null,
     string? KindSource = null);
 
+/// <summary>One page of topics for the assistant's paged classification read.</summary>
+public record TopicPageDto(
+    IReadOnlyList<TopicDto> Items,
+    int Page,
+    int PageSize,
+    int Total,
+    int TotalPages,
+    int UnkindedTotal,
+    // APPENDED (issue #1770 review): the next page to ask for, or null on the
+    // last one, so a reader never has to compute it from the totals.
+    int? NextPage = null);
+
 // For the detail view
 public record TopicDetailDto(Guid Id, string Name, List<NoteContextDto> Notes);
 

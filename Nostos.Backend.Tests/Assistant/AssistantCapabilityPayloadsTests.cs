@@ -65,6 +65,26 @@ public sealed class AssistantCapabilityPayloadsTests
     }
 
     [Fact]
+    public void Topics_read_as_a_page_or_a_bare_array_and_carry_the_unkinded_total()
+    {
+        var page = Payload(
+            """
+            {"items":[{"id":"0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0","name":"Freire","usageCount":0,"kindSource":null}],"page":1,"pageSize":50,"total":1,"totalPages":1,"unkindedTotal":7,"nextPage":null}
+            """);
+        var bare = Payload(
+            """
+            [{"id":"0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0","name":"Freire","usageCount":0}]
+            """);
+
+        AssistantCapabilityPayloads.ReadTopics(page).Should().ContainSingle()
+            .Which.Name.Should().Be("Freire");
+        AssistantCapabilityPayloads.ReadTopics(bare).Should().ContainSingle()
+            .Which.Name.Should().Be("Freire");
+        AssistantCapabilityPayloads.ReadUnkindedTotal(page).Should().Be(7);
+        AssistantCapabilityPayloads.ReadUnkindedTotal(bare).Should().BeNull();
+    }
+
+    [Fact]
     public void A_payload_of_another_shape_is_not_this_shape()
     {
         var wrongStates = Payload("""{"passages":[],"states":"not an array","evidenceAvailable":false}""");

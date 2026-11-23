@@ -1610,7 +1610,7 @@ describe('TopicMapComponent', () => {
       ],
     };
 
-    it('renders the interactive kind legend in kind mode with counts, No kind (n), and Sort them link', () => {
+    it('renders the interactive kind legend in kind mode with counts, No kind (n), and a Sort them by hand link', () => {
       fixture.componentRef.setInput('colorMode', 'kind');
       fixture.componentRef.setInput('topicKinds', kinds);
       setTopics(kindTopics);
@@ -1629,7 +1629,7 @@ describe('TopicMapComponent', () => {
 
       const sortLink = fixture.nativeElement.querySelector('.map-legend-sort') as HTMLAnchorElement;
       expect(sortLink).toBeTruthy();
-      expect(sortLink.textContent?.trim()).toBe('Sort them');
+      expect(sortLink.textContent?.trim()).toBe('Sort them by hand');
       expect(sortLink.getAttribute('href')).toBe('/brain/kinds?filter=untyped');
 
       const toggled = vi.fn();

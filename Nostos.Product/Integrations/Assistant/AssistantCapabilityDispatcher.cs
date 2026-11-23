@@ -249,7 +249,8 @@ internal sealed class AssistantCapabilityDispatcher(
         var toolContext = new AssistantToolContext(
             ClientId: conversationKey,
             IdempotencyKey: AssistantMutationIdentity.Key(turnId, capability.Name, args),
-            Changeset: draft);
+            Changeset: draft,
+            UserText: message);
 
         if (AssistantTurnActivities.ForCapability(capability) is { } turnActivity
             && activity is not null)

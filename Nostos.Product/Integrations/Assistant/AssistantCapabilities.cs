@@ -78,7 +78,7 @@ public static partial class AssistantCapabilities
         if (readingList is not null)
             capabilities.AddRange(BuildReadingListCapabilities(readingList));
 
-        capabilities.AddRange(BuildChangeCapabilities());
+        capabilities.AddRange(BuildChangeCapabilities(topics));
 
         if (bookText is not null)
             capabilities.AddRange(BuildBookTextCapabilities(bookText));

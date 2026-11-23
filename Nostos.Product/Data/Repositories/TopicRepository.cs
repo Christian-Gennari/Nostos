@@ -17,12 +17,62 @@ public class TopicRepository : ITopicRepository
         _db = db;
     }
 
-    public async Task<List<TopicDto>> GetAllWithUsageCountAsync(
+    public Task<List<TopicDto>> GetAllWithUsageCountAsync(
+        CancellationToken cancellationToken = default) =>
+        QueryTopics(_db.Topics).ToListAsync(cancellationToken);
+
+    public async Task<TopicPageDto> GetPageWithUsageAsync(
+        int page,
+        int pageSize,
+        bool unkindedOnly,
+        Guid? kindId,
         CancellationToken cancellationToken = default)
     {
-        return await _db
-            .Topics.OrderByDescending(c => c.NoteTopics.Count())
+        var safePage = Math.Max(1, page);
+        var safeSize = Math.Clamp(pageSize, 1, 250);
+        var query = _db.Topics.AsQueryable();
+
+        if (unkindedOnly)
+            query = query.Where(topic => topic.KindId == null);
+        else if (kindId is { } id)
+            query = query.Where(topic => topic.KindId == id);
+
+        var total = await query.CountAsync(cancellationToken);
+        var unkindedTotal = await _db.Topics.CountAsync(topic => topic.KindId == null, cancellationToken);
+        var items = await QueryTopics(query)
+            .Skip((safePage - 1) * safeSize)
+            .Take(safeSize)
+            .ToListAsync(cancellationToken);
+        var totalPages = total == 0 ? 0 : (int)Math.Ceiling(total / (double)safeSize);
+
+        return new TopicPageDto(
+            items,
+            safePage,
+            safeSize,
+            total,
+            totalPages,
+            unkindedTotal,
+            safePage < totalPages ? safePage + 1 : null);
+    }
+
+    public async Task<List<TopicDto>> GetByIdsAsync(
+        IReadOnlyList<Guid> ids,
+        CancellationToken cancellationToken = default)
+    {
+        var wanted = ids.Distinct().ToList();
+        return wanted.Count == 0
+            ? []
+            : await QueryTopics(_db.Topics.Where(topic => wanted.Contains(topic.Id)))
+                .ToListAsync(cancellationToken);
+    }
+
+    private static IQueryable<TopicDto> QueryTopics(IQueryable<TopicModel> topics) =>
+        topics
+            .OrderByDescending(c => c.NoteTopics.Count())
             .ThenBy(c => c.Topic)
+            // A deterministic tie-break, so a page boundary can never repeat or
+            // skip a topic when two topics have the same usage and name.
+            .ThenBy(c => c.Id)
             .Select(c => new TopicDto(
                 c.Id,
                 c.Topic,
@@ -31,9 +81,7 @@ public class TopicRepository : ITopicRepository
                 null,
                 c.Description,
                 c.KindId,
-                c.KindSource))
-            .ToListAsync(cancellationToken);
-    }
+                c.KindSource));
 
     public Task<List<TopicDto>> SearchByNoteTextAsync(
         string term,

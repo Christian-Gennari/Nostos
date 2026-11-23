@@ -15,6 +15,18 @@ public readonly record struct LibraryCollectionRef(Guid? Id, string? Ref)
 }
 
 /// <summary>
+/// A topic kind named either by its id or by the reference of a kind an earlier
+/// operation in the same changeset creates. Exactly one is set.
+/// </summary>
+public readonly record struct TopicKindRef(Guid? Id, string? Ref)
+{
+    public static TopicKindRef Existing(Guid id) => new(id, null);
+    public static TopicKindRef Created(string reference) => new(null, reference);
+
+    public override string ToString() => Id?.ToString() ?? $"ref:{Ref}";
+}
+
+/// <summary>
 /// One change in a changeset. Operations run in the order given, inside one
 /// transaction, through the same canonical code as every other library write.
 /// </summary>
@@ -48,6 +60,28 @@ public sealed record AddBooksToCollectionOp(LibraryCollectionRef Collection, IRe
 /// <summary>Removes books from a collection; a book not in it is left alone.</summary>
 public sealed record RemoveBooksFromCollectionOp(LibraryCollectionRef Collection, IReadOnlyList<Guid> BookIds)
     : LibraryChangeOp;
+
+/// <summary>
+/// Creates a topic kind. A null <paramref name="ColorKey"/> takes the first
+/// free palette colour. Later operations in the same changeset can name it by
+/// <paramref name="Ref"/>.
+/// </summary>
+public sealed record CreateTopicKindOp(string Ref, string Name, string? ColorKey = null)
+    : LibraryChangeOp;
+
+/// <summary>
+/// Gives one kind to many topics, or clears their kind when
+/// <paramref name="Kind"/> is null. A kind the reader set is kept unless the op
+/// says that topic was named: <paramref name="NamedTopicIds"/> names exactly the
+/// topics the user named (the apply reads it, so a recomputed apply can never
+/// overwrite an unnamed reader kind), and <paramref name="OverwriteReaderKinds"/>
+/// is the older whole-batch flag, used only when the set is null.
+/// </summary>
+public sealed record SetTopicKindOp(
+    IReadOnlyList<Guid> TopicIds,
+    TopicKindRef? Kind,
+    bool OverwriteReaderKinds = false,
+    IReadOnlyList<Guid>? NamedTopicIds = null) : LibraryChangeOp;
 
 /// <summary>Edits a book's own fields. A null field is left unchanged.</summary>
 public sealed record UpdateBookOp(
@@ -99,7 +133,35 @@ internal sealed record LibraryChangesetPreviewState(
 public sealed record LibraryUndoSnapshot(
     IReadOnlyList<CollectionSnapshot> Collections,
     IReadOnlyList<MembershipSnapshot> Memberships,
-    IReadOnlyList<BookFieldsSnapshot> Books);
+    IReadOnlyList<BookFieldsSnapshot> Books,
+    // APPENDED (issue #1770): kinds the changeset created and every topic whose
+    // kind it changed, with the source each side carried.
+    IReadOnlyList<TopicKindSnapshot> TopicKinds,
+    IReadOnlyList<TopicKindAssignmentSnapshot> TopicKindAssignments);
+
+/// <summary>A topic kind row; a null side means it did not exist then.</summary>
+public sealed record TopicKindSnapshot(Guid Id, TopicKindState? Before, TopicKindState? After);
+
+public sealed record TopicKindState(string Name, string ColorKey, int SortOrder);
+
+/// <summary>
+/// One topic's kind and source before and after the changeset. Restoring the
+/// order matters: undo puts every topic back first, then removes a kind the
+/// changeset created once nothing uses it.
+/// </summary>
+public sealed record TopicKindAssignmentSnapshot(
+    Guid TopicId,
+    string TopicName,
+    TopicKindAssignmentState Before,
+    TopicKindAssignmentState After);
+
+public sealed record TopicKindAssignmentState(
+    string TopicName,
+    Guid? KindId,
+    string? Source,
+    // APPENDED (issue #1770 review): the kind's display name at that moment, so
+    // undo can name a kind the reader deleted after the apply.
+    string? KindName = null);
 
 /// <summary>A collection row; a null side means it did not exist then.</summary>
 public sealed record CollectionSnapshot(Guid Id, CollectionState? Before, CollectionState? After);
@@ -167,4 +229,8 @@ public static class LibraryChangesetErrorCodes
     public const string DiffChanged = "changeset_diff_changed";
     public const string BookNotFound = "book_not_found";
     public const string CollectionNotFound = "collection_not_found";
+    public const string TopicNotFound = "topic_not_found";
+    public const string TopicKindNotFound = "topic_kind_not_found";
+    public const string TopicKindLimit = "topic_kind_limit";
+    public const string TopicKindDuplicate = "topic_kind_duplicate";
 }

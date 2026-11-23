@@ -45,8 +45,10 @@
         <app-map-kind-legend
           [entries]="kindLegend()"
           [hiddenByKindCount]="hiddenByKindCount()"
+          [assistantAvailable]="assistantAvailable"
           (toggled)="onToggleKind($event)"
           (cleared)="clearKindFilter.emit()"
+          (sortWithAssistant)="sortWithAssistant.emit()"
         />
         }
       </div>
