@@ -35,7 +35,7 @@ The Brain has no view toggle: the map is a place in the sidebar, not a mode.
 | Sidebar row | 34px tall, radius 8px, padding `0 8px 0 12px`, 14.08px | the same |
 | Row count | 20px line box, 11.52px, no chip ground | the same |
 | Row actions | hover overlay on fine pointers; one 44px dots-three menu on touch | the same |
-| Dock (`app-app-dock`) | `--dock-bar-h: 50px`, `40px` items, anchored at `left: var(--dock-anchor-x)` (`calc(50% + 124px)`, `calc(50% + 36px)` collapsed) | anchored on the reader pane at ≥1280px (`calc(50% + 314px)`, `calc(50% + 226px)` collapsed) and on the content region below 1280px (`calc(50% + 124px)`) |
+| Dock (`app-app-dock`) | `--dock-bar-h: 50px`, `40px` items, anchored at `left: var(--dock-anchor-x)` (`calc(50% + 124px)`, `calc(50% + 36px)` collapsed) | the same as the Library on every Brain page |
 
 On a touch screen the Brain's toolbar controls step up to the 44px rung
 (`--control-h-touch`), as the Library's do. The sidebar keeps the Library's
@@ -44,23 +44,22 @@ taller row. See `docs/brain.md`.
 
 ## Dock anchor across Library / Brain / Studio (#1808)
 
-Decision (2026-11-23): **centre the dock on each mode's main pane** rather than
-the window or a single fixed offset to the right of the left sidebar.
+Decision (2026-11-23, revised after review of the first build): **centre the
+dock on everything to the right of the left sidebar**, in Library and Brain
+alike. The first build centred it on the Brain's reader pane; it never crossed
+a border there, but it looked pushed to the right and jumped between Library
+and Brain, and the owner chose the centred look over that guarantee.
 
-- In the wide Brain (≥1280px), the sidebar (`248px`) and list (`380px`) put the
-  list/reader border at `x = 628px`. Centring the ~520–560px desktop dock on the
-  area to the right of the sidebar (`248 + (W − 248) / 2`) would make it cross
-  the list/reader border on every viewport below ~1550px (including 1280, 1366
-  and 1440).
-- `.workspace-layout` sets `--dock-anchor-x` to the horizontal centre of the
-  active mode's main pane:
-  - **Library** (and Brain below 1280px, or Brain Map/Kinds): `calc(50% + 124px)`
-    (`calc(50% + 36px)` when the `72px` sidebar rail is collapsed).
-  - **Brain list + reader** (≥1280px): `calc(50% + 314px)` (`calc(50% + 226px)`
-    when the sidebar is collapsed).
+- `.workspace-layout` sets `--dock-anchor-x`:
+  - **Library and Brain** (every Brain page): `calc(50% + 124px)`, or
+    `calc(50% + 36px)` when the `72px` sidebar rail is collapsed.
   - **Writing Studio** `.editor-pane`: `calc(50% + 124px)` with the `248px` left
     sidebar open, `calc(50% - 180px)` with the `360px` right reference drawer
     open, `calc(50% - 56px)` with both open, and `50%` with both closed.
+- Known trade-off: in the wide Brain the list/reader border is at `x = 628px`.
+  The dock without Ask Nostos (335px) clears it from about 1342px wide; with
+  Ask Nostos on (588px) it crosses it below about 1596px. The panes' bottom
+  padding keeps the last line of each column clear of the dock.
 - `app-app-dock` positions at `left: var(--dock-anchor-x, 50%)` and animates
   `left` with `--motion-slow` / `--ease-standard` (disabled under
   `prefers-reduced-motion: reduce` and on phone rail layouts ≤768px).

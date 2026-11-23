@@ -92,16 +92,11 @@
   font-variant-numeric: tabular-nums;
 }
 
-.note-detail-pen {
-  display: inline-block;
-  width: 3px;
-  height: 1em;
-  border-radius: 2px;
-  flex: none;
-}
-
-/* Reader presentation of app-note-item: no full-height rail, shared left edge,
-   reading serif at var(--note-reading-size, 21px) / 1.6, and header owns ⋯. */
+/* Reader presentation of app-note-item (#1808). Two voices, told apart at a
+   glance: the book's words are the reading serif at the reading size, with the
+   pen-coloured rail hung in the gutter so the text keeps the shared left edge;
+   the reader's own note is the UI sans, one step smaller. A note with no quote
+   is all the reader's words, so it takes the reading size itself. */
 .reader-note-item {
   padding-top: 0;
   border-bottom: 0;
@@ -117,22 +112,25 @@
 }
 
 :host ::ng-deep .reader-note-item .note-item-quote.nostos-accent-rail {
+  --nostos-accent-rail-inline-start: -16px;
+  --nostos-accent-rail-width: 3px;
   padding-left: 0;
   font-family: var(--font-reading);
   font-size: var(--note-reading-size, 21px);
   line-height: 1.6;
 }
 
-:host ::ng-deep .reader-note-item .note-item-quote.nostos-accent-rail::before {
-  display: none;
-}
-
 :host ::ng-deep .reader-note-item .note-item-thought {
   max-width: none;
   color: var(--color-text-main);
+  font-family: var(--font-ui);
+  font-size: calc(var(--note-reading-size, 21px) * 0.8);
+  line-height: 1.6;
+}
+
+:host ::ng-deep .reader-note-item .note-item-thought.is-lead {
   font-family: var(--font-reading);
   font-size: var(--note-reading-size, 21px);
-  line-height: 1.6;
 }
 
 :host ::ng-deep .reader-note-item .note-item-thought p {

@@ -31,9 +31,6 @@
 
 <div class="note-detail-body">
   <div class="note-detail-meta-bar" data-testid="note-detail-meta">
-    @if (penColor(); as pen) {
-    <span class="note-detail-pen" [style.background]="pen" aria-hidden="true"></span>
-    }
     <span>{{ noteKindLabel() }}</span>
     <span aria-hidden="true">·</span>
     <time [attr.datetime]="note().createdAt">{{ note().createdAt | nostosDate }}</time>

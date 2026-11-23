@@ -18,7 +18,6 @@ import { catchError, map } from 'rxjs/operators';
 import { isPassage, type NoteSearchHit } from '../core/dtos/note.dtos';
 import { UNKNOWN_BOOK } from '../core/book-format';
 import { TopicsService, type NoteContextDto, type TopicWritingUsageDto } from '../core/services/topics.service';
-import { highlightFillRef, quotePen } from '../reader/highlight-colours';
 import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
 import { NOSTOS_MENU } from '../ui/menu/menu.component';
 import { NostosDatePipe } from '../ui/pipes/nostos-date.pipe';
@@ -91,10 +90,6 @@ export class BrainNoteDetailComponent {
 
   readonly noteKindLabel = computed(() => (isPassage(this.note()) ? 'Passage' : 'Note'));
   readonly location = computed(() => noteLocationLabel(this.note()));
-  readonly penColor = computed(() => {
-    const pen = quotePen(this.note());
-    return pen ? highlightFillRef(pen) : null;
-  });
 
   /** The note's topics that the Brain knows, so their notes can be read. */
   private readonly contextTopics = computed(() => {

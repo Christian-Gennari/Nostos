@@ -31,10 +31,13 @@
   padding-bottom: calc(var(--dock-rail-h) + env(safe-area-inset-bottom, 0px));
 }
 
-/* The dock is global, and each mode centres it on its main pane via
-   --dock-anchor-x so it never straddles a column border or covers list text:
-   Library's content region, Brain's reader (or main pane below 1280px / Map /
-   Kinds), Studio's .editor-pane (#1808). */
+/* The dock is global. --dock-anchor-x centres it on everything to the right
+   of the left sidebar (#1808, decided after review): the same spot in Library
+   and Brain, so it does not jump between modes, and it reads as centred. In the
+   wide Brain that region holds the list and the reader, so a wide dock (Ask
+   Nostos on) can cross their border on narrower desktops; the panes' bottom
+   padding keeps every last line clear of it. The Studio centres it on the
+   editor between its two optional sidebars. */
 @media (min-width: 769px) {
   .workspace-content {
     padding-bottom: 0;
@@ -63,15 +66,6 @@
   }
 }
 
-@media (min-width: 1280px) {
-  .workspace-layout:has(.brain-layout .brain-detail-pane) {
-    --dock-anchor-x: calc(50% + 314px);
-  }
-
-  .workspace-layout:has(.brain-layout.sidebar-collapsed .brain-detail-pane) {
-    --dock-anchor-x: calc(50% + 226px);
-  }
-}
 
 .workspace-content:has(.settings-page) {
   overflow-y: auto;
