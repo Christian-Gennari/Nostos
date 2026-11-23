@@ -3,6 +3,7 @@ using FluentAssertions;
 using Nostos.Product.BookText;
 using UglyToad.PdfPig;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Nostos.Backend.Tests.BookText;
 
@@ -18,7 +19,8 @@ namespace Nostos.Backend.Tests.BookText;
 /// (about 1 MB a page here); the extractor bounds that by reopening the
 /// document every <see cref="PdfBookTextExtractor.PagesPerOpen"/> pages.
 /// </summary>
-public sealed class PdfSharedFontMemoryTests
+[Collection(PdfSharedFontMemoryCollection.Name)]
+public sealed class PdfSharedFontMemoryTests(ITestOutputHelper output)
 {
     private const int Pages = 160;
     private const long AllowedGrowthBytes = 24L * 1024 * 1024;
@@ -42,8 +44,13 @@ public sealed class PdfSharedFontMemoryTests
 
         var document = await extractor.ExtractAsync(stream);
 
+        var growth = retained[Pages] - retained[firstFull];
+        output.WriteLine(
+            "Extraction retained: page {0}={1:N0} B, page {2}={3:N0} B, growth={4:N0} B (limit {5:N0} B)",
+            firstFull, retained[firstFull], Pages, retained[Pages], growth, AllowedGrowthBytes);
+
         document.Blocks.Should().HaveCount(Pages);
-        (retained[Pages] - retained[firstFull]).Should().BeLessThan(
+        growth.Should().BeLessThan(
             AllowedGrowthBytes,
             $"{Pages - firstFull} more pages with their own font must not each keep a parsed copy of the shared program");
     }
@@ -60,7 +67,12 @@ public sealed class PdfSharedFontMemoryTests
         for (var number = 21; number <= Pages; number++) document.GetPage(number).GetWords();
         var late = RetainedBytes();
 
-        (late - early).Should().BeGreaterThan(
+        var growth = late - early;
+        output.WriteLine(
+            "PdfPig single-open retained: page 20={0:N0} B, page {1}={2:N0} B, growth={3:N0} B (min {4:N0} B)",
+            early, Pages, late, growth, AllowedGrowthBytes);
+
+        growth.Should().BeGreaterThan(
             AllowedGrowthBytes,
             "if PdfPig stopped keeping one parsed font per page font, PdfBookTextExtractor.PagesPerOpen can go");
     }
@@ -81,9 +93,9 @@ public sealed class PdfSharedFontMemoryTests
 
     private static long RetainedBytes()
     {
-        GC.Collect();
+        GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
         GC.WaitForPendingFinalizers();
-        GC.Collect();
+        GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true, compacting: true);
         return GC.GetTotalMemory(forceFullCollection: true);
     }
 
@@ -172,4 +184,16 @@ public sealed class PdfSharedFontMemoryTests
         "1 begincodespacerange\n<0000> <FFFF>\nendcodespacerange\n" +
         "1 beginbfrange\n<0001> <001A> <0041>\nendbfrange\n" +
         "endcmap\nCMapName currentdict /CMap defineresource pop\nend\nend\n";
+}
+
+/// <summary>
+/// Disables parallelization while <see cref="PdfSharedFontMemoryTests"/> runs.
+/// Its retained-memory assertions read the process-wide managed heap
+/// (<see cref="GC.GetTotalMemory(bool)"/>), which concurrent test collections
+/// otherwise pollute.
+/// </summary>
+[CollectionDefinition(Name, DisableParallelization = true)]
+public sealed class PdfSharedFontMemoryCollection
+{
+    public const string Name = "PdfSharedFontMemory";
 }
