@@ -120,11 +120,11 @@ describe('BrainNoteDetailComponent', () => {
     expect(element.querySelector('.note-detail-author')?.textContent?.trim()).toBe('Henry David Thoreau');
     expect(element.querySelector('.note-item-quote')?.textContent).toContain('I went to the woods');
     expect(element.querySelector('.note-item-thought')?.textContent?.trim()).toBe('Not escape, but a test: what is essential enough to keep?');
-    expect(element.querySelector('.note-item-source')?.getAttribute('href')).toBe('/library/book-1');
+    expect(element.querySelector('[data-testid="note-citation"]')?.getAttribute('href')).toBe('/library/book-1');
     expect(element.querySelector('.note-item-quote')?.classList.contains('is-lg')).toBe(true);
 
-    const chips = Array.from(element.querySelectorAll('.topic-chip-name')).map((chip) => chip.textContent?.trim());
-    expect(chips).toEqual(['Attention']);
+    const chips = Array.from(element.querySelectorAll('.topic-line-name')).map((chip) => chip.textContent?.trim());
+    expect(chips).toEqual(['#Attention']);
     expect(element.querySelector('.note-item-cited')?.textContent?.trim()).toBe('Cited in 1 document');
   });
 

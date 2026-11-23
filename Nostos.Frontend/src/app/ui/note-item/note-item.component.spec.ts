@@ -152,59 +152,91 @@ describe('NoteItemComponent', () => {
     expect(quote.style.getPropertyValue('--nostos-accent-rail-color')).toBe('var(--highlight-rose)');
   });
 
-  it('names the book, author, date and page, and links into the book at that page', () => {
+  it('names the source under the quote as a citation that opens the book at the page (issue #1798)', () => {
     render();
 
-    const meta = element.querySelector('.note-item-meta')?.textContent ?? '';
-    expect(meta).toContain('Nicomachean Ethics');
-    expect(meta).toContain('Aristotle');
-    expect(meta).toContain('28 Jul 2026');
-    expect(meta).toContain('p. 30');
-    const link = new URL((element.querySelector('.note-item-source') as HTMLAnchorElement).href);
+    const citation = element.querySelector('[data-testid="note-citation"]') as HTMLAnchorElement;
+    expect(citation.tagName).toBe('A');
+    expect(citation.textContent?.trim()).toBe('— Aristotle, Nicomachean Ethics, p. 30');
+    const link = new URL(citation.href);
     expect(link.pathname).toBe('/read/book-1');
     expect(link.searchParams.get('sourcePage')).toBe('30');
+    // The date stays, in the small meta line; the book is named once, above.
+    const meta = element.querySelector('.note-item-meta')?.textContent ?? '';
+    expect(meta).toContain('28 Jul 2026');
+    expect(meta).not.toContain('Nicomachean Ethics');
+    expect(element.querySelector('.note-item-source')).toBeNull();
+    expect(element.textContent).not.toContain('Open in book');
   });
 
-  it('names the edition beside the location only when asked, from the note\'s own format', () => {
+  it('reads quote, citation, words, topics and date in that order (issue #1798)', () => {
+    render();
+    const quote = element.querySelector('.note-item-quote') as HTMLElement;
+    const citation = element.querySelector('[data-testid="note-citation"]') as HTMLElement;
+    const thought = element.querySelector('.note-item-thought') as HTMLElement;
+    const topics = element.querySelector('.note-item-topics') as HTMLElement;
+    const date = element.querySelector('.note-item-meta time') as HTMLElement;
+
+    const precedes = (first: Node, second: Node) =>
+      !!(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(precedes(quote, citation)).toBe(true);
+    expect(precedes(citation, thought)).toBe(true);
+    expect(precedes(thought, topics)).toBe(true);
+    expect(precedes(topics, date)).toBe(true);
+  });
+
+  it('keeps a small source line on a note with no quote', () => {
+    render({ selectedText: null });
+
+    const thought = element.querySelector('.note-item-thought') as HTMLElement;
+    const source = element.querySelector('.note-item-citation-line [data-testid="note-citation"]') as HTMLAnchorElement;
+    expect(source.textContent?.trim()).toBe('— Aristotle, Nicomachean Ethics, p. 30');
+    expect(source.closest('.note-item-citation-line')).not.toBeNull();
+    expect(thought.compareDocumentPosition(source) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('marks the edition on the citation only when asked, from the note\'s own format', () => {
     render({ bookFormat: 'pdf' });
     expect(element.querySelector('[data-testid="note-edition-format"]')).toBeNull();
 
     fixture.componentRef.setInput('showFormat', true);
     fixture.detectChanges();
     const format = element.querySelector('[data-testid="note-edition-format"]');
-    expect(format?.textContent?.trim()).toBe('PDF');
+    // The format is the citation's glyph, not another word on the card.
+    expect(format?.getAttribute('aria-label')).toBe('PDF');
+    expect(format?.textContent?.trim()).toBe('');
     expect(format?.querySelector('nostos-icon')).not.toBeNull();
-    const meta = element.querySelector('.note-item-meta')?.textContent ?? '';
-    expect(meta.indexOf('PDF')).toBeLessThan(meta.indexOf('p. 30'));
+    expect(format?.closest('[data-testid="note-citation"]')).not.toBeNull();
 
     render({ bookFormat: 'audiobook', sourceAnchorKind: 'audio_timestamp', sourceAnchorValue: '3600' });
-    expect(element.querySelector('[data-testid="note-edition-format"]')?.textContent?.trim()).toBe('Audiobook');
+    expect(element.querySelector('[data-testid="note-edition-format"]')?.getAttribute('aria-label')).toBe('Audiobook');
 
     render({ bookFormat: null });
     expect(element.querySelector('[data-testid="note-edition-format"]')).toBeNull();
   });
 
-  it('calls the link "Open book" for a physical book, which has no reader', () => {
+  it('calls the citation a way to "Open book" for a physical book, which has no reader', () => {
     render({ bookFormat: 'physical', sourceAnchorKind: undefined, sourceAnchorValue: undefined });
 
-    const link = element.querySelector('.note-item-source') as HTMLAnchorElement;
-    expect(link.textContent).toContain('Open book');
-    expect(link.textContent).not.toContain('Open in book');
+    const citation = element.querySelector('[data-testid="note-citation"]') as HTMLAnchorElement;
+    expect(citation.getAttribute('aria-label')).toBe('Open book');
+    expect(new URL(citation.href).pathname).toBe('/library/book-1');
   });
 
   it('opens a note from another edition in that edition', () => {
     render({ bookId: 'audio-edition', sourceAnchorKind: 'audio_timestamp', sourceAnchorValue: '42', bookFormat: 'audiobook' });
 
-    const link = new URL((element.querySelector('.note-item-source') as HTMLAnchorElement).href);
+    const link = new URL((element.querySelector('[data-testid="note-citation"]') as HTMLAnchorElement).href);
     expect(link.pathname).toBe('/read/audio-edition');
     expect(link.searchParams.get('sourceTime')).toBe('42');
   });
 
-  it('leaves the book out where a heading already names it', () => {
+  it('leaves the book out of the citation where a heading already names it', () => {
     fixture.componentRef.setInput('showBook', false);
     render();
 
-    expect(element.querySelector('.note-item-book')).toBeNull();
+    const citation = element.querySelector('[data-testid="note-citation"]') as HTMLElement;
+    expect(citation.textContent?.trim()).toBe('— p. 30');
   });
 
   it('links a topic name to its page, and turns the line into its controls on a tap', () => {
@@ -507,18 +539,28 @@ describe('NoteItemComponent', () => {
   });
 
   describe('inside its own open book (the reader)', () => {
-    it('says "Show in book" and asks to go there instead of opening the reader again', () => {
+    it('makes the citation the way to the note in the book', () => {
       fixture.componentRef.setInput('inBook', true);
       render();
       const jumps = vi.fn();
       fixture.componentInstance.jumpRequested.subscribe(jumps);
 
-      const source = element.querySelector('.note-item-source') as HTMLElement;
+      const source = element.querySelector('[data-testid="note-citation"]') as HTMLElement;
       expect(source.tagName).toBe('BUTTON');
-      expect(source.textContent?.trim()).toBe('Show in book');
+      expect(source.textContent?.trim()).toBe('— p. 30');
+      expect(source.getAttribute('aria-label')).toBe('Show in book at p. 30');
       source.click();
 
       expect(jumps).toHaveBeenCalledTimes(1);
+    });
+
+    it('says "Show in book" where the note has no location to cite', () => {
+      fixture.componentRef.setInput('inBook', true);
+      render({ sourceAnchorKind: 'epub_cfi', sourceAnchorValue: 'epubcfi(/6/4!/2/1:0)' });
+
+      const source = element.querySelector('[data-testid="note-citation"]') as HTMLElement;
+      expect(source.tagName).toBe('BUTTON');
+      expect(source.textContent?.trim()).toBe('— Show in book');
     });
 
     it('leaves out the menu items a list of this one book has no use for', () => {
@@ -535,22 +577,20 @@ describe('NoteItemComponent', () => {
   });
 
   describe('an audiobook note’s time (issue #906)', () => {
-    const time = () => element.querySelector('[data-testid="note-audio-time"]') as HTMLButtonElement | null;
+    const citation = () => element.querySelector('[data-testid="note-citation"]') as HTMLElement | null;
 
-    it('leads the meta line with the time, and goes to it when activated', () => {
+    it('names the time in the citation, which goes back to it when activated', () => {
       fixture.componentRef.setInput('audioTime', 754.5);
+      fixture.componentRef.setInput('inBook', true);
       render({ sourceAnchorKind: 'audio_timestamp', sourceAnchorValue: '754.5' });
       const jumps = vi.fn();
       fixture.componentInstance.jumpRequested.subscribe(jumps);
 
-      const button = time()!;
-      expect(button.closest('.note-item-meta')).not.toBeNull();
-      expect(button.textContent?.trim()).toBe('12:34');
-      expect(button.getAttribute('aria-label')).toBe('Jump to 12:34');
-      // Said once, as the button, not again as the note's location.
-      expect(element.querySelector('.note-item-meta')?.textContent?.match(/12:34/g)).toHaveLength(1);
+      const control = citation()!;
+      expect(control.textContent?.trim()).toBe('— 12:34');
+      expect(control.getAttribute('aria-label')).toBe('Show in book at 12:34');
 
-      button.click();
+      control.click();
       expect(jumps).toHaveBeenCalledTimes(1);
     });
 
@@ -558,13 +598,14 @@ describe('NoteItemComponent', () => {
       fixture.componentRef.setInput('audioTime', 3725);
       render();
 
-      expect(time()!.textContent?.trim()).toBe('1:02:05');
+      expect(citation()?.textContent).toContain('1:02:05');
     });
 
-    it('shows nothing extra when no time is given', () => {
+    it('shows no time when none is given', () => {
       render();
 
-      expect(time()).toBeNull();
+      expect(element.querySelector('[data-testid="note-audio-time"]')).toBeNull();
+      expect(citation()?.textContent).not.toContain(':');
     });
   });
 
@@ -639,6 +680,7 @@ describe('NoteItemComponent', () => {
       render();
 
       expect(element.querySelector('.note-item-meta')).toBeNull();
+      expect(element.querySelector('[data-testid="note-citation"]')).toBeNull();
     });
   });
 });

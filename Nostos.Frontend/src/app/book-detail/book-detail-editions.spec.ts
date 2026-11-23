@@ -252,7 +252,7 @@ describe('BookDetail across editions', () => {
       await setup(twoEditions(), notes);
 
       const formats = Array.from(el().querySelectorAll('.notes-feed [data-testid="note-edition-format"]')).map((f) =>
-        f.textContent?.trim(),
+        f.getAttribute('aria-label'),
       );
       expect(formats).toEqual(['Ebook', 'Audiobook', 'Ebook']);
     });

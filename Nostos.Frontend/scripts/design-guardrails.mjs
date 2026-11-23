@@ -608,7 +608,9 @@ export const PRODUCT_BUTTONS = new Map(Object.entries({
   'src/app/ui/markdown-editor/markdown-editor.component.html': ['editor-bubble-btn'],
   // NoteItem's footer: the time, "Cited in", "Show in book" and the topic add are
   // quiet inline text in the meta line, next to plain <a> twins with the same look.
-  'src/app/ui/note-item/note-item.component.html': ['note-item-time', 'note-item-cited', 'note-item-source'],
+  // The note's citation when it is shown inside its own open book: the source
+  // line doubles as "Show in book" (issue #1798), so it is a button there.
+  'src/app/ui/note-item/note-item.component.html': ['note-item-cited', 'note-item-citation'],
   // The topic row's "+ Topic": the dashed pill beside the topic chips, the same
   // shape as a chip so the row reads as one list (issue #1447).
   'src/app/ui/topic-row/topic-row.component.ts': ['topic-row-add'],

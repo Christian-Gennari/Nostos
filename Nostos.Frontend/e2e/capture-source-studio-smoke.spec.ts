@@ -88,7 +88,7 @@ test('captured source survives Brain → Keep in a document → Studio on the re
     // below that it is the note's own page. Both use the same note item.
     const inspector = page.locator('app-note-item');
     await expect(inspector).toBeVisible();
-    await expect(inspector.locator('.note-item-book')).toHaveText(bookTitle);
+    await expect(inspector.locator('[data-testid="note-citation"]')).toContainText(bookTitle);
 
     await expect(inspector.locator('.note-item-thought')).toContainText(rawCapture);
     await expect(inspector.locator('.note-item-quote')).toContainText(selectedText);
