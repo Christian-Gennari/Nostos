@@ -39,6 +39,10 @@
   border-radius: 0;
 }
 
+.settings-nav-brand {
+  border-bottom: 0;
+}
+
 /* The nav is two groups: what you prefer, then what this server or account
    holds. The first label sits at the top of the column, level with the
    content's first card. */

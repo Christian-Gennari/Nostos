@@ -1,6 +1,18 @@
 <nav class="side-nav sidebar" [class.collapsed]="!expanded()" aria-label="Brain">
   <div class="sidebar-header">
-    <nostos-brand-lockup />
+    <nostos-brand-lockup class="sidebar-brand" />
+    <button
+      appIconButton
+      [icon]="expanded() ? 'arrow-line-left' : 'arrow-line-right'"
+      [glyphSize]="18"
+      weight="thin"
+      class="toggle-btn"
+      type="button"
+      (click)="toggle()"
+      [attr.aria-expanded]="expanded()"
+      [attr.title]="expanded() ? 'Collapse sidebar' : 'Expand sidebar'"
+      [attr.aria-label]="expanded() ? 'Collapse sidebar' : 'Expand sidebar'"
+    ></button>
   </div>
 
   <div class="nav-scroll-area">
@@ -108,26 +120,6 @@
           }
         </div>
       </div>
-    </div>
-  </div>
-
-  <!-- The Library's collapse control, in the same footer: one preference hides
-       both sidebars, and on desktop the Brain's panel becomes the same 72px
-       rail. The phone drawer has no rail, so the phone rule below hides it. -->
-  <div class="sidebar-footer">
-    <div class="footer-slot">
-      <button
-        appIconButton
-        [icon]="expanded() ? 'arrow-line-left' : 'arrow-line-right'"
-        [glyphSize]="18"
-        weight="thin"
-        class="toggle-btn"
-        type="button"
-        (click)="toggle()"
-        [attr.aria-expanded]="expanded()"
-        [attr.title]="expanded() ? 'Collapse sidebar' : 'Expand sidebar'"
-        [attr.aria-label]="expanded() ? 'Collapse sidebar' : 'Expand sidebar'"
-      ></button>
     </div>
   </div>
 </nav>

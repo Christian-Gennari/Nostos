@@ -6,9 +6,9 @@
   width: 100%;
   height: 100%;
   overflow: hidden;
-  /* Rail geometry. The panel inside is always laid out 300px wide; this column
+  /* Rail geometry. The panel inside is always laid out 248px wide; this column
      is the only thing that changes, and it clips the panel. */
-  --sidebar-width: 300px;
+  --sidebar-width: 248px;
 }
 
 /* 2. Collapse State Class */
@@ -35,16 +35,16 @@ app-sidebar-collections {
   flex-shrink: 0;
 
   /* The single owner of the collapse motion: the column narrows, the panel
-     inside keeps its full 300px geometry and is revealed/hidden by the clip. */
+     inside keeps its full 248px geometry and is revealed/hidden by the clip. */
   &:not(.no-transition) {
     transition:
       width var(--motion-slow) var(--ease-standard),
       flex-basis var(--motion-slow) var(--ease-standard);
   }
 
-  /* Must match the panel inside (`--bg-body`, the page ground), or the
+  /* Must match the panel inside (`--bg-pane-nav`), or the
      collapsed rail shows a different band behind the panel. */
-  background-color: var(--bg-body);
+  background-color: var(--bg-pane-nav);
   /* clip (not hidden/auto): no scroll container is created, so the rail can
      never be scrolled sideways to reveal the collapsed labels. */
   overflow: clip;
