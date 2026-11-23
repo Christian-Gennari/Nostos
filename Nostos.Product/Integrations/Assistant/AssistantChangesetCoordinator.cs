@@ -1,4 +1,5 @@
 using Nostos.Backend.Configuration;
+using Nostos.Backend.Data.Models;
 using Nostos.Backend.Services.Library;
 using Nostos.Shared.Dtos;
 
@@ -68,9 +69,23 @@ public sealed class AssistantChangesetCoordinator(
 
         if (applied.ErrorCode == LibraryChangesetErrorCodes.DiffChanged && applied.Diff is { IsEmpty: false })
         {
-            var review = store.Add(_owner.Key, conversationKey, turnId, draft.Steps, applied.Diff, applied.DiffHash!,
+            var review = store.Add(_owner.Key, conversationKey, turnId, draft.Steps, diff, hash,
                 AssistantChangesetStatus.Review, [LibraryMovedReason], undo: null,
                 readUntrustedContent, turnIncomplete);
+            var refresh = await RefreshAsync(review, [], ct);
+            var shown = refresh.Result.Success ? refresh.Result : applied;
+            var reasons = refresh.Result.Success
+                ? new[] { LibraryMovedReason }.Concat(ReasonsFor(review, shown.Diff!)).ToList()
+                : [LibraryMovedReason];
+            store.Update(review, c =>
+            {
+                c.Excluded = refresh.Excluded;
+                c.Kept = refresh.Kept;
+                c.SkippedReasons = refresh.SkippedReasons;
+                c.Diff = shown.Diff!;
+                c.DiffHash = shown.DiffHash!;
+                c.ReviewReasons = reasons;
+            });
             return new AssistantChangesetOutcome(review.ToDto(), null);
         }
 
@@ -89,7 +104,7 @@ public sealed class AssistantChangesetCoordinator(
         if (changeset!.Status != AssistantChangesetStatus.Review || changeset.Busy)
             return NotReviewable(changeset);
 
-        var refresh = await RefreshAsync(changeset, WithDependants(changeset, request.Excluded), ct);
+        var refresh = await RefreshAsync(changeset, UserExcluded(changeset, request.Excluded), ct);
         if (!refresh.Result.Success)
             return Fail(refresh.Result.ErrorCode ?? "changeset_failed", refresh.Result.ErrorMessage, changeset);
 
@@ -99,6 +114,7 @@ public sealed class AssistantChangesetCoordinator(
         store.Update(changeset, c =>
         {
             c.Excluded = refresh.Excluded;
+            c.Kept = refresh.Kept;
             c.SkippedReasons = refresh.SkippedReasons;
             c.Diff = refresh.Result.Diff!;
             c.DiffHash = refresh.Result.DiffHash!;
@@ -124,15 +140,13 @@ public sealed class AssistantChangesetCoordinator(
                 ? Fail(AssistantErrorCodes.ChangesetBusy, "These changes are already being applied.", changeset)
                 : NotReviewable(changeset);
 
-        var excluded = WithDependants(
-            changeset,
-            (request.Excluded ?? []).Concat(changeset.SkippedReasons.Keys).ToList());
-        var ops = Included(changeset, excluded);
+        var userExcluded = UserExcluded(changeset, request.Excluded);
+        var ops = Included(changeset, userExcluded, changeset.Kept);
         if (ops.Count == 0)
         {
             store.End(changeset, _ => { });
             return Fail(LibraryChangesetErrorCodes.Empty,
-                changeset.SkippedReasons.Count > 0
+                changeset.Kept.Count > 0 || changeset.SkippedReasons.Count > 0
                     ? "There is nothing left to apply: every remaining step would change nothing."
                     : "Every step is left out, so there is nothing to apply.",
                 changeset);
@@ -153,8 +167,8 @@ public sealed class AssistantChangesetCoordinator(
         {
             store.End(changeset, c =>
             {
-                c.Excluded = excluded;
-                c.SkippedReasons = [];
+                c.Excluded = userExcluded;
+                c.SkippedReasons = BuildSkippedReasons(c, userExcluded, c.Kept);
                 c.Status = AssistantChangesetStatus.Applied;
                 c.Diff = result.Diff!;
                 c.DiffHash = result.DiffHash!;
@@ -169,7 +183,7 @@ public sealed class AssistantChangesetCoordinator(
             // what the remaining steps would do now, and keep the steps the
             // library made useless out of it: a second Apply must not run them
             // again, and must not create a kind no topic still needs.
-            var refresh = await RefreshAsync(changeset, excluded, ct);
+            var refresh = await RefreshAsync(changeset, userExcluded, ct);
             var shown = refresh.Result.Success ? refresh.Result : result;
             var reasons = refresh.Result.Success
                 ? new[] { LibraryMovedReason }.Concat(ReasonsFor(changeset, shown.Diff!)).ToList()
@@ -177,6 +191,7 @@ public sealed class AssistantChangesetCoordinator(
             store.End(changeset, c =>
             {
                 c.Excluded = refresh.Excluded;
+                c.Kept = refresh.Kept;
                 c.SkippedReasons = refresh.SkippedReasons;
                 c.Diff = shown.Diff!;
                 c.DiffHash = shown.DiffHash!;
@@ -254,13 +269,14 @@ public sealed class AssistantChangesetCoordinator(
     private const string KeptUngivenKind = "kept: the topic already has no kind";
 
     /// <summary>
-    /// What the remaining steps would do now: the diff, the steps the server
-    /// kept out because they would change nothing, and the excluded set that
-    /// makes a later apply agree with it.
+    /// What the remaining steps would do now: the diff, user-excluded steps,
+    /// monotonically growing server-kept steps, and every step's display reason
+    /// (kept steps plus any created kind with no active topic left).
     /// </summary>
     private sealed record ReviewRefresh(
         LibraryChangesetResult Result,
         HashSet<int> Excluded,
+        Dictionary<int, string> Kept,
         Dictionary<int, string> SkippedReasons);
 
     /// <summary>
@@ -272,43 +288,51 @@ public sealed class AssistantChangesetCoordinator(
     /// </summary>
     private async Task<ReviewRefresh> RefreshAsync(
         StoredAssistantChangeset changeset,
-        HashSet<int> excluded,
+        HashSet<int> userExcluded,
         CancellationToken ct)
     {
-        var preview = await PreviewIncludedAsync(changeset, excluded, ct);
-        var skipped = DeadSteps(changeset, excluded, preview);
-        if (skipped.Count == 0 || preview.Diff is null)
-            return new ReviewRefresh(preview, excluded, []);
+        var kept = new Dictionary<int, string>(changeset.Kept);
+        var preview = await PreviewIncludedAsync(changeset, userExcluded, kept, ct);
+        if (preview.Diff is null)
+            return new ReviewRefresh(preview, userExcluded, kept, BuildSkippedReasons(changeset, userExcluded, kept));
+
+        var newlyDead = DeadSteps(changeset, userExcluded, kept, preview);
+        if (newlyDead.Count == 0)
+            return new ReviewRefresh(preview, userExcluded, kept, BuildSkippedReasons(changeset, userExcluded, kept));
+
+        foreach (var (index, reason) in newlyDead)
+            kept.TryAdd(index, reason);
 
         // The steps now do nothing, so the review is recomputed without them:
         // its diff, its hash and its kind groups must describe what an apply of
         // the remaining steps would actually do.
-        excluded.UnionWith(skipped.Keys);
-        var again = await PreviewIncludedAsync(changeset, excluded, ct);
-        return new ReviewRefresh(again, excluded, skipped);
+        var again = await PreviewIncludedAsync(changeset, userExcluded, kept, ct);
+        return new ReviewRefresh(again, userExcluded, kept, BuildSkippedReasons(changeset, userExcluded, kept));
     }
 
-    /// <summary>The preview of exactly the steps that are not excluded; an empty one with none.</summary>
+    /// <summary>The preview of exactly the steps that are neither user-excluded nor server-kept; an empty one with none.</summary>
     private async Task<LibraryChangesetResult> PreviewIncludedAsync(
         StoredAssistantChangeset changeset,
-        HashSet<int> excluded,
+        HashSet<int> userExcluded,
+        IReadOnlyDictionary<int, string> kept,
         CancellationToken ct)
     {
-        var ops = Included(changeset, excluded);
+        var ops = Included(changeset, userExcluded, kept);
         return ops.Count == 0
             ? new LibraryChangesetResult(true, null, null, null, EmptyDiff, EmptyDiffHash, "0", false, null)
             : await changesets.PreviewAsync(ops, ct);
     }
 
     /// <summary>
-    /// The included steps this preview shows would change nothing, with the
-    /// sentence the card shows for each. Only kind steps are judged this way:
-    /// their effect is one named row per topic in the diff, so a protected
-    /// topic (or a kind nothing is left to create) is visible as an absence.
+    /// The active topic-kind steps this preview shows would change nothing,
+    /// with the sentence the card shows for each. Create-kind steps are
+    /// derived structurally in <see cref="BuildSkippedReasons"/> so a
+    /// standalone created kind is never marked dead.
     /// </summary>
     private static Dictionary<int, string> DeadSteps(
         StoredAssistantChangeset changeset,
-        HashSet<int> excluded,
+        HashSet<int> userExcluded,
+        IReadOnlyDictionary<int, string> kept,
         LibraryChangesetResult preview)
     {
         var dead = new Dictionary<int, string>();
@@ -318,33 +342,66 @@ public sealed class AssistantChangesetCoordinator(
         var assignedTopics = diff.TopicKindAssignments.Select(assignment => assignment.TopicId).ToHashSet();
         for (var index = 0; index < changeset.Steps.Count; index++)
         {
-            if (excluded.Contains(index))
+            if (userExcluded.Contains(index) || kept.ContainsKey(index))
                 continue;
 
-            switch (changeset.Steps[index].Op)
+            if (changeset.Steps[index].Op is SetTopicKindOp setKind
+                && setKind.TopicIds.All(topicId => !assignedTopics.Contains(topicId)))
             {
-                case SetTopicKindOp setKind when setKind.TopicIds.All(topicId => !assignedTopics.Contains(topicId)):
-                    dead[index] = setKind.Kind is null ? KeptUngivenKind : KeptOwnKind;
-                    break;
-                case CreateTopicKindOp createKind when CreatedKindHasNoTopic(diff, createKind):
-                    dead[index] = KeptEmptyKind;
-                    break;
+                dead[index] = DeadReasonFor(setKind, preview);
             }
         }
 
         return dead;
     }
 
-    /// <summary>True when the kind this step creates was made, and no topic the diff changes uses it.</summary>
-    private static bool CreatedKindHasNoTopic(LibraryChangesetDiffDto diff, CreateTopicKindOp op)
+    private static string DeadReasonFor(SetTopicKindOp op, LibraryChangesetResult preview)
     {
-        var created = diff.TopicKinds.FirstOrDefault(kind =>
-            kind.Kind == "created" && string.Equals(kind.Name, op.Name, StringComparison.Ordinal));
-        // No created kind means the step never ran (its topics were left out, so
-        // the include set dropped it) or a sibling with that name was reused:
-        // either way there is no empty kind to name here.
-        return created is not null
-            && !diff.TopicKindAssignments.Any(assignment => assignment.KindId == created.Id);
+        if (op.Kind is not null)
+            return KeptOwnKind;
+
+        var before = preview.PreviewState?.Before.TopicKindAssignments;
+        if (before is not null && op.TopicIds.Any(topicId =>
+                before.TryGetValue(topicId, out var current)
+                && current is { KindId: not null }
+                && string.Equals(current.Source, TopicKindSources.Reader, StringComparison.Ordinal)))
+        {
+            return KeptOwnKind;
+        }
+
+        return KeptUngivenKind;
+    }
+
+    private static Dictionary<int, string> BuildSkippedReasons(
+        StoredAssistantChangeset changeset,
+        HashSet<int> userExcluded,
+        IReadOnlyDictionary<int, string> kept)
+    {
+        var reasons = new Dictionary<int, string>(kept);
+        for (var index = 0; index < changeset.Steps.Count; index++)
+        {
+            if (changeset.Steps[index].Op is not CreateTopicKindOp createKind)
+                continue;
+            if (reasons.ContainsKey(index) || userExcluded.Contains(index))
+                continue;
+
+            var users = Enumerable.Range(0, changeset.Steps.Count)
+                .Where(candidate => changeset.Steps[candidate].Op is SetTopicKindOp setKind
+                    && string.Equals(setKind.Kind?.Ref, createKind.Ref, StringComparison.Ordinal))
+                .ToList();
+            if (users.Count == 0)
+                continue;
+
+            // Only mark a created kind skipped when every step referencing it is
+            // excluded or kept, and at least one referencing step was kept. If
+            // the user later ticks an excluded topic back on, the create step revives.
+            var allInactive = users.All(u => userExcluded.Contains(u) || kept.ContainsKey(u));
+            var anyKept = users.Any(kept.ContainsKey);
+            if (allInactive && anyKept)
+                reasons[index] = KeptEmptyKind;
+        }
+
+        return reasons;
     }
 
     /// <summary>The review's reasons on the diff the remaining steps would produce.</summary>
@@ -366,6 +423,21 @@ public sealed class AssistantChangesetCoordinator(
                 "These changes are no longer available. Ask again to prepare them afresh.", null),
         };
 
+    /// <summary>
+    /// User-excluded steps only, ignoring any server-kept or transiently-skipped
+    /// steps so a kept create step never locks its unticked dependants out.
+    /// </summary>
+    private static HashSet<int> UserExcluded(StoredAssistantChangeset changeset, IReadOnlyList<int>? requested)
+    {
+        var filtered = (requested ?? [])
+            .Where(i => i >= 0
+                && i < changeset.Steps.Count
+                && !changeset.Kept.ContainsKey(i)
+                && !changeset.SkippedReasons.ContainsKey(i))
+            .ToList();
+        return WithDependants(changeset, filtered);
+    }
+
     /// <summary>Leaving a step out leaves out every step that needs it.</summary>
     private static HashSet<int> WithDependants(StoredAssistantChangeset changeset, IReadOnlyList<int>? excluded)
     {
@@ -384,9 +456,15 @@ public sealed class AssistantChangesetCoordinator(
         return result;
     }
 
-    private static List<LibraryChangeOp> Included(StoredAssistantChangeset changeset, HashSet<int> excluded)
+    private static List<LibraryChangeOp> Included(
+        StoredAssistantChangeset changeset,
+        HashSet<int> userExcluded,
+        IReadOnlyDictionary<int, string> kept)
     {
-        var included = changeset.Steps.Where((_, index) => !excluded.Contains(index)).Select(s => s.Op).ToList();
+        var included = changeset.Steps
+            .Where((_, index) => !userExcluded.Contains(index) && !kept.ContainsKey(index))
+            .Select(s => s.Op)
+            .ToList();
 
         // A kind the changeset creates is only there for the topics it
         // classifies. When the reader unticks every topic of a new kind, the

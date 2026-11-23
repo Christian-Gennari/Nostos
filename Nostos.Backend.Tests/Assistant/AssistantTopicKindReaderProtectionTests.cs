@@ -306,6 +306,253 @@ public sealed class AssistantTopicKindReaderProtectionTests : IClassFixture<Sqli
         topic.KindSource.Should().Be(TopicKindSources.Reader);
     }
 
+    [Fact]
+    public async Task A_standalone_created_kind_stays_included_when_another_step_is_unticked()
+    {
+        using var h = CreateHarness();
+        var draft = new AssistantChangesetDraft(h.Library, h.Library);
+        var collection = await h.Registry.InvokeAsync(
+            "library_create_collection",
+            Args("""{"name":"Reading"}"""),
+            new AssistantToolContext("client", "stage", draft, "Create Reading and Movement."));
+        collection.Success.Should().BeTrue(collection.ErrorMessage);
+        var kind = await h.Registry.InvokeAsync(
+            "topics_create_kind",
+            Args("""{"name":"Movement"}"""),
+            new AssistantToolContext("client", "stage", draft, "Create Reading and Movement."));
+        kind.Success.Should().BeTrue(kind.ErrorMessage);
+
+        var review = await h.Coordinator.FinishTurnAsync("conversation", "turn-standalone", draft, false, false, default);
+        review.AwaitingReview.Should().BeTrue();
+        var collectionStep = review.Changeset!.Steps.Single(step => step.TopicKind is null);
+        var kindStep = review.Changeset.Steps.Single(step => step.TopicKind?.CreatesKind == true);
+
+        var preview = await h.Coordinator.PreviewAsync(
+            review.Changeset.ChangesetId,
+            new AssistantChangesetPreviewRequest(review.Changeset.ActionToken, [collectionStep.Index]),
+            default);
+
+        preview.Success.Should().BeTrue(preview.ErrorMessage);
+        preview.Changeset!.Diff.IsEmpty.Should().BeFalse();
+        preview.Changeset.Diff.TopicKinds.Should().ContainSingle(k => k.Name == "Movement");
+        var refreshedKindStep = preview.Changeset.Steps.Single(step => step.Index == kindStep.Index);
+        refreshedKindStep.Included.Should().BeTrue();
+        refreshedKindStep.SkippedReason.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Unticking_a_topic_claiming_its_sibling_and_ticking_it_back_restores_the_topic_and_its_created_kind()
+    {
+        using var h = CreateHarness();
+        var dewey = await SeedTopicAsync(h, "Dewey");
+        var freire = await SeedTopicAsync(h, "Freire");
+        var draft = new AssistantChangesetDraft(h.Library, h.Library);
+        var staged = await StageAsync(h, draft, [dewey, freire], "School of thought", createKind: true);
+        staged.Success.Should().BeTrue(staged.ErrorMessage);
+
+        var review = await h.Coordinator.FinishTurnAsync("conversation", "turn-retick", draft, false, false, default);
+        review.AwaitingReview.Should().BeTrue();
+        var deweyStep = review.Changeset!.Steps.Single(step => step.TopicKind?.TopicId == dewey.Id);
+        var freireStep = review.Changeset.Steps.Single(step => step.TopicKind?.TopicId == freire.Id);
+        var createStep = review.Changeset.Steps.Single(step => step.TopicKind?.CreatesKind == true);
+
+        var unticked = await h.Coordinator.PreviewAsync(
+            review.Changeset.ChangesetId,
+            new AssistantChangesetPreviewRequest(review.Changeset.ActionToken, [deweyStep.Index]),
+            default);
+        unticked.Success.Should().BeTrue(unticked.ErrorMessage);
+
+        await ClaimAsync(h, freire.Id, TopicKindModel.PersonId, TopicKindSources.Reader);
+        var refused = await h.Coordinator.ApplyAsync(
+            review.Changeset.ChangesetId,
+            new AssistantChangesetApplyRequest(
+                review.Changeset.ActionToken, [deweyStep.Index], unticked.Changeset!.DiffHash),
+            default);
+
+        refused.ErrorCode.Should().Be(LibraryChangesetErrorCodes.DiffChanged);
+        refused.Changeset!.Diff.IsEmpty.Should().BeTrue();
+        refused.Changeset.Steps.Single(s => s.Index == freireStep.Index).SkippedReason
+            .Should().Be("kept: you set this kind yourself");
+        refused.Changeset.Steps.Single(s => s.Index == createStep.Index).SkippedReason
+            .Should().Be("kept: no topic still needs this kind");
+
+        // Tick Dewey back on: a client that passes every non-included step except Dewey
+        // (including the kept sibling and empty create step) must still restore Dewey and its kind.
+        var excludedAfterRetick = refused.Changeset.Steps
+            .Where(step => !step.Included && step.Index != deweyStep.Index)
+            .Select(step => step.Index)
+            .ToList();
+        var reticked = await h.Coordinator.PreviewAsync(
+            review.Changeset.ChangesetId,
+            new AssistantChangesetPreviewRequest(review.Changeset.ActionToken, excludedAfterRetick),
+            default);
+
+        reticked.Success.Should().BeTrue(reticked.ErrorMessage);
+        reticked.Changeset!.Diff.TopicKinds.Should().ContainSingle(k => k.Name == "School of thought");
+        reticked.Changeset.Diff.TopicKindAssignments.Should().ContainSingle(a => a.TopicId == dewey.Id);
+        reticked.Changeset.Steps.Single(s => s.Index == createStep.Index).Included.Should().BeTrue();
+        reticked.Changeset.Steps.Single(s => s.Index == createStep.Index).SkippedReason.Should().BeNull();
+        reticked.Changeset.Steps.Single(s => s.Index == deweyStep.Index).Included.Should().BeTrue();
+        reticked.Changeset.Steps.Single(s => s.Index == freireStep.Index).Included.Should().BeFalse();
+        reticked.Changeset.Steps.Single(s => s.Index == freireStep.Index).SkippedReason
+            .Should().Be("kept: you set this kind yourself");
+
+        var applied = await h.Coordinator.ApplyAsync(
+            review.Changeset.ChangesetId,
+            new AssistantChangesetApplyRequest(
+                review.Changeset.ActionToken, [], reticked.Changeset.DiffHash),
+            default);
+        applied.Success.Should().BeTrue(applied.ErrorMessage);
+        var appliedFreire = applied.Changeset!.Steps.Single(s => s.Index == freireStep.Index);
+        appliedFreire.Included.Should().BeFalse();
+        appliedFreire.SkippedReason.Should().Be("kept: you set this kind yourself");
+        (await KindCountAsync(h, "School of thought")).Should().Be(1);
+        (await TopicAsync(h, dewey.Id)).KindId.Should().NotBeNull();
+        (await TopicAsync(h, freire.Id)).KindId.Should().Be(TopicKindModel.PersonId);
+    }
+
+    [Fact]
+    public async Task Toggling_an_unrelated_step_preserves_earlier_kept_reasons()
+    {
+        using var h = CreateHarness();
+        var dewey = await SeedTopicAsync(h, "Dewey");
+        var freire = await SeedTopicAsync(h, "Freire");
+        var draft = new AssistantChangesetDraft(h.Library, h.Library);
+        (await h.Registry.InvokeAsync(
+            "library_create_collection",
+            Args("""{"name":"Reading"}"""),
+            new AssistantToolContext("client", "stage", draft, "Create Reading and sort topics."))).Success.Should().BeTrue();
+        (await StageAsync(h, draft, [dewey, freire], "Idea")).Success.Should().BeTrue();
+
+        var review = await h.Coordinator.FinishTurnAsync("conversation", "turn-toggle-keep", draft, false, false, default);
+        review.AwaitingReview.Should().BeTrue();
+        var collectionStep = review.Changeset!.Steps.Single(step => step.TopicKind is null);
+        var freireStep = review.Changeset.Steps.Single(step => step.TopicKind?.TopicId == freire.Id);
+
+        await ClaimAsync(h, freire.Id, TopicKindModel.PersonId, TopicKindSources.Reader);
+        var afterClaim = await h.Coordinator.ApplyAsync(
+            review.Changeset.ChangesetId,
+            new AssistantChangesetApplyRequest(review.Changeset.ActionToken, [], review.Changeset.DiffHash),
+            default);
+        afterClaim.ErrorCode.Should().Be(LibraryChangesetErrorCodes.DiffChanged);
+        afterClaim.Changeset!.Steps.Single(s => s.Index == freireStep.Index).SkippedReason
+            .Should().Be("kept: you set this kind yourself");
+
+        var afterToggle = await h.Coordinator.PreviewAsync(
+            review.Changeset.ChangesetId,
+            new AssistantChangesetPreviewRequest(review.Changeset.ActionToken, [collectionStep.Index, freireStep.Index]),
+            default);
+
+        afterToggle.Success.Should().BeTrue(afterToggle.ErrorMessage);
+        var keptFreire = afterToggle.Changeset!.Steps.Single(s => s.Index == freireStep.Index);
+        keptFreire.Included.Should().BeFalse();
+        keptFreire.SkippedReason.Should().Be("kept: you set this kind yourself");
+    }
+
+    [Fact]
+    public async Task A_second_claim_before_the_second_apply_keeps_both_reasons()
+    {
+        using var h = CreateHarness();
+        var dewey = await SeedTopicAsync(h, "Dewey");
+        var freire = await SeedTopicAsync(h, "Freire");
+        var draft = new AssistantChangesetDraft(h.Library, h.Library);
+        (await StageAsync(h, draft, [dewey, freire], "Idea")).Success.Should().BeTrue();
+
+        var review = await h.Coordinator.FinishTurnAsync("conversation", "turn-two-claims", draft, false, false, default);
+        review.AwaitingReview.Should().BeTrue();
+        var deweyStep = review.Changeset!.Steps.Single(step => step.TopicKind?.TopicId == dewey.Id);
+        var freireStep = review.Changeset.Steps.Single(step => step.TopicKind?.TopicId == freire.Id);
+
+        await ClaimAsync(h, freire.Id, TopicKindModel.PersonId, TopicKindSources.Reader);
+        var first = await h.Coordinator.ApplyAsync(
+            review.Changeset.ChangesetId,
+            new AssistantChangesetApplyRequest(review.Changeset.ActionToken, [], review.Changeset.DiffHash),
+            default);
+        first.ErrorCode.Should().Be(LibraryChangesetErrorCodes.DiffChanged);
+
+        await ClaimAsync(h, dewey.Id, TopicKindModel.PersonId, TopicKindSources.Reader);
+        var second = await h.Coordinator.ApplyAsync(
+            review.Changeset.ChangesetId,
+            new AssistantChangesetApplyRequest(review.Changeset.ActionToken, [], first.Changeset!.DiffHash),
+            default);
+
+        second.ErrorCode.Should().Be(LibraryChangesetErrorCodes.DiffChanged);
+        var keptFreire = second.Changeset!.Steps.Single(s => s.Index == freireStep.Index);
+        var keptDewey = second.Changeset.Steps.Single(s => s.Index == deweyStep.Index);
+        keptFreire.Included.Should().BeFalse();
+        keptFreire.SkippedReason.Should().Be("kept: you set this kind yourself");
+        keptDewey.Included.Should().BeFalse();
+        keptDewey.SkippedReason.Should().Be("kept: you set this kind yourself");
+    }
+
+    [Fact]
+    public async Task An_auto_apply_claim_during_the_turn_reconciles_against_the_staged_diff()
+    {
+        // Default AutoApplyTopicKinds is 10: a small classification tries to
+        // auto-apply, and a claim during the turn sends it to review.
+        using var h = CreateHarness(autoApplyTopicKinds: 10);
+        var freire = await SeedTopicAsync(h, "Freire");
+        var montessori = await SeedTopicAsync(h, "Montessori");
+        var draft = new AssistantChangesetDraft(h.Library, h.Library);
+        (await StageAsync(h, draft, [freire, montessori], "Idea")).Success.Should().BeTrue();
+
+        await ClaimAsync(h, freire.Id, TopicKindModel.PersonId, TopicKindSources.Reader);
+
+        var outcome = await h.Coordinator.FinishTurnAsync("conversation", "turn-auto-claim", draft, false, false, default);
+
+        outcome.AwaitingReview.Should().BeTrue();
+        var review = outcome.Changeset!;
+        review.ReviewReasons.Should().Contain(AssistantChangesetCoordinator.LibraryMovedReason);
+        review.Diff.TopicKindAssignments.Should().ContainSingle(a => a.TopicId == montessori.Id);
+
+        var freireStep = review.Steps.Single(step => step.TopicKind?.TopicId == freire.Id);
+        freireStep.Included.Should().BeFalse();
+        freireStep.SkippedReason.Should().Be("kept: you set this kind yourself");
+
+        var montessoriStep = review.Steps.Single(step => step.TopicKind?.TopicId == montessori.Id);
+        montessoriStep.Included.Should().BeTrue();
+        montessoriStep.SkippedReason.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task A_protected_clear_reports_that_the_reader_set_the_kind_themselves()
+    {
+        using var h = CreateHarness();
+        var freire = await SeedTopicAsync(h, "Freire", TopicKindModel.IdeaId, TopicKindSources.Assistant);
+        var alreadyClear = await SeedTopicAsync(h, "Montessori", TopicKindModel.IdeaId, TopicKindSources.Assistant);
+        var draft = new AssistantChangesetDraft(h.Library, h.Library);
+
+        var staged = await h.Registry.InvokeAsync(
+            "topics_set_kind",
+            Args(JsonSerializer.Serialize(new
+            {
+                topicIds = new[] { freire.Id, alreadyClear.Id },
+                clear = true,
+            })),
+            new AssistantToolContext("client", "stage", draft, "Clear those topics."));
+        staged.Success.Should().BeTrue(staged.ErrorMessage);
+
+        var review = await h.Coordinator.FinishTurnAsync("conversation", "turn-clear", draft, false, false, default);
+        review.AwaitingReview.Should().BeTrue();
+
+        await ClaimAsync(h, freire.Id, TopicKindModel.PersonId, TopicKindSources.Reader);
+        await ClaimAsync(h, alreadyClear.Id, null, null);
+
+        var preview = await h.Coordinator.PreviewAsync(
+            review.Changeset!.ChangesetId,
+            new AssistantChangesetPreviewRequest(review.Changeset.ActionToken, []),
+            default);
+
+        preview.Success.Should().BeTrue(preview.ErrorMessage);
+        var freireStep = preview.Changeset!.Steps.Single(step => step.TopicKind?.TopicId == freire.Id);
+        freireStep.Included.Should().BeFalse();
+        freireStep.SkippedReason.Should().Be("kept: you set this kind yourself");
+
+        var clearStep = preview.Changeset.Steps.Single(step => step.TopicKind?.TopicId == alreadyClear.Id);
+        clearStep.Included.Should().BeFalse();
+        clearStep.SkippedReason.Should().Be("kept: the topic already has no kind");
+    }
+
     // ------------------------------------------------------------------
     // Harness
     // ------------------------------------------------------------------
@@ -355,7 +602,7 @@ public sealed class AssistantTopicKindReaderProtectionTests : IClassFixture<Sqli
         return await db.TopicKinds.CountAsync(kind => kind.Name == name);
     }
 
-    private static async Task ClaimAsync(Harness h, Guid topicId, Guid kindId, string source)
+    private static async Task ClaimAsync(Harness h, Guid topicId, Guid? kindId, string? source)
     {
         await using var db = await h.Factory.CreateDbContextAsync();
         var topic = await db.Topics.SingleAsync(candidate => candidate.Id == topicId);
@@ -370,7 +617,7 @@ public sealed class AssistantTopicKindReaderProtectionTests : IClassFixture<Sqli
         return await db.Topics.AsNoTracking().SingleAsync(topic => topic.Id == topicId);
     }
 
-    private Harness CreateHarness()
+    private Harness CreateHarness(int autoApplyTopicKinds = 0)
     {
         var options = new DbContextOptionsBuilder<NostosDbContext>()
             .UseSqlite($"Data Source={_fixture.CreateDatabasePath()}")
@@ -394,7 +641,7 @@ public sealed class AssistantTopicKindReaderProtectionTests : IClassFixture<Sqli
         var coordinator = new AssistantChangesetCoordinator(
             new AssistantChangesetStore(),
             library,
-            new AssistantOptions { AutoApplyTopicKinds = 0 });
+            new AssistantOptions { AutoApplyTopicKinds = autoApplyTopicKinds });
 
         return new Harness(db, factory, library, registry, coordinator);
     }
@@ -402,9 +649,13 @@ public sealed class AssistantTopicKindReaderProtectionTests : IClassFixture<Sqli
     private static JsonElement Args(string json) =>
         JsonDocument.Parse(json).RootElement.Clone();
 
-    private static async Task<TopicModel> SeedTopicAsync(Harness h, string name)
+    private static async Task<TopicModel> SeedTopicAsync(
+        Harness h,
+        string name,
+        Guid? kindId = null,
+        string? kindSource = null)
     {
-        var topic = new TopicModel { Topic = name };
+        var topic = new TopicModel { Topic = name, KindId = kindId, KindSource = kindSource };
         h.Db.Topics.Add(topic);
         await h.Db.SaveChangesAsync();
         return topic;

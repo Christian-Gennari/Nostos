@@ -38,7 +38,21 @@ public sealed class StoredAssistantChangeset
     public required LibraryChangesetDiffDto Baseline { get; init; }
 
     public AssistantChangesetStatus Status { get; set; }
+
+    /// <summary>
+    /// Steps the user themselves unticked (plus their dependants). Kept separate
+    /// from server-kept steps in <see cref="Kept"/> so unticking a topic never
+    /// conflates with a server skip.
+    /// </summary>
     public HashSet<int> Excluded { get; set; } = [];
+
+    /// <summary>
+    /// Steps the server itself permanently left out of the review (for example,
+    /// the reader set that topic's kind themselves). Grows monotonically for the
+    /// life of the review and never enters <see cref="Excluded"/>.
+    /// </summary>
+    public Dictionary<int, string> Kept { get; set; } = [];
+
     public required LibraryChangesetDiffDto Diff { get; set; }
     public required string DiffHash { get; set; }
     public IReadOnlyList<string> ReviewReasons { get; set; } = [];
@@ -46,10 +60,11 @@ public sealed class StoredAssistantChangeset
     public DateTimeOffset ExpiresAt { get; set; }
 
     /// <summary>
-    /// Why the server itself left a step out on the last recompute: the step is
-    /// included in the review, but it now does nothing (the reader set that
-    /// kind themselves, say). Such a step is also in <see cref="Excluded"/>, so
-    /// a later apply never runs it again.
+    /// Why the server left a step out on the last recompute: every entry in
+    /// <see cref="Kept"/> together with any created kind that has no active
+    /// topic left. When the user ticks one of those topics back on, the create
+    /// step drops out of <see cref="SkippedReasons"/> while <see cref="Kept"/>
+    /// keeps the claimed siblings.
     /// </summary>
     public Dictionary<int, string> SkippedReasons { get; set; } = [];
 
@@ -66,7 +81,11 @@ public sealed class StoredAssistantChangeset
     public bool Busy { get; set; }
 
     public IReadOnlyList<LibraryChangeOp> IncludedOps =>
-        Steps.Where((_, index) => !Excluded.Contains(index)).Select(s => s.Op).ToList();
+        Steps.Where((_, index) => !Excluded.Contains(index)
+                && !Kept.ContainsKey(index)
+                && !SkippedReasons.ContainsKey(index))
+            .Select(s => s.Op)
+            .ToList();
 
     public AssistantChangesetDto ToDto() => new(
         ChangesetId,
@@ -78,8 +97,12 @@ public sealed class StoredAssistantChangeset
             _ => "discarded",
         },
         Steps.Select((step, index) => new AssistantChangeStepDto(
-            index, step.Summary, !Excluded.Contains(index), step.DependsOn, StepTopicKind(index),
-            SkippedReasons.GetValueOrDefault(index))).ToList(),
+            index,
+            step.Summary,
+            !Excluded.Contains(index) && !Kept.ContainsKey(index) && !SkippedReasons.ContainsKey(index),
+            step.DependsOn,
+            StepTopicKind(index),
+            SkippedReasons.GetValueOrDefault(index) ?? Kept.GetValueOrDefault(index))).ToList(),
         WithStepIndexes(),
         DiffHash,
         ActionToken,
