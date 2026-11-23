@@ -815,6 +815,87 @@ public sealed class AssistantTopicKindReaderProtectionTests : IClassFixture<Sqli
         preview.Changeset.Steps.Single(s => s.TopicKind?.TopicId == montessori.Id).Included.Should().BeTrue();
     }
 
+    [Fact]
+    public async Task A_chosen_colour_taken_during_review_falls_back_to_a_free_colour_and_applies()
+    {
+        using var h = CreateHarness();
+        var dewey = await SeedTopicAsync(h, "Dewey");
+        var draft = new AssistantChangesetDraft(h.Library, h.Library);
+        (await h.Registry.InvokeAsync("topics_create_kind", Args("""{"name":"Movement","colorKey":"kind-9"}"""),
+            new AssistantToolContext("client", "stage", draft, "x"))).Success.Should().BeTrue();
+        (await StageAsync(h, draft, [dewey], "Movement")).Success.Should().BeTrue();
+        var review = await h.Coordinator.FinishTurnAsync("c", "t", draft, false, false, default);
+        review.AwaitingReview.Should().BeTrue();
+        var id = review.Changeset!.ChangesetId;
+        var token = review.Changeset.ActionToken;
+
+        await StealAsync(h, "kind-9", "R1");
+        var r1 = await h.Coordinator.ApplyAsync(id, new(token, [], review.Changeset.DiffHash), default);
+        r1.Success.Should().BeFalse();
+        r1.ErrorCode.Should().Be(LibraryChangesetErrorCodes.DiffChanged);
+        r1.Changeset!.Diff.TopicKinds.Should().ContainSingle()
+            .Which.ColorKey.Should().Be("kind-7");
+        r1.Changeset.Steps.Single(s => s.TopicKind?.CreatesKind == true).TopicKind!.ColorKey
+            .Should().Be("kind-7");
+
+        var r2 = await h.Coordinator.ApplyAsync(id, new(token, [], r1.Changeset!.DiffHash), default);
+        r2.Success.Should().BeTrue(r2.ErrorMessage);
+
+        await using var db = await h.Factory.CreateDbContextAsync();
+        var created = await db.TopicKinds.AsNoTracking().SingleAsync(k => k.Name == "Movement");
+        created.ColorKey.Should().Be("kind-7");
+    }
+
+    [Fact]
+    public async Task A_chosen_colour_that_stays_free_is_kept_when_applied()
+    {
+        using var h = CreateHarness();
+        var dewey = await SeedTopicAsync(h, "Dewey");
+        var draft = new AssistantChangesetDraft(h.Library, h.Library);
+        (await h.Registry.InvokeAsync("topics_create_kind", Args("""{"name":"Movement","colorKey":"kind-9"}"""),
+            new AssistantToolContext("client", "stage", draft, "x"))).Success.Should().BeTrue();
+        (await StageAsync(h, draft, [dewey], "Movement")).Success.Should().BeTrue();
+        var review = await h.Coordinator.FinishTurnAsync("c", "t", draft, false, false, default);
+        review.AwaitingReview.Should().BeTrue();
+        review.Changeset!.Diff.TopicKinds.Should().ContainSingle()
+            .Which.ColorKey.Should().Be("kind-9");
+
+        var applied = await h.Coordinator.ApplyAsync(
+            review.Changeset.ChangesetId,
+            new(review.Changeset.ActionToken, [], review.Changeset.DiffHash),
+            default);
+        applied.Success.Should().BeTrue(applied.ErrorMessage);
+
+        await using var db = await h.Factory.CreateDbContextAsync();
+        var created = await db.TopicKinds.AsNoTracking().SingleAsync(k => k.Name == "Movement");
+        created.ColorKey.Should().Be("kind-9");
+    }
+
+    [Fact]
+    public async Task When_all_twelve_colours_are_taken_a_chosen_colour_hits_the_limit()
+    {
+        using var h = CreateHarness();
+        var dewey = await SeedTopicAsync(h, "Dewey");
+        var draft = new AssistantChangesetDraft(h.Library, h.Library);
+        (await h.Registry.InvokeAsync("topics_create_kind", Args("""{"name":"Movement","colorKey":"kind-9"}"""),
+            new AssistantToolContext("client", "stage", draft, "x"))).Success.Should().BeTrue();
+        (await StageAsync(h, draft, [dewey], "Movement")).Success.Should().BeTrue();
+        var review = await h.Coordinator.FinishTurnAsync("c", "t", draft, false, false, default);
+        review.AwaitingReview.Should().BeTrue();
+
+        for (var i = 6; i < TopicKindModel.MaxKinds; i++)
+            await StealAsync(h, TopicKindModel.PaletteColorKeys[i], $"ReaderKind{i}");
+
+        var applied = await h.Coordinator.ApplyAsync(
+            review.Changeset!.ChangesetId,
+            new(review.Changeset.ActionToken, [], review.Changeset.DiffHash),
+            default);
+
+        applied.Success.Should().BeFalse();
+        applied.ErrorCode.Should().Be(LibraryChangesetErrorCodes.TopicKindLimit);
+        applied.ErrorMessage.Should().Contain("at most 12");
+    }
+
     // ------------------------------------------------------------------
     // Harness
     // ------------------------------------------------------------------
@@ -856,6 +937,19 @@ public sealed class AssistantTopicKindReaderProtectionTests : IClassFixture<Sqli
                 kind,
             })),
             new AssistantToolContext("client", "stage", draft, "Give my unkinded topics a kind."));
+    }
+
+    private static async Task StealAsync(Harness h, string colorKey, string name)
+    {
+        await using var db = await h.Factory.CreateDbContextAsync();
+        var nextOrder = (await db.TopicKinds.MaxAsync(kind => (int?)kind.SortOrder) ?? 0) + 1;
+        db.TopicKinds.Add(new TopicKindModel
+        {
+            Name = name,
+            ColorKey = colorKey,
+            SortOrder = nextOrder,
+        });
+        await db.SaveChangesAsync();
     }
 
     private static async Task<int> KindCountAsync(Harness h, string name)

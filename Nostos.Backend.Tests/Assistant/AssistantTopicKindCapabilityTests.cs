@@ -549,6 +549,106 @@ public sealed class AssistantTopicKindCapabilityTests : IClassFixture<SqliteTest
         kindSteps.Should().OnlyContain(step => step.TopicIds.Count == 1);
     }
 
+    [Fact]
+    public async Task Refusing_a_set_for_a_reader_kind_reports_replan_counts_and_dropped_created_kind()
+    {
+        using var h = CreateHarness();
+        var freire = await SeedTopicAsync(h, "Freire", TopicKindModel.PersonId, TopicKindSources.Reader);
+        var draft = new AssistantChangesetDraft(h.Library, h.Library);
+
+        var collection = await h.Registry.InvokeAsync(
+            "library_create_collection",
+            Args("""{"name":"Reading"}"""),
+            new AssistantToolContext("client", "replan-reader", draft, "Give my unkinded topics a kind."));
+        collection.Success.Should().BeTrue(collection.ErrorMessage);
+
+        var created = await h.Registry.InvokeAsync(
+            "topics_create_kind",
+            Args("""{"name":"Movement"}"""),
+            new AssistantToolContext("client", "replan-reader", draft, "Give my unkinded topics a kind."));
+        created.Success.Should().BeTrue(created.ErrorMessage);
+        created.Data!.Value.GetProperty("changesetSoFar").GetProperty("topicKindsCreated").GetInt32().Should().Be(1);
+
+        var set = await h.Registry.InvokeAsync(
+            "topics_set_kind",
+            Args(JsonSerializer.Serialize(new
+            {
+                topicIds = new[] { freire.Id },
+                kind = "Movement",
+            })),
+            new AssistantToolContext("client", "replan-reader", draft, "Give my unkinded topics a kind."));
+
+        set.Success.Should().BeTrue(set.ErrorMessage);
+        var data = set.Data!.Value;
+        data.GetProperty("status").GetString().Should().Be("kept_reader_kinds");
+        data.GetProperty("kept").GetInt32().Should().Be(1);
+        data.GetProperty("note").GetString().Should().Contain("Kept 1 kind you set yourself.")
+            .And.Contain("“Movement” will not be created: no topic uses it.");
+        var counts = data.GetProperty("changesetSoFar");
+        counts.GetProperty("collectionsCreated").GetInt32().Should().Be(1);
+        counts.GetProperty("topicKindsCreated").GetInt32().Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Abandoning_a_created_kind_reports_updated_counts_and_tells_the_model()
+    {
+        using var h = CreateHarness();
+        var dewey = await SeedTopicAsync(h, "Dewey");
+        var freire = await SeedTopicAsync(h, "Freire", TopicKindModel.PersonId, TopicKindSources.Reader);
+        var draft = new AssistantChangesetDraft(h.Library, h.Library);
+
+        (await h.Registry.InvokeAsync(
+            "topics_create_kind",
+            Args("""{"name":"Movement"}"""),
+            new AssistantToolContext("client", "abandon", draft, "Give my unkinded topics a kind.")))
+            .Success.Should().BeTrue();
+        (await h.Registry.InvokeAsync(
+            "topics_set_kind",
+            Args(JsonSerializer.Serialize(new { topicIds = new[] { dewey.Id }, kind = "Movement" })),
+            new AssistantToolContext("client", "abandon", draft, "Give my unkinded topics a kind.")))
+            .Success.Should().BeTrue();
+
+        // Moving its only topic to another kind (while a reader kind is kept in
+        // the same call) abandons "Movement": counts drop to 0 created kinds
+        // and the result says so.
+        var reassigned = await h.Registry.InvokeAsync(
+            "topics_set_kind",
+            Args(JsonSerializer.Serialize(new
+            {
+                topicIds = new[] { dewey.Id, freire.Id },
+                kind = "Idea",
+            })),
+            new AssistantToolContext("client", "abandon", draft, "Give my unkinded topics a kind."));
+
+        reassigned.Success.Should().BeTrue(reassigned.ErrorMessage);
+        var data = reassigned.Data!.Value;
+        data.GetProperty("keptReaderKinds").GetInt32().Should().Be(1);
+        data.GetProperty("note").GetString().Should().Contain("Kept 1 kind you set yourself.")
+            .And.Contain("“Movement” will not be created: no topic uses it.");
+        var counts = data.GetProperty("changesetSoFar");
+        counts.GetProperty("topicKindsCreated").GetInt32().Should().Be(0);
+        counts.GetProperty("topicKindChanges").GetInt32().Should().Be(1);
+
+        // Using the abandoned kind later in the turn brings it back cleanly.
+        var montessori = await SeedTopicAsync(h, "Montessori");
+        var reused = await h.Registry.InvokeAsync(
+            "topics_set_kind",
+            Args(JsonSerializer.Serialize(new { topicIds = new[] { montessori.Id }, kind = "Movement" })),
+            new AssistantToolContext("client", "abandon", draft, "Give my unkinded topics a kind."));
+        reused.Success.Should().BeTrue(reused.ErrorMessage);
+        reused.Data!.Value.GetProperty("changesetSoFar").GetProperty("topicKindsCreated").GetInt32().Should().Be(1);
+        reused.Data!.Value.GetProperty("note").GetString().Should().NotContain("will not be created");
+
+        // Clearing its only topic abandons it again (down to no_change).
+        var cleared = await h.Registry.InvokeAsync(
+            "topics_set_kind",
+            Args(JsonSerializer.Serialize(new { topicIds = new[] { montessori.Id }, clear = true })),
+            new AssistantToolContext("client", "abandon", draft, "Give my unkinded topics a kind."));
+        cleared.Success.Should().BeTrue(cleared.ErrorMessage);
+        cleared.Data!.Value.GetProperty("changesetSoFar").GetProperty("topicKindsCreated").GetInt32().Should().Be(0);
+        cleared.Data!.Value.GetProperty("note").GetString().Should().Contain("“Movement” will not be created: no topic uses it.");
+    }
+
     // ------------------------------------------------------------------
     // Harness
     // ------------------------------------------------------------------

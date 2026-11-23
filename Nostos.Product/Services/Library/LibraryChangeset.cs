@@ -62,9 +62,9 @@ public sealed record RemoveBooksFromCollectionOp(LibraryCollectionRef Collection
     : LibraryChangeOp;
 
 /// <summary>
-/// Creates a topic kind. A null <paramref name="ColorKey"/> takes the first
-/// free palette colour. Later operations in the same changeset can name it by
-/// <paramref name="Ref"/>.
+/// Creates a topic kind. <paramref name="ColorKey"/> is a preference: when
+/// null or already taken, apply/preview takes the first free palette colour.
+/// Later operations in the same changeset can name it by <paramref name="Ref"/>.
 /// </summary>
 public sealed record CreateTopicKindOp(string Ref, string Name, string? ColorKey = null)
     : LibraryChangeOp;

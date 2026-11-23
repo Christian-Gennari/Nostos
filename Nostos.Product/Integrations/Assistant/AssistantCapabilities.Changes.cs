@@ -411,16 +411,24 @@ public static partial class AssistantCapabilities
 
                 if (overwrite.Count == 0)
                 {
-                    if (kind is { Ref: { } kindRef })
-                        await draft.NoteTopicKindNamedAsync(kindRef, ct);
+                    var replan = kind is { Ref: { } kindRef }
+                        ? await draft.NoteTopicKindNamedAsync(kindRef, ct)
+                        : null;
+                    var droppedKinds = replan is not null ? draft.LastDroppedCreatedKinds : [];
+                    var keptNote = keptReaderKinds == 1
+                        ? "Kept 1 kind you set yourself."
+                        : $"Kept {keptReaderKinds} kinds you set yourself.";
+                    var counts = replan?.Data is { } replanData
+                        && replanData.TryGetProperty("changesetSoFar", out var replanCounts)
+                        ? replanCounts
+                        : Element(draft.Counts);
 
                     return AssistantToolResult.Ok(Element(new
                     {
                         status = "kept_reader_kinds",
                         kept = keptReaderKinds,
-                        note = keptReaderKinds == 1
-                            ? "Kept 1 kind you set yourself."
-                            : $"Kept {keptReaderKinds} kinds you set yourself.",
+                        note = AssistantChangesetDraft.AppendDroppedKindsNote(keptNote, droppedKinds),
+                        changesetSoFar = counts,
                     }));
                 }
 
@@ -438,12 +446,15 @@ public static partial class AssistantCapabilities
 
                 return staged with
                 {
-                    Data = WithReaderKindNote(staged.Data, keptReaderKinds),
+                    Data = WithReaderKindNote(staged.Data, keptReaderKinds, draft.LastDroppedCreatedKinds),
                 };
             }),
     ];
 
-    private static JsonElement? WithReaderKindNote(JsonElement? data, int kept)
+    private static JsonElement? WithReaderKindNote(
+        JsonElement? data,
+        int kept,
+        IReadOnlyList<string> droppedKinds)
     {
         if (data is not { } value)
             return data;
@@ -452,9 +463,10 @@ public static partial class AssistantCapabilities
             return data;
 
         node["keptReaderKinds"] = kept;
-        node["note"] = kept == 1
+        var keptNote = kept == 1
             ? "Kept 1 kind you set yourself."
             : $"Kept {kept} kinds you set yourself.";
+        node["note"] = AssistantChangesetDraft.AppendDroppedKindsNote(keptNote, droppedKinds);
         return JsonSerializer.SerializeToElement(node);
     }
 
