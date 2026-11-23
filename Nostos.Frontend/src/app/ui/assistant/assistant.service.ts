@@ -1042,6 +1042,7 @@ export class AssistantService {
     if (!found || found.changeset.status !== 'review') return;
     const excluded = new Set(excludedSteps(found.changeset));
     for (const index of indexes) {
+      if (found.changeset.steps[index]?.skippedReason) continue;
       if (included) excluded.delete(index);
       else excluded.add(index);
     }

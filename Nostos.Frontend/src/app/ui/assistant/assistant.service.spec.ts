@@ -1479,6 +1479,67 @@ describe('AssistantService voice transcript alignment', () => {
     });
   });
 
+  it('sends only user-excluded steps when reticking a topic after the server kept its sibling and empty kind', () => {
+    service.updateDraft('Sort my topics.');
+    service.submit();
+    http.expectOne('/api/assistant/turn/stream').flush(turn({
+      changeset: changeset({
+        steps: [
+          {
+            index: 0,
+            summary: 'Create “School of thought”',
+            included: false,
+            dependsOn: [],
+            skippedReason: 'kept: no topic still needs this kind',
+          },
+          { index: 1, summary: 'Set “Dewey” to “School of thought”', included: false, dependsOn: [0] },
+          {
+            index: 2,
+            summary: 'Set “Freire” to “School of thought”',
+            included: false,
+            dependsOn: [0],
+            skippedReason: 'kept: you set this kind yourself',
+          },
+        ],
+      }),
+    }));
+
+    service.setChangesetStepIncluded('cs-1', 1, true);
+
+    const request = http.expectOne('/api/assistant/changesets/cs-1/preview');
+    expect(request.request.body).toEqual({
+      actionToken: 'token-1',
+      excluded: [],
+    });
+    request.flush({
+      success: true,
+      errorCode: null,
+      errorMessage: null,
+      conflicts: [],
+      changeset: changeset({
+        steps: [
+          { index: 0, summary: 'Create “School of thought”', included: true, dependsOn: [] },
+          { index: 1, summary: 'Set “Dewey” to “School of thought”', included: true, dependsOn: [0] },
+          {
+            index: 2,
+            summary: 'Set “Freire” to “School of thought”',
+            included: false,
+            dependsOn: [0],
+            skippedReason: 'kept: you set this kind yourself',
+          },
+        ],
+        diffHash: 'hash-reticked',
+      }),
+    });
+
+    service.applyChangeset('cs-1');
+    expect(http.expectOne('/api/assistant/changesets/cs-1/apply').request.body).toEqual({
+      actionToken: 'token-1',
+      excluded: [],
+      diffHash: 'hash-reticked',
+    });
+  });
+
   it('undoes applied changes and lists what it left alone', () => {
     service.updateDraft('Rename Fiction.');
     service.submit();

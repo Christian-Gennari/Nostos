@@ -30,11 +30,12 @@
     <li class="changeset__kind-group" [class.changeset__kind-group--off]="!group.included">
       <label class="changeset__kind-head">
         <input
+          #kindToggle
           type="checkbox"
           appCheckbox
-          [checked]="groupIncludedCount(group) === group.topics.length"
-          [indeterminate]="groupIncludedCount(group) > 0 && groupIncludedCount(group) < group.topics.length"
-          [disabled]="disabled() || group.stepIndexes.length === 0"
+          [checked]="groupChecked(group)"
+          [indeterminate]="groupIndeterminate(group)"
+          [disabled]="groupDisabled(group)"
           (change)="toggleKindGroup(group, $event)"
           data-testid="assistant-changeset-kind-toggle"
         />
@@ -59,10 +60,11 @@
       @if (changeset().steps.length > 1) {
       <label class="changeset__step-control">
         <input
+          #stepToggle
           type="checkbox"
           appCheckbox
           [checked]="step.included"
-          [disabled]="disabled() || (!step.included && stepBlocked(step.index))"
+          [disabled]="stepDisabled(step)"
           (change)="toggleStep(step.index, $event)"
           data-testid="assistant-changeset-step-toggle"
         />
@@ -115,10 +117,11 @@
           <li [class.changeset__topic--off]="!topic.included">
             <label class="changeset__topic-control">
               <input
+                #topicToggle
                 type="checkbox"
                 appCheckbox
                 [checked]="topic.included"
-                [disabled]="disabled() || topic.stepIndex === null"
+                [disabled]="topicDisabled(topic)"
                 (change)="toggleKindTopic(topic.stepIndex, $event)"
                 [attr.data-testid]="'assistant-changeset-topic-toggle'"
               />

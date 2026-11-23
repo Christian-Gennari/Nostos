@@ -145,22 +145,14 @@
   opacity: 0.35;
 }
 
-.changeset__kind-topics {
-  min-width: 0;
-  margin: 0 0 0 24px;
-  color: var(--color-text-muted);
-  font-size: 0.74rem;
-  line-height: 1.4;
-  /* A long topic name wraps inside the card instead of widening it. */
-  overflow-wrap: anywhere;
-}
-
 /* "kept: you set this kind yourself" — the server's reason for a step it left
    out of the review, on its own line under the words it belongs to and aligned
    with them (the checkbox and its gap). */
 .changeset__skipped {
   display: block;
-  margin-left: 24px;
+  flex: 0 0 100%;
+  box-sizing: border-box;
+  padding-left: 24px;
   color: var(--color-text-muted);
   font-size: 0.74rem;
   font-style: italic;
@@ -184,7 +176,11 @@
   line-height: 1.45;
 }
 
-.changeset__kind-head input:disabled {
+.changeset__kind-head:has(input:disabled),
+.changeset__step-control:has(input:disabled),
+.changeset__topic-control:has(input:disabled),
+.changeset__kind-head input:disabled,
+.changeset__topic-control input:disabled {
   cursor: not-allowed;
 }
 

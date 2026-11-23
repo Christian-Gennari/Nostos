@@ -1,4 +1,14 @@
-import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
+import {
+  afterRenderEffect,
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  ElementRef,
+  input,
+  output,
+  signal,
+  viewChildren,
+} from '@angular/core';
 
 import { ButtonComponent } from '../../button/button.component';
 import type {
@@ -80,6 +90,44 @@ export class AssistantChangesetCardComponent {
   readonly detailsToggled = output<boolean>();
 
   readonly detailsOpen = signal(false);
+
+  private readonly kindToggles = viewChildren<ElementRef<HTMLInputElement>>('kindToggle');
+  private readonly stepToggles = viewChildren<ElementRef<HTMLInputElement>>('stepToggle');
+  private readonly topicToggles = viewChildren<ElementRef<HTMLInputElement>>('topicToggle');
+
+  constructor() {
+    afterRenderEffect(() => {
+      this.changeset();
+      this.busy();
+      this.locked();
+      this.error();
+      this.detailsOpen();
+
+      const groups = this.kindGroups();
+      this.kindToggles().forEach((ref, index) => {
+        const group = groups[index];
+        if (!group) return;
+        ref.nativeElement.checked = this.groupChecked(group);
+        ref.nativeElement.indeterminate = this.groupIndeterminate(group);
+      });
+
+      const steps = this.otherSteps();
+      this.stepToggles().forEach((ref, index) => {
+        const step = steps[index];
+        if (!step) return;
+        ref.nativeElement.checked = step.included;
+      });
+
+      if (this.inReview()) {
+        const topics = this.detailKindGroups().flatMap((group) => group.topics);
+        this.topicToggles().forEach((ref, index) => {
+          const topic = topics[index];
+          if (!topic) return;
+          ref.nativeElement.checked = topic.included;
+        });
+      }
+    });
+  }
 
   readonly status = computed(() => this.changeset().status);
   readonly inReview = computed(() => this.status() === 'review');
@@ -265,14 +313,18 @@ export class AssistantChangesetCardComponent {
   }
 
   toggleStep(index: number, event: Event): void {
+    const step = this.changeset().steps[index];
+    if (!step || this.stepDisabled(step)) return;
     const included = (event.target as HTMLInputElement).checked;
     this.stepToggled.emit({ index, included });
   }
 
-  /** One checkbox for a kind group ticks or unticks every topic in it. */
+  /** One checkbox for a kind group ticks or unticks every non-kept topic in it. */
   toggleKindGroup(group: KindGroup, event: Event): void {
+    if (this.groupDisabled(group)) return;
+    const indexes = this.toggleableTopics(group).map((topic) => topic.stepIndex!);
     const included = (event.target as HTMLInputElement).checked;
-    this.stepsToggled.emit({ indexes: group.stepIndexes, included });
+    this.stepsToggled.emit({ indexes, included });
   }
 
   topicIncluded(stepIndex: number | null): boolean {
@@ -309,8 +361,38 @@ export class AssistantChangesetCardComponent {
   }
 
   toggleKindTopic(stepIndex: number | null, event: Event): void {
-    if (stepIndex === null) return;
-    this.toggleStep(stepIndex, event);
+    if (stepIndex === null || this.disabled()) return;
+    const step = this.changeset().steps[stepIndex];
+    if (!step || step.skippedReason) return;
+    const included = (event.target as HTMLInputElement).checked;
+    this.stepToggled.emit({ index: stepIndex, included });
+  }
+
+  private toggleableTopics(group: KindGroup): KindGroupTopic[] {
+    return group.topics.filter((topic) => topic.stepIndex !== null && !topic.skippedReason);
+  }
+
+  groupDisabled(group: KindGroup): boolean {
+    return this.disabled() || this.toggleableTopics(group).length === 0;
+  }
+
+  groupChecked(group: KindGroup): boolean {
+    const toggleable = this.toggleableTopics(group);
+    return toggleable.length > 0 && toggleable.every((topic) => topic.included);
+  }
+
+  groupIndeterminate(group: KindGroup): boolean {
+    const toggleable = this.toggleableTopics(group);
+    const included = toggleable.filter((topic) => topic.included).length;
+    return included > 0 && included < toggleable.length;
+  }
+
+  topicDisabled(topic: KindGroupTopic): boolean {
+    return this.disabled() || topic.stepIndex === null || Boolean(topic.skippedReason);
+  }
+
+  stepDisabled(step: { index: number; included: boolean; skippedReason?: string | null }): boolean {
+    return this.disabled() || Boolean(step.skippedReason) || (!step.included && this.stepBlocked(step.index));
   }
 
   /** How many of a group's topics are still ticked. */

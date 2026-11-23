@@ -10,6 +10,7 @@ import type { AssistantChangesetDto } from '../assistant.service';
   template: `
     <app-assistant-changeset-card
       [changeset]="changeset"
+      [busy]="busy"
       (stepToggled)="step = $event"
       (stepsToggled)="steps = $event"
     />
@@ -17,6 +18,7 @@ import type { AssistantChangesetDto } from '../assistant.service';
 })
 class HostComponent {
   changeset = reviewWithKinds();
+  busy = false;
   step: { index: number; included: boolean } | null = null;
   steps: { indexes: number[]; included: boolean } | null = null;
 }
@@ -505,6 +507,109 @@ describe('AssistantChangesetCardComponent topic kinds', () => {
     expect(notes).toEqual(['kept: no topic still needs this kind']);
     const apply = element.querySelector('[data-testid="assistant-changeset-apply"]') as HTMLButtonElement;
     expect(apply.disabled).toBe(true);
+  });
+
+  it('disables kept topic checkboxes and keeps an all-kept group disabled', () => {
+    const fixture = setup(allKeptReview());
+    const element = fixture.nativeElement as HTMLElement;
+
+    const groupBoxes = [...element.querySelectorAll('[data-testid="assistant-changeset-kind-toggle"]')] as HTMLInputElement[];
+    expect(groupBoxes).toHaveLength(2);
+    for (const box of groupBoxes) {
+      expect(box.disabled).toBe(true);
+      expect(box.checked).toBe(false);
+      expect(box.indeterminate).toBe(false);
+    }
+
+    // Even if a change event is dispatched, a disabled all-kept group must not emit.
+    groupBoxes[0].checked = true;
+    groupBoxes[0].dispatchEvent(new Event('change'));
+    expect(fixture.componentInstance.steps).toBeNull();
+
+    (element.querySelector('[data-testid="assistant-changeset-details-toggle"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    const topicBoxes = [...element.querySelectorAll('[data-testid="assistant-changeset-topic-toggle"]')] as HTMLInputElement[];
+    expect(topicBoxes).toHaveLength(3);
+    for (const box of topicBoxes) {
+      expect(box.disabled).toBe(true);
+      expect(box.checked).toBe(false);
+    }
+
+    topicBoxes[0].checked = true;
+    topicBoxes[0].dispatchEvent(new Event('change'));
+    expect(fixture.componentInstance.step).toBeNull();
+  });
+
+  it('derives group state and group toggles only from non-kept topics after a partial claim', () => {
+    const partial = partialClaimReview();
+    const fixture = setup(partial);
+    const element = fixture.nativeElement as HTMLElement;
+
+    // Group 0 has Freire (kept) and Montessori (included): every toggleable topic is checked.
+    const groupBox = element.querySelector('[data-testid="assistant-changeset-kind-toggle"]') as HTMLInputElement;
+    expect(groupBox.disabled).toBe(false);
+    expect(groupBox.checked).toBe(true);
+    expect(groupBox.indeterminate).toBe(false);
+
+    groupBox.checked = false;
+    groupBox.dispatchEvent(new Event('change'));
+    expect(fixture.componentInstance.steps).toEqual({ indexes: [2], included: false });
+
+    // Kept topic in details is disabled; Montessori remains enabled.
+    (element.querySelector('[data-testid="assistant-changeset-details-toggle"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    const topicBoxes = [...element.querySelectorAll('[data-testid="assistant-changeset-topic-toggle"]')] as HTMLInputElement[];
+    expect(topicBoxes[0].disabled).toBe(true);
+    expect(topicBoxes[1].disabled).toBe(false);
+  });
+
+  it('disables a kept step in the plain step list and ignores changes on it', () => {
+    const fixture = setup({
+      ...reviewWithKinds(),
+      steps: [
+        { index: 0, summary: 'Create collection “Reading”', included: true, dependsOn: [] },
+        {
+          index: 1,
+          summary: 'Create the topic kind “School of thought”',
+          included: false,
+          dependsOn: [],
+          skippedReason: 'kept: no topic still needs this kind',
+        },
+      ],
+    });
+    const element = fixture.nativeElement as HTMLElement;
+    const stepBoxes = [...element.querySelectorAll('[data-testid="assistant-changeset-step-toggle"]')] as HTMLInputElement[];
+    expect(stepBoxes).toHaveLength(2);
+    expect(stepBoxes[0].disabled).toBe(false);
+    expect(stepBoxes[1].disabled).toBe(true);
+
+    stepBoxes[1].checked = true;
+    stepBoxes[1].dispatchEvent(new Event('change'));
+    expect(fixture.componentInstance.step).toBeNull();
+  });
+
+  it('resyncs DOM checkbox checked and indeterminate after the server leaves a step unchanged', () => {
+    const fixture = setup(reviewWithKinds());
+    const element = fixture.nativeElement as HTMLElement;
+    const groupBox = element.querySelector('[data-testid="assistant-changeset-kind-toggle"]') as HTMLInputElement;
+    expect(groupBox.checked).toBe(true);
+    expect(groupBox.indeterminate).toBe(false);
+
+    // Browser flips DOM checked before Angular emits (change).
+    groupBox.checked = false;
+    groupBox.dispatchEvent(new Event('change'));
+    expect(groupBox.checked).toBe(false);
+
+    // Server preview fails or returns the same included state; busy cycles back to false.
+    fixture.componentInstance.busy = true;
+    fixture.detectChanges();
+    fixture.componentInstance.busy = false;
+    fixture.componentInstance.changeset = { ...reviewWithKinds() };
+    fixture.detectChanges();
+
+    expect(groupBox.checked).toBe(true);
+    expect(groupBox.indeterminate).toBe(false);
   });
 });
 
