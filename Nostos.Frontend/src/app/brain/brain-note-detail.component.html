@@ -1,21 +1,58 @@
-
 <header class="note-detail-head">
   <div class="note-detail-head-inner">
-    <h2 class="note-detail-title">{{ note().bookTitle || unknownBook }}</h2>
-    @if (note().bookAuthor) {
-    <span class="note-detail-author">{{ note().bookAuthor }}</span>
-    }
+    <div class="note-detail-head-copy">
+      <h2 class="note-detail-title">{{ note().bookTitle || unknownBook }}</h2>
+      @if (note().bookAuthor) {
+      <span class="note-detail-author">{{ note().bookAuthor }}</span>
+      }
+    </div>
+    <button
+      appIconButton
+      type="button"
+      icon="dots-three"
+      class="note-detail-more"
+      [glyphSize]="18"
+      aria-label="Note actions"
+      [nostosMenuTriggerFor]="detailNoteMenu"
+    ></button>
+    <ng-template #detailNoteMenu>
+      <nostos-menu aria-label="Note actions">
+        <button nostosMenuItem icon="pencil-simple" (triggered)="startEdit()">Edit note</button>
+        <button nostosMenuItem icon="bookmark-simple" (triggered)="noteActions.keepWithWriting([note().id])">Keep in a document…</button>
+        @if (showMoreFromBook()) {
+        <button nostosMenuItem icon="books" (triggered)="moreFromBook.emit()">More from this book</button>
+        }
+        <hr nostosMenuSeparator />
+        <button nostosMenuItem icon="trash" tone="danger" (triggered)="noteActions.askDelete([note().id])">Delete note</button>
+      </nostos-menu>
+    </ng-template>
   </div>
 </header>
 
 <div class="note-detail-body">
+  <div class="note-detail-meta-bar" data-testid="note-detail-meta">
+    @if (penColor(); as pen) {
+    <span class="note-detail-pen" [style.background]="pen" aria-hidden="true"></span>
+    }
+    <span>{{ noteKindLabel() }}</span>
+    <span aria-hidden="true">·</span>
+    <time [attr.datetime]="note().createdAt">{{ note().createdAt | nostosDate }}</time>
+    @if (location(); as loc) {
+    <span aria-hidden="true">·</span>
+    <span>{{ loc }}</span>
+    }
+  </div>
+
   <app-note-item
+    class="reader-note-item"
     [note]="note()"
     [topics]="state.topics()"
     [topicMap]="state.lookup()"
     [busy]="busy()"
     [canSelect]="false"
+    [showBook]="false"
     [showFormat]="(note().editionCount ?? 1) > 1"
+    [showMoreFromBook]="showMoreFromBook()"
     [quoteSize]="quoteSize()"
     [citedWritings]="cited()"
     [suggestions]="suggestions.namesFor(note().id)"
@@ -49,3 +86,4 @@
   </section>
   }
 </div>
+

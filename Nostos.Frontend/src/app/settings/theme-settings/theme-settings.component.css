@@ -56,7 +56,7 @@
 }
 
 .theme-preview-type {
-  font-family: Newsreader, Georgia, serif;
+  font-family: var(--font-reading);
   font-size: var(--text-xl);
   line-height: 1;
 }

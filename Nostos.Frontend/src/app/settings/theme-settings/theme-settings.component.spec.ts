@@ -69,4 +69,15 @@ describe('ThemeSettingsComponent', () => {
 
     expect(fixture.nativeElement.querySelector('[data-testid="theme-slots"]')).toBeNull();
   });
+
+  it('updates the note text size preference and CSS variable', () => {
+    const segmented = fixture.nativeElement.querySelector('[data-testid="note-text-size"]');
+    expect(segmented).not.toBeNull();
+
+    component.setNoteTextSize('lg');
+    fixture.detectChanges();
+
+    expect(component.noteTextSize()).toBe('lg');
+    expect(document.documentElement.style.getPropertyValue('--note-reading-size')).toBe('24px');
+  });
 });

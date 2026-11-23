@@ -1,6 +1,14 @@
 import { Injectable, effect, signal } from '@angular/core';
 import { BookSort } from '../dtos/book.enums';
 
+export type NoteTextSize = 'sm' | 'md' | 'lg';
+
+export const NOTE_TEXT_SIZE_PX: Record<NoteTextSize, string> = {
+  sm: '18px',
+  md: '21px',
+  lg: '24px',
+};
+
 export interface LibraryPreferences {
   viewMode: 'grid' | 'list';
   sort: BookSort;
@@ -20,13 +28,18 @@ export interface LibraryPreferences {
    * concern. It defaults on to preserve the assistant's existing behavior.
    */
   assistantVoiceEnabled: boolean;
+  /**
+   * Reading size for note body text in the Brain reader (issue #1808):
+   * S (18px), M (21px, default), or L (24px).
+   */
+  noteTextSize?: NoteTextSize;
 }
 
 export const LIBRARY_PREFERENCES_STORAGE_KEY = 'nostos.library.preferences';
 export const WORK_EDITIONS_STORAGE_KEY = 'nostos.work_editions';
 const LEGACY_VIEW_MODE_STORAGE_KEY = 'nostos.viewMode';
 
-const DEFAULT_PREFERENCES: LibraryPreferences = {
+const DEFAULT_PREFERENCES: Required<LibraryPreferences> = {
   viewMode: 'grid',
   sort: BookSort.LastRead,
   pageSize: 20,
@@ -34,10 +47,12 @@ const DEFAULT_PREFERENCES: LibraryPreferences = {
   groupByWork: true,
   assistantEnabled: false,
   assistantVoiceEnabled: true,
+  noteTextSize: 'md',
 };
 
 const VALID_VIEW_MODES: readonly LibraryPreferences['viewMode'][] = ['grid', 'list'];
 const VALID_SORTS: readonly BookSort[] = Object.values(BookSort);
+const VALID_NOTE_TEXT_SIZES: readonly NoteTextSize[] = ['sm', 'md', 'lg'];
 
 @Injectable({ providedIn: 'root' })
 export class LibraryPreferencesService {
@@ -48,6 +63,7 @@ export class LibraryPreferencesService {
   readonly groupByWork = signal(DEFAULT_PREFERENCES.groupByWork);
   readonly assistantEnabled = signal(DEFAULT_PREFERENCES.assistantEnabled);
   readonly assistantVoiceEnabled = signal(DEFAULT_PREFERENCES.assistantVoiceEnabled);
+  readonly noteTextSize = signal<NoteTextSize>(DEFAULT_PREFERENCES.noteTextSize);
   private workEditions = new Map<string, string>();
 
   /**
@@ -61,8 +77,11 @@ export class LibraryPreferencesService {
   constructor() {
     this.hydrate();
     this.hydrateWorkEditions();
+    this.applyNoteTextSize(this.noteTextSize());
 
     effect(() => {
+      const noteTextSize = this.noteTextSize();
+      this.applyNoteTextSize(noteTextSize);
       const preferences: LibraryPreferences = {
         viewMode: this.viewMode(),
         sort: this.sort(),
@@ -71,6 +90,7 @@ export class LibraryPreferencesService {
         groupByWork: this.groupByWork(),
         assistantEnabled: this.assistantEnabled(),
         assistantVoiceEnabled: this.assistantVoiceEnabled(),
+        ...(noteTextSize !== DEFAULT_PREFERENCES.noteTextSize ? { noteTextSize } : {}),
       };
 
       this.writePreferences(preferences);
@@ -101,6 +121,13 @@ export class LibraryPreferencesService {
     this.assistantVoiceEnabled.set(enabled);
   }
 
+  setNoteTextSize(size: NoteTextSize): void {
+    if (VALID_NOTE_TEXT_SIZES.includes(size)) {
+      this.noteTextSize.set(size);
+      this.applyNoteTextSize(size);
+    }
+  }
+
   getActiveEditionId(workId: string | null | undefined, fallbackBookId: string): string {
     return workId ? (this.workEditions.get(workId) ?? fallbackBookId) : fallbackBookId;
   }
@@ -128,7 +155,7 @@ export class LibraryPreferencesService {
     }
   }
 
-  private parsePreferences(raw: string): LibraryPreferences | null {
+  private parsePreferences(raw: string): Required<LibraryPreferences> | null {
     try {
       const value: unknown = JSON.parse(raw);
       if (!this.isRecord(value)) return null;
@@ -141,6 +168,7 @@ export class LibraryPreferencesService {
         groupByWork,
         assistantEnabled,
         assistantVoiceEnabled,
+        noteTextSize,
       } = value;
       if (
         !this.isViewMode(viewMode) ||
@@ -161,6 +189,9 @@ export class LibraryPreferencesService {
       if (assistantVoiceEnabled !== undefined && typeof assistantVoiceEnabled !== 'boolean') {
         return null;
       }
+      if (noteTextSize !== undefined && !this.isNoteTextSize(noteTextSize)) {
+        return null;
+      }
 
       return {
         viewMode,
@@ -171,13 +202,14 @@ export class LibraryPreferencesService {
         assistantEnabled: assistantEnabled ?? DEFAULT_PREFERENCES.assistantEnabled,
         assistantVoiceEnabled:
           assistantVoiceEnabled ?? DEFAULT_PREFERENCES.assistantVoiceEnabled,
+        noteTextSize: noteTextSize ?? DEFAULT_PREFERENCES.noteTextSize,
       };
     } catch {
       return null;
     }
   }
 
-  private apply(preferences: LibraryPreferences): void {
+  private apply(preferences: Required<LibraryPreferences>): void {
     this.viewMode.set(preferences.viewMode);
     this.sort.set(preferences.sort);
     this.pageSize.set(preferences.pageSize);
@@ -185,6 +217,14 @@ export class LibraryPreferencesService {
     this.groupByWork.set(preferences.groupByWork);
     this.assistantEnabled.set(preferences.assistantEnabled);
     this.assistantVoiceEnabled.set(preferences.assistantVoiceEnabled);
+    this.noteTextSize.set(preferences.noteTextSize);
+    this.applyNoteTextSize(preferences.noteTextSize);
+  }
+
+  private applyNoteTextSize(size: NoteTextSize): void {
+    if (typeof document !== 'undefined') {
+      document.documentElement.style.setProperty('--note-reading-size', NOTE_TEXT_SIZE_PX[size]);
+    }
   }
 
   private hydrateWorkEditions(): void {
@@ -243,5 +283,9 @@ export class LibraryPreferencesService {
 
   private isPageSize(value: unknown): value is number {
     return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 100;
+  }
+
+  private isNoteTextSize(value: unknown): value is NoteTextSize {
+    return typeof value === 'string' && VALID_NOTE_TEXT_SIZES.includes(value as NoteTextSize);
   }
 }

@@ -1,19 +1,47 @@
 :host {
   display: block;
   height: 100%;
+  background: var(--bg-pane-reader);
 }
 
 .brain-scroller {
   height: 100%;
   overflow-y: auto;
   scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  background: var(--bg-pane-reader);
+}
+
+.brain-scroller:hover,
+.brain-scroller:focus-within {
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+.brain-scroller::-webkit-scrollbar {
+  width: 6px;
+}
+
+.brain-scroller::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: var(--radius-pill);
+}
+
+.brain-scroller:hover::-webkit-scrollbar-thumb,
+.brain-scroller:focus-within::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
 }
 
 .note-head {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 1.5rem max(1rem, calc((100% - 46rem) / 2)) 0;
+  width: 100%;
+  max-width: 744px;
+  margin: 0 auto;
+  padding: 12px 32px 0;
+  box-sizing: border-box;
+  font-family: var(--font-ui);
 }
 
 .place-switch {
@@ -41,6 +69,7 @@
     gap: 0.4rem;
     min-height: var(--control-h-touch);
     color: var(--color-text-main);
+    font-family: var(--font-ui);
     font-weight: var(--fw-semibold);
   }
 
@@ -48,3 +77,11 @@
     display: none;
   }
 }
+
+@media (forced-colors: active) {
+  .brain-scroller {
+    scrollbar-width: auto;
+    scrollbar-color: auto;
+  }
+}
+

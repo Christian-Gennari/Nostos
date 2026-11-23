@@ -1,32 +1,71 @@
-/* One Brain list: the Library's sticky glass toolbar (title | search |
-   controls), an optional topic strip and filter row, then one reading column
-   of note cards. The page owns its scroll. */
+/* One Brain list (issue #1808): the list column owns a 56px header row, a
+   search + book toolbar row, optional topic strips, and a listbox of plain
+   note rows sharing one 24px left edge. At ≥1280px the column is 380px wide
+   beside the reader pane. */
 :host {
   display: block;
   height: 100%;
+  background: var(--bg-pane-list);
+  font-family: var(--font-ui);
 }
 
 .brain-scroller {
   height: 100%;
   overflow-y: auto;
   scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  background: var(--bg-pane-list);
 }
 
-/* --- Toolbar (the Library's) ---------------------------------------------- */
-.toolbar {
+.brain-scroller:hover,
+.brain-scroller:focus-within {
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+.brain-scroller::-webkit-scrollbar {
+  width: 6px;
+}
+
+.brain-scroller::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: var(--radius-pill);
+}
+
+.brain-scroller:hover::-webkit-scrollbar-thumb,
+.brain-scroller:focus-within::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+}
+
+.brain-work {
+  display: block;
+  min-height: 100%;
+}
+
+.brain-list-column {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--bg-pane-list);
+}
+
+/* --- 56px List Header ----------------------------------------------------- */
+.list-header {
   position: sticky;
   top: 0;
   z-index: 5;
-  display: grid;
-  grid-template-columns: minmax(max-content, 1fr) minmax(0, 420px) minmax(max-content, 1fr);
-  grid-template-rows: minmax(2.4rem, auto);
+  display: flex;
   align-items: center;
-  column-gap: 2rem;
-  padding: 1.5rem 3rem 1.25rem;
-  background: var(--glass-bg-strong);
-  backdrop-filter: var(--glass-blur);
-  -webkit-backdrop-filter: var(--glass-blur);
-  /* The hairline is `.toolbar-edge` (styles.css), shared with the Library. */
+  justify-content: space-between;
+  gap: 12px;
+  height: 56px;
+  min-height: 56px;
+  max-height: 56px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-pane-list);
+  box-sizing: border-box;
+  flex: none;
 }
 
 .place-switch,
@@ -37,113 +76,105 @@
 
 .toolbar-title {
   display: flex;
-  flex-wrap: wrap;
   align-items: baseline;
-  column-gap: 0.75rem;
-  row-gap: 0.1rem;
+  gap: 8px;
   min-width: 0;
+  flex: 1 1 auto;
 }
 
-.toolbar.is-topic .toolbar-title {
-  flex-direction: column;
-  align-items: flex-start;
-}
-
-.eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  color: var(--color-text-light);
-  font-size: 0.7rem;
-  font-weight: var(--fw-semibold);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-/* The shared `.page-title`, held to one line: a topic's name can be long. */
+/* Override the global h1–h4 serif rule inside Brain chrome. */
 .page-title {
+  margin: 0;
   overflow: hidden;
+  color: var(--color-text-main);
+  font-family: var(--font-ui);
+  font-size: 0.9375rem;
+  font-weight: var(--fw-semibold);
+  letter-spacing: -0.01em;
+  line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 100%;
-}
-
-.toolbar.is-topic .page-title {
-  font-size: var(--text-2xl);
 }
 
 .page-count {
   color: var(--color-text-light);
-  font-size: var(--text-sm);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-}
-
-/* <nostos-search-field>; the glass and clear button are the primitive's. */
-.search-bar-container {
-  width: 100%;
-  min-width: 0;
+  flex: none;
 }
 
 .toolbar-right {
   display: flex;
   align-items: center;
-  justify-self: end;
-  gap: 0.75rem;
-}
-
-.book-select {
-  max-width: 14rem;
-  color: var(--color-text-muted);
+  gap: 6px;
+  flex: none;
 }
 
 .order-select {
-  min-width: 9.5rem;
+  min-width: 0;
 }
 
-/* Narrow desktops: the Brain's placeholder ("Search notes, quotes, books,
-   topics…") is longer than the Library's, and at 1280 the title, Book, Order and
-   Select leave its track 46px short. Close the two track gaps and take the
-   order control's 24px of dead space (its longest label measures 124px) so the
-   whole placeholder fits; 1440 and wider are unchanged, where the search track
-   reaches its 420px cap. */
-@media (min-width: 769px) and (max-width: 1366px) {
-  .toolbar {
-    column-gap: 1rem;
-  }
-
-  .order-select {
-    min-width: 8rem;
-  }
+.select-toggle {
+  min-height: 40px;
 }
 
 .select-toggle[aria-pressed='true'] {
-  background: var(--bg-hover);
+  background: var(--row-selected);
   color: var(--color-text-main);
 }
 
+.topic-more {
+  width: 40px;
+  height: 40px;
+}
+
+/* --- List Toolbar Row (Search + Book filter + Sort one by one) ----------- */
+.list-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px 8px;
+  box-sizing: border-box;
+  flex: none;
+}
+
+.search-bar-container {
+  flex: 1 1 10rem;
+  min-width: 0;
+}
+
+.book-select {
+  max-width: 11rem;
+  color: var(--color-text-muted);
+  flex: 0 1 auto;
+}
+
+.sort-start {
+  flex: none;
+}
+
 /* --- Topic strip and filters ---------------------------------------------- */
-/* The strips sit in the same column as the toolbar and the notes: the max
-   width is unchanged, and the auto margins centre it in whatever space the
-   sidebar leaves. */
 .topic-kind,
 .topic-words,
 .often-with,
 .filter-bar,
 .narrow-notice {
-  max-width: calc(46rem + 6rem);
-  margin: 0 auto;
-  padding: 0 3rem;
+  padding-inline: 24px;
+  box-sizing: border-box;
+  flex: none;
 }
 
 .topic-kind {
-  padding-top: 0.55rem;
+  padding-top: 0.35rem;
   padding-bottom: 0.1rem;
 }
 
 .topic-words {
-  padding-top: 0.5rem;
-  padding-bottom: 0.5rem;
+  padding-top: 0.35rem;
+  padding-bottom: 0.35rem;
 }
 
 .often-with {
@@ -152,13 +183,14 @@
   align-items: center;
   gap: 0.4rem;
   padding-top: 0.25rem;
-  padding-bottom: 0.5rem;
+  padding-bottom: 0.4rem;
 }
 
 .often-label {
   margin-right: 0.25rem;
   color: var(--color-text-light);
-  font-size: 0.8rem;
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
 }
 
 .often-chip[aria-pressed='false'] {
@@ -171,10 +203,11 @@
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem 1rem;
+  padding-block: 0.35rem;
 }
 
 .narrow-notice > span:first-child {
-  flex: 1 1 18rem;
+  flex: 1 1 14rem;
 }
 
 .narrow-notice strong {
@@ -192,7 +225,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
-  padding-top: 0.5rem;
+  padding-top: 0.35rem;
   padding-bottom: 0.25rem;
 }
 
@@ -208,37 +241,61 @@
   margin-left: 0.25rem;
 }
 
-/* --- The reading column --------------------------------------------------- */
+/* --- The note list -------------------------------------------------------- */
+/* List gutter is 12px and each row has 12px inner padding, so row text and
+   section labels align on the shared 24px left edge while the row tint extends
+   12px past it. */
 .brain-list {
   display: block;
-  max-width: calc(46rem + 6rem);
-  margin-inline: auto;
-  padding: 0.5rem 3rem 8rem;
+  width: 100%;
+  padding: 0 12px calc(var(--dock-bar-h) + var(--dock-float-bottom) + 40px);
+  box-sizing: border-box;
 }
 
-/* A list group header: a book's, or a date's in the date orders. One style for
-   both, as the issue asks. It cannot stick under the toolbar cleanly: the
-   toolbar's height is not one value (it wraps to three rows on a phone and the
-   title can grow), so a fixed `top` would drift. */
+.note-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Section labels ("Yesterday · 1 note", or book title in By book order):
+   one line, --text-xs, semibold, --color-text-muted, 20px above / 6px below,
+   no border, not serif. */
 .note-group {
   display: flex;
-  flex-wrap: wrap;
   align-items: baseline;
-  gap: 0.25rem 0.75rem;
-  padding: 1.75rem 0 0.4rem;
-  border-bottom: 1px solid var(--border-color);
+  gap: 0.3rem;
+  margin-top: 20px;
+  margin-bottom: 6px;
+  padding: 0 12px;
+  border: 0;
+  min-width: 0;
+}
+
+.note-group:first-child {
+  margin-top: 12px;
 }
 
 .note-group-title {
   margin: 0;
-  color: var(--color-text-main);
-  font-size: 1.3rem;
-  font-weight: var(--fw-regular);
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  font-weight: var(--fw-semibold);
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .note-group-meta {
-  color: var(--color-text-light);
+  color: var(--color-text-muted);
+  font-family: var(--font-ui);
   font-size: var(--text-xs);
+  font-weight: var(--fw-semibold);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  flex: none;
 }
 
 .list-loading {
@@ -247,110 +304,133 @@
   padding: 4rem 0;
 }
 
-/* --- Wide: the list and the selected note, side by side (issue #1531) ----- */
+/* --- Wide (≥1280px): 380px list column + 1fr reader pane ------------------ */
 @media (min-width: 1280px) {
   .brain-scroller {
-    display: flex;
-    flex-direction: column;
     overflow: hidden;
-  }
-
-  .toolbar,
-  .topic-kind,
-  .topic-words,
-  .often-with,
-  .filter-bar,
-  .narrow-notice {
-    flex: none;
-  }
-
-  /* The strips above the panes were centred in the reading column; with two
-     panes they belong over the list, which is the column they filter. */
-  .topic-kind,
-  .topic-words,
-  .often-with,
-  .filter-bar,
-  .narrow-notice {
-    max-width: none;
-    margin-inline: 0;
-    padding-left: 1.25rem;
-    padding-right: 1.25rem;
   }
 
   .brain-work {
     display: grid;
-    flex: 1 1 auto;
-    grid-template-columns: clamp(340px, 38%, 440px) minmax(0, 1fr);
+    grid-template-columns: 380px minmax(0, 1fr);
+    height: 100%;
     min-height: 0;
   }
 
-  /* The list is its own scroll container: the note beside it does not move
-     when the index scrolls, and vice versa. */
-  .brain-list {
-    width: 100%;
-    max-width: none;
+  .brain-list-column {
     height: 100%;
-    margin: 0;
-    padding: 0.35rem 1.25rem 6rem;
+    min-height: 0;
+    overflow: hidden;
+    border-right: 1px solid var(--border-color);
+  }
+
+  .brain-list {
+    flex: 1 1 auto;
+    height: 100%;
+    min-height: 0;
     overflow-y: auto;
     scrollbar-gutter: stable;
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
   }
 
-  .note-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.1rem;
+  .brain-list:hover,
+  .brain-list:focus-within {
+    scrollbar-color: var(--scrollbar-thumb) transparent;
   }
 
-  .note-group {
-    padding: 1.5rem 0.85rem 0.45rem;
+  .brain-list::-webkit-scrollbar {
+    width: 6px;
   }
 
-  .brain-list.is-selecting {
-    padding-bottom: calc(var(--control-h-touch) + 3rem);
+  .brain-list::-webkit-scrollbar-thumb {
+    background: transparent;
+    border-radius: var(--radius-pill);
+  }
+
+  .brain-list:hover::-webkit-scrollbar-thumb,
+  .brain-list:focus-within::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
   }
 
   .brain-detail-pane {
+    display: flex;
+    flex-direction: column;
     height: 100%;
     min-width: 0;
+    min-height: 0;
     overflow-y: auto;
-    border-left: 1px solid var(--border-color);
-    background: var(--bg-body);
+    background: var(--bg-pane-reader);
     scrollbar-gutter: stable;
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+
+  .brain-detail-pane:hover,
+  .brain-detail-pane:focus-within {
+    scrollbar-color: var(--scrollbar-thumb) transparent;
+  }
+
+  .brain-detail-pane::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .brain-detail-pane::-webkit-scrollbar-thumb {
+    background: transparent;
+    border-radius: var(--radius-pill);
+  }
+
+  .brain-detail-pane:hover::-webkit-scrollbar-thumb,
+  .brain-detail-pane:focus-within::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
   }
 
   .brain-detail-pane:focus {
     outline: none;
   }
 
+  /* Keeps the 56px shared header line unbroken across all 3 columns when no
+     note is selected or while the note is loading. */
+  .note-detail-head-empty {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    flex: none;
+    height: 56px;
+    min-height: 56px;
+    max-height: 56px;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-pane-reader);
+    box-sizing: border-box;
+  }
+
   .detail-state {
     display: grid;
+    flex: 1 1 auto;
     place-items: center;
-    height: 100%;
-    padding: 2rem;
+    padding: 2rem 2rem calc(var(--dock-bar-h) + var(--dock-float-bottom) + 40px);
+    box-sizing: border-box;
   }
 }
 
-/* --- Phone ---------------------------------------------------------------- */
+/* --- Phone (≤768px) ------------------------------------------------------- */
 @media (max-width: 768px) {
-  .toolbar {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 10px 4px;
-    padding: 10px 14px;
+  .list-header {
+    padding: 0 14px;
   }
 
   .place-switch {
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
+    flex: 1 1 0;
     min-width: 0;
-    max-width: 60%;
     min-height: var(--control-h-touch);
-    padding: 0 0.6rem;
+    padding: 0 0.4rem;
+    justify-content: flex-start;
     color: var(--color-text-main);
-    font-size: 1.05rem;
+    font-family: var(--font-ui);
+    font-size: 1rem;
     font-weight: var(--fw-semibold);
   }
 
@@ -364,20 +444,6 @@
     display: none;
   }
 
-  /* One row: the place on the left (its name ellipsizes), the page's
-     controls on the right, all on the touch rung; the search takes the next
-     row and Unsorted's Sort one by one the row after, as in the Library.
-     The controls' wrapper steps aside so each can take its own row. */
-  .toolbar-right {
-    display: contents;
-  }
-
-  .place-switch {
-    flex: 1 1 0;
-    max-width: none;
-    justify-content: flex-start;
-  }
-
   .book-select,
   .order-select {
     display: none;
@@ -387,7 +453,6 @@
   .book-select-phone {
     display: inline-block;
     flex: none;
-    /* The square follows the touch rung even under a fine pointer, like its neighbours. */
     --control-h-field: var(--control-h-touch);
   }
 
@@ -405,15 +470,11 @@
     display: none;
   }
 
-  .sort-start {
-    order: 4;
-    flex: 1 1 100%;
-    justify-content: center;
-    min-height: var(--control-h-touch);
+  .list-toolbar {
+    padding: 10px 16px 6px;
   }
 
   .search-bar-container {
-    order: 3;
     flex: 1 1 100%;
   }
 
@@ -421,25 +482,46 @@
     min-height: var(--control-h-touch);
   }
 
+  .sort-start {
+    flex: 1 1 100%;
+    justify-content: center;
+    min-height: var(--control-h-touch);
+  }
+
   .topic-kind,
   .topic-words,
   .often-with,
   .filter-bar,
-  .narrow-notice,
-  .brain-list {
-    padding-left: 16px;
-    padding-right: 16px;
+  .narrow-notice {
+    padding-inline: 16px;
   }
 
-  /* The shell already reserves the dock rail on a phone, so the list ends
-     with a normal margin, not another dock's worth of empty band. */
   .brain-list {
-    padding-bottom: 1rem;
+    padding: 0 8px 1.5rem;
   }
 
-  /* While selecting, the bar floats over the list's end: leave room for it. */
   .brain-list.is-selecting {
     padding-bottom: calc(var(--control-h-touch) + 2rem);
   }
 }
+
+/* --- Forced colours ------------------------------------------------------- */
+@media (forced-colors: active) {
+  .list-header,
+  .note-detail-head-empty {
+    border-bottom-color: CanvasText;
+  }
+
+  .brain-list-column {
+    border-right-color: CanvasText;
+  }
+
+  .brain-scroller,
+  .brain-list,
+  .brain-detail-pane {
+    scrollbar-width: auto;
+    scrollbar-color: auto;
+  }
+}
+
 

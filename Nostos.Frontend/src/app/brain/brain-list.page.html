@@ -1,282 +1,257 @@
 <div class="brain-scroller" #scroller (scroll)="onScroll($event)">
-  <header class="toolbar toolbar-edge" [class.is-topic]="place() === 'topic'">
-    <!-- Phone: the place's name opens the sidebar drawer, as the Library's shelf name does. -->
-    <button type="button" appButton variant="ghost" class="place-switch" aria-controls="brain-sidebar"
-      [attr.aria-expanded]="state.drawerOpen()" (click)="openDrawer()">
-      @if (place() === 'topic') { <nostos-icon concept="topic" [size]="16" /> }
-      <span class="place-switch-label">{{ title() }}</span>
-      <nostos-icon name="caret-down" [size]="14" />
-    </button>
-
-    <div class="toolbar-title">
-      @if (place() === 'topic') {
-      <span class="eyebrow"><nostos-icon concept="topic" [size]="12" />Topic</span>
-      }
-      @if (renamingTitle(); as current) {
-      <nostos-inline-rename
-        variant="title"
-        [name]="current.name"
-        requiredMessage="A topic needs a name."
-        (valueChange)="topicActions.renameValue.set($event)"
-        [error]="topicActions.renameError()"
-        [busy]="topicActions.renaming()"
-        (committed)="topicActions.commitRename()"
-        (cancelled)="topicActions.cancelRename()"
-      />
-      } @else {
-      <h1 class="page-title">{{ title() }}</h1>
-      }
-      @if (loaded()) {
-      <span class="page-count" role="status" aria-live="polite">
-        {{ place() === 'topic' && !filtersActive() && !withTopic() ? topicSummary() : countText() }}
-      </span>
-      }
-    </div>
-
-    <nostos-search-field class="search-bar-container" (cleared)="clearSearch()">
-      <input
-        appInput
-        controlSize="compact"
-        type="search"
-        class="search-input"
-        id="brain-search"
-        [attr.aria-label]="'Search ' + (place() === 'topic' ? 'in ' + title() : title().toLocaleLowerCase())"
-        [placeholder]="place() === 'topic' ? 'Search in ' + title() + '…' : 'Search notes, quotes, books, topics…'"
-        [value]="searchDraft()"
-        (input)="onSearchInput($any($event.target).value)"
-        (keydown.escape)="clearSearch()"
-      />
-    </nostos-search-field>
-
-    <div class="toolbar-right">
-      <!-- Phone: order and book as square buttons; the open list shows the choice. -->
-      <app-dropdown
-        class="order-select-phone"
-        appearance="icon"
-        triggerIcon="arrows-down-up"
-        align="end"
-        ariaLabel="Order"
-        [options]="orderOptions"
-        [value]="order()"
-        (valueChange)="setOrder($event)"
-      />
-      @if (bookOptions().length > 1) {
-      <app-dropdown
-        class="book-select-phone"
-        appearance="icon"
-        triggerIcon="books"
-        align="end"
-        ariaLabel="Book"
-        [options]="bookOptions()"
-        [value]="bookId() ?? ''"
-        (valueChange)="setBook($event || null)"
-      />
-      }
-      <app-dropdown
-        class="book-select"
-        appearance="subtle"
-        controlSize="compact"
-        align="end"
-        ariaLabel="Book"
-        [options]="bookOptions()"
-        [value]="bookId() ?? ''"
-        (valueChange)="setBook($event || null)"
-      />
-      <app-dropdown
-        class="order-select"
-        controlSize="compact"
-        align="end"
-        ariaLabel="Order"
-        [options]="orderOptions"
-        [value]="order()"
-        (valueChange)="setOrder($event)"
-      />
-      @if (place() === 'unsorted' && total() > 0) {
-      <a appButton variant="primary" size="sm" class="sort-start" routerLink="/brain/unsorted/sort"
-        [queryParams]="{ book: bookId(), q: q() || null, order: order() }">
-        Sort one by one <nostos-icon name="arrow-right" [size]="14" />
-      </a>
-      }
-      <button appButton variant="ghost" size="sm" type="button" class="select-toggle" aria-label="Select notes"
-        [attr.aria-pressed]="selecting()" (click)="toggleSelecting()">
-        <nostos-icon name="check-square" [size]="16" /><span class="select-label">Select</span>
-      </button>
-      @if (place() === 'topic' && topic(); as current) {
-      <button appIconButton type="button" icon="dots-three" class="topic-more" [glyphSize]="18"
-        aria-label="Topic actions" [nostosMenuTriggerFor]="topicMenu"></button>
-      <ng-template #topicMenu>
-        <nostos-menu aria-label="Topic actions">
-          <button nostosMenuItem icon="graph" (triggered)="showOnMap(current.id)">Show on map</button>
-          <button nostosMenuItem icon="pencil-simple" (triggered)="topicActions.startRename(current, 'title')">Rename</button>
-          <button nostosMenuItem icon="git-merge" (triggered)="topicActions.openMerge(current)">Merge into…</button>
-          <button nostosMenuItem icon="bookmark-simple" (triggered)="keepTopicWithWriting(current)">Keep notes in a document…</button>
-          <hr nostosMenuSeparator />
-          <button nostosMenuItem icon="trash" tone="danger" (triggered)="topicActions.openDelete(current)">Delete topic</button>
-        </nostos-menu>
-      </ng-template>
-      }
-    </div>
-  </header>
-
-  @if (place() === 'topic' && topic(); as current) {
-  <app-topic-kind-picker class="topic-kind" [topic]="current" />
-  <app-brain-topic-words class="topic-words" [topic]="current" />
-  }
-
-  @if (place() === 'topic' && related().length) {
-  <section class="often-with" aria-label="Often with">
-    <span class="often-label">Often with</span>
-    @for (item of visibleRelated(); track item.id) {
-    <button appChip type="button" class="often-chip" [attr.aria-pressed]="withId() === item.id"
-      [title]="item.sharedNotes === 1 ? '1 shared note' : item.sharedNotes + ' shared notes'"
-      (click)="narrowTo(withId() === item.id ? null : item.id)">
-      {{ item.name }}
-      @if (withId() === item.id) { <nostos-icon name="x" [size]="12" /> }
-    </button>
-    }
-    @if (hiddenRelated() > 0) {
-    <button appButton variant="link" size="sm" type="button" (click)="relatedExpanded.set(!relatedExpanded())">
-      {{ relatedExpanded() ? 'Fewer' : '+' + hiddenRelated() + ' more' }}
-    </button>
-    }
-  </section>
-  }
-
-  <!-- Read-only, in the Often with row's style: writings reach a topic only
-       through the notes they cite (issue #1162). -->
-  @if (place() === 'topic') {
-  <app-brain-topic-used-in class="often-with" [usage]="writingUsage()" />
-  }
-
-  @if (withTopic(); as other) {
-  <div class="narrow-notice" role="status">
-    <span appNotice>Showing the {{ total() === 1 ? 'note' : total() + ' notes' }} with both <strong>{{ title() }}</strong> and
-      <strong>{{ other.name }}</strong></span>
-    <span class="narrow-actions">
-      <a appButton variant="ghost" size="sm" [routerLink]="['/brain/topics', other.id]">
-        Open {{ other.name }} <nostos-icon name="arrow-right" [size]="14" />
-      </a>
-      <button appButton variant="secondary" size="sm" type="button" (click)="narrowTo(null)">Show all</button>
-    </span>
-  </div>
-  }
-
-  @if (filtersActive() || matchingTopics().length) {
-  <div class="filter-bar">
-    @if (bookTitle(); as book) {
-    <button appChip type="button" class="filter-chip" (click)="setBook(null)" [title]="'Clear book: ' + book">
-      <span>{{ book }}</span><nostos-icon name="x" [size]="14" />
-    </button>
-    }
-    @if (q()) {
-    <button appChip type="button" class="filter-chip" (click)="clearSearch()" [title]="'Clear search: ' + q()">
-      <span>“{{ q() }}”</span><nostos-icon name="x" [size]="14" />
-    </button>
-    }
-    @if (matchingTopics().length) {
-    <span class="matching-topics" aria-label="Topics matching the search">
-      <span class="often-label">Topics</span>
-      @for (match of matchingTopics(); track match.id) {
-      <app-topic-chip [name]="match.name" [link]="['/brain/topics', match.id]" [title]="'Open ' + match.name" />
-      }
-    </span>
-    }
-  </div>
-  }
-
   <div class="brain-work">
-    <main class="brain-list" #list [class.is-selecting]="selecting()" [attr.aria-busy]="loading()" aria-label="Notes"
-      (scroll)="onScroll($event)" (keydown)="onListKeydown($event)">
-    @if (topicMissing()) {
-    <nostos-empty-state concept="topic" message="This topic is gone. It may have been merged into another or deleted.">
-      <a appButton variant="secondary" size="sm" routerLink="/brain">All notes</a>
-    </nostos-empty-state>
-    } @else if (!loaded() && loading()) {
-    <nostos-loading-indicator class="list-loading" label="Loading notes" />
-    } @else if (failed() && !loaded()) {
-    <nostos-empty-state error concept="note" message="Notes could not be loaded." (retry)="loadPage()" />
-    } @else if (loaded() && notes().length === 0) {
-    <nostos-empty-state [concept]="place() === 'unsorted' ? 'unsorted' : 'note'" [message]="emptyText()">
-      @if (filtersActive()) {
-      <button appButton variant="secondary" size="sm" type="button" (click)="clearFilters()">Clear filters</button>
-      } @else if (place() === 'unsorted') {
-      <a appButton variant="secondary" size="sm" routerLink="/brain">All notes</a>
-      }
-    </nostos-empty-state>
-    } @else {
-    <div class="note-list" [attr.role]="wide() ? 'listbox' : null" [attr.aria-label]="wide() ? 'Notes' : null">
-    @for (note of notes(); track note.id; let i = $index) {
-      @if (order() === 'book') {
-        @if (startsBook(i)) {
-        <header class="note-group" [attr.role]="wide() ? 'presentation' : null">
-          <h2 class="note-group-title">{{ note.bookTitle || unknownBook }}</h2>
-          <span class="note-group-meta">
-            @if (note.bookAuthor) { {{ note.bookAuthor }} · }
-            @if (bookCounts().get(bookKey(note)); as count) { {{ plural(count, 'note') }} }
+    <div class="brain-list-column">
+      <header class="list-header" [class.is-topic]="place() === 'topic'">
+        <!-- Phone: the place's name opens the sidebar drawer, as the Library's shelf name does. -->
+        <button type="button" appButton variant="ghost" class="place-switch" aria-controls="brain-sidebar"
+          [attr.aria-expanded]="state.drawerOpen()" (click)="openDrawer()">
+          @if (place() === 'topic') { <nostos-icon concept="topic" [size]="16" /> }
+          <span class="place-switch-label">{{ title() }}</span>
+          <nostos-icon name="caret-down" [size]="14" />
+        </button>
+
+        <div class="toolbar-title">
+          @if (renamingTitle(); as current) {
+          <nostos-inline-rename
+            variant="title"
+            [name]="current.name"
+            requiredMessage="A topic needs a name."
+            (valueChange)="topicActions.renameValue.set($event)"
+            [error]="topicActions.renameError()"
+            [busy]="topicActions.renaming()"
+            (committed)="topicActions.commitRename()"
+            (cancelled)="topicActions.cancelRename()"
+          />
+          } @else {
+          <h1 class="page-title">{{ title() }}</h1>
+          }
+          @if (loaded()) {
+          <span class="page-count" role="status" aria-live="polite">
+            {{ place() === 'topic' && !filtersActive() && !withTopic() ? topicSummary() : countText() }}
           </span>
-        </header>
+          }
+        </div>
+
+        <div class="toolbar-right">
+          <app-dropdown
+            class="order-select-phone"
+            appearance="icon"
+            triggerIcon="arrows-down-up"
+            align="end"
+            ariaLabel="Order"
+            [options]="orderOptions"
+            [value]="order()"
+            (valueChange)="setOrder($event)"
+          />
+          @if (bookOptions().length > 1) {
+          <app-dropdown
+            class="book-select-phone"
+            appearance="icon"
+            triggerIcon="books"
+            align="end"
+            ariaLabel="Book"
+            [options]="bookOptions()"
+            [value]="bookId() ?? ''"
+            (valueChange)="setBook($event || null)"
+          />
+          }
+          <app-dropdown
+            class="order-select"
+            appearance="subtle"
+            controlSize="compact"
+            align="end"
+            ariaLabel="Order"
+            [options]="orderOptions"
+            [value]="order()"
+            (valueChange)="setOrder($event)"
+          />
+          <button appButton variant="ghost" size="sm" type="button" class="select-toggle" aria-label="Select notes"
+            [attr.aria-pressed]="selecting()" (click)="toggleSelecting()">
+            <nostos-icon name="check-square" [size]="16" /><span class="select-label">Select</span>
+          </button>
+          @if (place() === 'topic' && topic(); as current) {
+          <button appIconButton type="button" icon="dots-three" class="topic-more" [glyphSize]="18"
+            aria-label="Topic actions" [nostosMenuTriggerFor]="topicMenu"></button>
+          <ng-template #topicMenu>
+            <nostos-menu aria-label="Topic actions">
+              <button nostosMenuItem icon="graph" (triggered)="showOnMap(current.id)">Show on map</button>
+              <button nostosMenuItem icon="pencil-simple" (triggered)="topicActions.startRename(current, 'title')">Rename</button>
+              <button nostosMenuItem icon="git-merge" (triggered)="topicActions.openMerge(current)">Merge into…</button>
+              <button nostosMenuItem icon="bookmark-simple" (triggered)="keepTopicWithWriting(current)">Keep notes in a document…</button>
+              <hr nostosMenuSeparator />
+              <button nostosMenuItem icon="trash" tone="danger" (triggered)="topicActions.openDelete(current)">Delete topic</button>
+            </nostos-menu>
+          </ng-template>
+          }
+        </div>
+      </header>
+
+      <div class="list-toolbar">
+        <nostos-search-field class="search-bar-container" (cleared)="clearSearch()">
+          <input
+            appInput
+            controlSize="compact"
+            type="search"
+            class="search-input"
+            id="brain-search"
+            [attr.aria-label]="'Search ' + (place() === 'topic' ? 'in ' + title() : title().toLocaleLowerCase())"
+            [placeholder]="place() === 'topic' ? 'Search in ' + title() + '…' : 'Search notes, quotes, books, topics…'"
+            [value]="searchDraft()"
+            (input)="onSearchInput($any($event.target).value)"
+            (keydown.escape)="clearSearch()"
+          />
+        </nostos-search-field>
+
+        <app-dropdown
+          class="book-select"
+          appearance="subtle"
+          controlSize="compact"
+          align="end"
+          ariaLabel="Book"
+          [options]="bookOptions()"
+          [value]="bookId() ?? ''"
+          (valueChange)="setBook($event || null)"
+        />
+
+        @if (place() === 'unsorted' && total() > 0) {
+        <a appButton variant="primary" size="sm" class="sort-start" routerLink="/brain/unsorted/sort"
+          [queryParams]="{ book: bookId(), q: q() || null, order: order() }">
+          Sort one by one <nostos-icon name="arrow-right" [size]="14" />
+        </a>
         }
-      } @else {
-        @let dateGroup = dateGroups()[i];
-        @if (dateGroup && dateGroup.starts) {
-        <header class="note-group" [attr.role]="wide() ? 'presentation' : null">
-          <h2 class="note-group-title">{{ dateGroup.label }}</h2>
-          <span class="note-group-meta">{{ plural(dateGroup.count, 'note') }}</span>
-        </header>
+      </div>
+
+      @if (place() === 'topic' && topic(); as current) {
+      <app-topic-kind-picker class="topic-kind" [topic]="current" />
+      <app-brain-topic-words class="topic-words" [topic]="current" />
+      }
+
+      @if (place() === 'topic' && related().length) {
+      <section class="often-with" aria-label="Often with">
+        <span class="often-label">Often with</span>
+        @for (item of visibleRelated(); track item.id) {
+        <button appChip type="button" class="often-chip" [attr.aria-pressed]="withId() === item.id"
+          [title]="item.sharedNotes === 1 ? '1 shared note' : item.sharedNotes + ' shared notes'"
+          (click)="narrowTo(withId() === item.id ? null : item.id)">
+          {{ item.name }}
+          @if (withId() === item.id) { <nostos-icon name="x" [size]="12" /> }
+        </button>
         }
+        @if (hiddenRelated() > 0) {
+        <button appButton variant="link" size="sm" type="button" (click)="relatedExpanded.set(!relatedExpanded())">
+          {{ relatedExpanded() ? 'Fewer' : '+' + hiddenRelated() + ' more' }}
+        </button>
+        }
+      </section>
       }
-      @if (wide()) {
-      <app-brain-note-row
-        [note]="note"
-        [selected]="selectedNoteId() === note.id"
-        [selectable]="selecting()"
-        [checked]="selected().has(note.id)"
-        [tabIndex]="rowTabIndex(note.id)"
-        (checkedChange)="setSelected(note.id, $event)"
-        (click)="onRowClick(note)"
-      />
+
+      <!-- Read-only, in the Often with row's style: writings reach a topic only
+           through the notes they cite (issue #1162). -->
+      @if (place() === 'topic') {
+      <app-brain-topic-used-in class="often-with" [usage]="writingUsage()" />
+      }
+
+      @if (withTopic(); as other) {
+      <div class="narrow-notice" role="status">
+        <span appNotice>Showing the {{ total() === 1 ? 'note' : total() + ' notes' }} with both <strong>{{ title() }}</strong> and
+          <strong>{{ other.name }}</strong></span>
+        <span class="narrow-actions">
+          <a appButton variant="ghost" size="sm" [routerLink]="['/brain/topics', other.id]">
+            Open {{ other.name }} <nostos-icon name="arrow-right" [size]="14" />
+          </a>
+          <button appButton variant="secondary" size="sm" type="button" (click)="narrowTo(null)">Show all</button>
+        </span>
+      </div>
+      }
+
+      @if (filtersActive() || matchingTopics().length) {
+      <div class="filter-bar">
+        @if (bookTitle(); as book) {
+        <button appChip type="button" class="filter-chip" (click)="setBook(null)" [title]="'Clear book: ' + book">
+          <span>{{ book }}</span><nostos-icon name="x" [size]="14" />
+        </button>
+        }
+        @if (q()) {
+        <button appChip type="button" class="filter-chip" (click)="clearSearch()" [title]="'Clear search: ' + q()">
+          <span>“{{ q() }}”</span><nostos-icon name="x" [size]="14" />
+        </button>
+        }
+        @if (matchingTopics().length) {
+        <span class="matching-topics" aria-label="Topics matching the search">
+          <span class="often-label">Topics</span>
+          @for (match of matchingTopics(); track match.id) {
+          <app-topic-chip [name]="match.name" [link]="['/brain/topics', match.id]" [title]="'Open ' + match.name" />
+          }
+        </span>
+        }
+      </div>
+      }
+
+      <main class="brain-list" #list [class.is-selecting]="selecting()" [attr.aria-busy]="loading()" aria-label="Notes"
+        (scroll)="onScroll($event)" (keydown)="onListKeydown($event)">
+      @if (topicMissing()) {
+      <nostos-empty-state concept="topic" message="This topic is gone. It may have been merged into another or deleted.">
+        <a appButton variant="secondary" size="sm" routerLink="/brain">All notes</a>
+      </nostos-empty-state>
+      } @else if (!loaded() && loading()) {
+      <nostos-loading-indicator class="list-loading" label="Loading notes" />
+      } @else if (failed() && !loaded()) {
+      <nostos-empty-state error concept="note" message="Notes could not be loaded." (retry)="loadPage()" />
+      } @else if (loaded() && notes().length === 0) {
+      <nostos-empty-state [concept]="place() === 'unsorted' ? 'unsorted' : 'note'" [message]="emptyText()">
+        @if (filtersActive()) {
+        <button appButton variant="secondary" size="sm" type="button" (click)="clearFilters()">Clear filters</button>
+        } @else if (place() === 'unsorted') {
+        <a appButton variant="secondary" size="sm" routerLink="/brain">All notes</a>
+        }
+      </nostos-empty-state>
       } @else {
-      <app-note-item
-        [note]="note"
-        [topics]="state.topics()"
-        [topicMap]="state.lookup()"
-        [showBook]="order() !== 'book'"
-        [showFormat]="(note.editionCount ?? 1) > 1"
-        [showMoreFromBook]="!bookId()"
-        [citedWritings]="place() === 'topic' ? citedWritings(note.id) : noWritings"
-        [busy]="noteActions.busy().has(note.id)"
-        [selectable]="selecting()"
-        [selected]="selected().has(note.id)"
-        [suggestions]="suggestions.namesFor(note.id)"
-        [suggestionState]="suggestions.stateFor(note.id)"
-        (topicAdded)="noteActions.addTopic(note, $event)"
-        (topicRemoved)="noteActions.removeTopic(note, $event)"
-        (pickerOpened)="suggestions.request(note)"
-        (pickerClosed)="suggestions.closeFor(note.id)"
-        (suggestionRetry)="suggestions.request(note)"
-        (edited)="noteActions.edit($event)"
-        (keepWithWriting)="noteActions.keepWithWriting([note.id])"
-        (moreFromBook)="moreFromBook(note)"
-        (selectRequested)="startSelecting(note.id)"
-        (selectedChange)="setSelected(note.id, $event)"
-        (deleteRequested)="noteActions.askDelete([note.id])"
-        (restored)="noteActions.restored($event)"
+      <div class="note-list" role="listbox" aria-label="Notes">
+      @for (note of notes(); track note.id; let i = $index) {
+        @if (order() === 'book') {
+          @if (startsBook(i)) {
+          <header class="note-group" role="presentation">
+            <h2 class="note-group-title">{{ note.bookTitle || unknownBook }}</h2>
+            <span class="note-group-meta">
+              ·
+              @if (note.bookAuthor) { {{ note.bookAuthor }} · }
+              @if (bookCounts().get(bookKey(note)); as count) { {{ plural(count, 'note') }} }
+            </span>
+          </header>
+          }
+        } @else {
+          @let dateGroup = dateGroups()[i];
+          @if (dateGroup && dateGroup.starts) {
+          <header class="note-group" role="presentation">
+            <h2 class="note-group-title">{{ dateGroup.label }}</h2>
+            <span class="note-group-meta">· {{ plural(dateGroup.count, 'note') }}</span>
+          </header>
+          }
+        }
+        <app-brain-note-row
+          [note]="note"
+          [selected]="selectedNoteId() === note.id"
+          [selectable]="selecting()"
+          [checked]="selected().has(note.id)"
+          [tabIndex]="rowTabIndex(note.id)"
+          (checkedChange)="setSelected(note.id, $event)"
+          (click)="onRowClick(note)"
+        />
+      }
+      </div>
+      <nostos-paging-status
+        [hasMore]="notes().length < total()"
+        [loading]="loading()"
+        [failed]="failed()"
+        [root]="wide() ? list : scroller"
+        label="Loading more notes"
+        failedMessage="More notes could not be loaded."
+        (more)="loadMore()"
+        (retry)="loadPage()"
       />
       }
-    }
+      </main>
     </div>
-    <nostos-paging-status
-      [hasMore]="notes().length < total()"
-      [loading]="loading()"
-      [failed]="failed()"
-      [root]="wide() ? list : scroller"
-      label="Loading more notes"
-      failedMessage="More notes could not be loaded."
-      (more)="loadMore()"
-      (retry)="loadPage()"
-    />
-    }
-    </main>
 
     @if (wide()) {
     <aside class="brain-detail-pane" role="region" aria-label="Selected note" tabindex="-1" #detailPane
@@ -284,10 +259,13 @@
       @if (selectedNote(); as current) {
       <app-brain-note-detail
         [note]="current"
+        [showMoreFromBook]="!bookId()"
         (moreFromBook)="moreFromBook(current)"
         (relatedChosen)="selectNote($event)"
       />
-      } @else if (noteLoading()) {
+      } @else {
+      <header class="note-detail-head-empty" aria-hidden="true"></header>
+      @if (noteLoading()) {
       <div class="detail-state">
         <nostos-loading-indicator label="Loading the note" />
       </div>
@@ -302,6 +280,7 @@
       <div class="detail-state">
         <nostos-empty-state concept="note" message="Choose a note" [detail]="noNoteText" />
       </div>
+      }
       }
     </aside>
     }
@@ -344,3 +323,4 @@
 }
 
 <app-brain-note-dialogs />
+

@@ -154,7 +154,7 @@ describe('BrainListPage', () => {
     const counts = Array.from(el().querySelectorAll('.note-group-meta')).map((meta) => meta.textContent?.trim());
 
     expect(titles).toEqual(['Today', 'Yesterday']);
-    expect(counts).toEqual(['2 notes', '1 note']);
+    expect(counts).toEqual(['· 2 notes', '· 1 note']);
   });
 
   describe('selecting in the wide list (#1662)', () => {
