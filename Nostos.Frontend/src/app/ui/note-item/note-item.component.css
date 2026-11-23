@@ -105,7 +105,7 @@
 }
 
 /* A long note's quote is cut at five lines. Fading the last clamped line says
-   there is more of it, and gives the "Show all" control something to belong to.
+   there is more of it, and gives the "More" control something to belong to.
    A mask, so it does not have to know the surface behind the card. */
 .note-item-quote.is-faded {
   mask-image: linear-gradient(to bottom, black 76%, transparent 100%);
@@ -117,6 +117,13 @@
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 5;
+}
+
+/* Clamped text is the control that unfolds the note (issue #1799): the pointer
+   says so, and the mask fades the last line into the "More" link. */
+.note-item-quote.is-faded,
+.note-item-thought.is-faded {
+  cursor: pointer;
 }
 
 /* The same fade for the reader's own words, but only when they are the
@@ -213,6 +220,8 @@
 
 .note-item-expand {
   align-self: flex-start;
+  /* It belongs to the last line of the clamped text, not to a row of its own. */
+  margin-top: -0.35rem;
 }
 
 /* --- Topics ---------------------------------------------------------------- */

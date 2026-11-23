@@ -489,15 +489,17 @@ describe('NoteItemComponent', () => {
   });
 
   describe('a long note', () => {
-    it('cuts a long quote to a few lines behind "Show all", and unfolds it', () => {
+    it('cuts a long quote to a few lines behind a quiet More link, and unfolds it (issue #1799)', () => {
       render({ selectedText: 'A sentence worth keeping. '.repeat(30) });
 
       const quote = element.querySelector('.note-item-quote') as HTMLElement;
       const toggle = element.querySelector('.note-item-expand') as HTMLButtonElement;
       expect(quote.classList).toContain('is-clamped');
       expect(quote.classList).toContain('is-faded');
-      expect(toggle.classList).toContain('nostos-button--secondary');
-      expect(toggle.textContent?.trim()).toBe('Show all');
+      // No box: the toggle is the link variant, not a bordered button.
+      expect(toggle.classList).not.toContain('nostos-button--secondary');
+      expect(toggle.classList).toContain('nostos-button--link');
+      expect(toggle.textContent?.trim()).toBe('More');
       expect(toggle.getAttribute('aria-expanded')).toBe('false');
 
       toggle.click();
@@ -505,16 +507,45 @@ describe('NoteItemComponent', () => {
 
       expect(quote.classList).not.toContain('is-clamped');
       expect(quote.classList).not.toContain('is-faded');
-      expect(toggle.textContent?.trim()).toBe('Show less');
+      expect(toggle.textContent?.trim()).toBe('Less');
       expect(toggle.getAttribute('aria-expanded')).toBe('true');
 
       toggle.click();
       fixture.detectChanges();
 
-      // Back to exactly the clipped card it was before "Show all".
+      // Back to exactly the clipped card it was before "More".
       expect(quote.classList).toContain('is-clamped');
       expect(quote.classList).toContain('is-faded');
-      expect(toggle.textContent?.trim()).toBe('Show all');
+      expect(toggle.textContent?.trim()).toBe('More');
+    });
+
+    it('unfolds the note when the clamped quote itself is tapped', () => {
+      render({ selectedText: 'A sentence worth keeping. '.repeat(30) });
+      const quote = element.querySelector('.note-item-quote') as HTMLElement;
+
+      quote.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+      expect(fixture.componentInstance.expanded()).toBe(true);
+    });
+
+    it('unfolds the note when its own clamped words are tapped', () => {
+      render({ content: 'a thought worth keeping. '.repeat(40) });
+      const thought = element.querySelector('.note-item-thought') as HTMLElement;
+
+      thought.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+      expect(fixture.componentInstance.expanded()).toBe(true);
+    });
+
+    it('follows a link inside the words instead of unfolding the note', () => {
+      render({ content: '[[virtue]] ' + 'a thought worth keeping. '.repeat(40) });
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
+      const link = element.querySelector('.note-item-thought a.topic-tag') as HTMLAnchorElement;
+
+      link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
+
+      expect(navigate).toHaveBeenCalledWith(link.getAttribute('href'));
+      expect(fixture.componentInstance.expanded()).toBe(false);
     });
 
     it('marks only the paragraph that is actually cut', () => {

@@ -91,6 +91,7 @@
     [lines]="isPassage() ? 4 : long() && !expanded() ? 5 : null"
     [class.is-opening]="isPassage()"
     [class.is-faded]="quoteClipped()"
+    (click)="onClampedTextClick($event)"
   >{{ quote() }}</blockquote>
   }
 
@@ -138,10 +139,9 @@
   }
 
   @if (long()) {
-  <button appButton variant="secondary" size="sm" type="button" class="note-item-expand"
+  <button appButton variant="link" size="sm" type="button" class="note-item-expand"
     [attr.aria-expanded]="expanded()" (click)="expanded.set(!expanded())">
-    {{ expanded() ? 'Show less' : 'Show all' }}
-    <nostos-icon [name]="expanded() ? 'caret-up' : 'caret-down'" [size]="14" />
+    {{ expanded() ? 'Less' : 'More' }}
   </button>
   }
 

@@ -58,7 +58,7 @@ export interface NoteItemEdit {
   baseUpdatedAt?: string;
 }
 
-/** Above this many characters a quote is cut to a few lines, with "Show all". */
+/** Above this many characters a quote is cut to a few lines, behind "More". */
 const LONG_QUOTE = 420;
 /** Above this many characters the note's own words are cut too. */
 const LONG_THOUGHT = 600;
@@ -347,15 +347,33 @@ export class NoteItemComponent {
   }
 
   /**
+   * A tap on the faded, clamped text opens the whole note (issue #1799). A tap
+   * inside it on a link belongs to the link; a click that finishes selecting
+   * text is not a tap on the card.
+   */
+  onClampedTextClick(event: MouseEvent): void {
+    if (!this.long() || this.expanded()) return;
+    const target = event.target as HTMLElement | null;
+    if (target?.closest('a, button, input, textarea, select, label')) return;
+    const selection = typeof window === 'undefined' ? null : window.getSelection();
+    if (selection && !selection.isCollapsed) return;
+    this.expanded.set(true);
+  }
+
+  /**
    * An inline `[[link]]` in the note's words opens in the app rather than with
    * a page load, at the address the link itself names, so a plain click and a
-   * modified click (new tab) go to the same place.
+   * modified click (new tab) go to the same place. Anywhere else is the tap
+   * that unfolds the note.
    */
   onThoughtClick(event: MouseEvent): void {
     const href = inlineTopicHref(event);
-    if (!href) return;
-    event.preventDefault();
-    void this.router.navigateByUrl(href);
+    if (href) {
+      event.preventDefault();
+      void this.router.navigateByUrl(href);
+      return;
+    }
+    this.onClampedTextClick(event);
   }
 
   startEdit(): void {
