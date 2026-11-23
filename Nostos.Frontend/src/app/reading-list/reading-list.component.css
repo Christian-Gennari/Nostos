@@ -353,8 +353,9 @@
   flex-wrap: nowrap;
 }
 
-/* Too narrow for four columns: the actions stay beside the title, where a
-   thumb finds them, and the reason runs underneath at the full width. */
+/* Too narrow for four columns: the reason runs underneath at the full width,
+   and the actions take their own line, the same on every row and on the
+   Next up card above. */
 @media (max-width: 860px) {
   .someday {
     display: block;
@@ -363,8 +364,9 @@
   .someday-row {
     grid-template-columns: auto minmax(0, 1fr) auto;
     grid-template-areas:
-      'cover book actions'
-      'cover why why';
+      'cover book book'
+      'cover why why'
+      'cover actions actions';
     align-items: start;
     gap: 0.45rem 0.8rem;
     padding-inline: 0;
@@ -386,21 +388,10 @@
   .someday-row .entry-actions {
     grid-area: actions;
     gap: 0.1rem;
-  }
-
-  /* A book already in the library carries two buttons; they take a line. */
-  .someday-row.is-owned {
-    grid-template-areas:
-      'cover book book'
-      'cover why why'
-      'cover actions actions';
-  }
-
-  .someday-row.is-owned .entry-actions {
     justify-content: flex-start;
   }
 
-  .someday-row.is-owned .entry-icons {
+  .someday-row .entry-icons {
     margin-left: auto;
   }
 }
