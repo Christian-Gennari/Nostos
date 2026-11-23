@@ -140,6 +140,11 @@ public sealed class TopicRepositoryPageDefaultTests
             CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
+        public Task<TopicKindReorderResult> ReorderKindsAsync(
+            IReadOnlyList<Guid>? ids,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
         public Task<bool> DeleteKindAsync(Guid id, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
