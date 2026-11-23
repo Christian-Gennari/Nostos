@@ -53,6 +53,27 @@ internal static class NostosProductHttpClients
             ConnectTimeout = TimeSpan.FromSeconds(30),
         });
 
+        // A user-supplied cover URL is not a provider: its host is whatever the
+        // caller wrote, so it needs its own client. Redirects stay off (each one
+        // is checked against the named host before it is requested), and the
+        // connect callback resolves the name and refuses to open a socket to
+        // anything but a public address — the same resolution it connects to,
+        // so a DNS answer that changes after the URL was checked cannot land on
+        // a private address.
+        services.AddHttpClient(CoverDownload.HttpClientName, client =>
+        {
+            client.Timeout = Timeout.InfiniteTimeSpan;
+            client.DefaultRequestHeaders.UserAgent.ParseAdd(ProviderHttp.ProductUserAgent);
+        }).ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+        {
+            AllowAutoRedirect = false,
+            ConnectTimeout = TimeSpan.FromSeconds(30),
+            ConnectCallback = PublicAddressPolicy.ConnectAsync,
+            // A proxy would resolve the name itself, leaving the address check
+            // with the proxy's address instead of the one being fetched.
+            UseProxy = false,
+        });
+
         services.AddHttpClient(GutenbergProvider.HttpClientName, client =>
             ConfigureProviderClient(
                 client,

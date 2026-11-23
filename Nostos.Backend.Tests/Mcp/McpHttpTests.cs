@@ -57,6 +57,11 @@ public sealed class McpEndpointFactory : LibraryEndpointFactory
                 policy => policy.AddAuthenticationSchemes(SchemeName).RequireAuthenticatedUser()));
             services.AddHttpClient(ProviderContentDownloader.HttpClientName)
                 .ConfigurePrimaryHttpMessageHandler(() => ProviderContent);
+            // A user-supplied cover URL is fetched on its own guarded client.
+            // The same stub answers it, so the pre-request address check is the
+            // part under test: it must refuse before this handler is reached.
+            services.AddHttpClient(CoverDownload.HttpClientName)
+                .ConfigurePrimaryHttpMessageHandler(() => ProviderContent);
         });
     }
 
@@ -586,6 +591,43 @@ public sealed class McpHttpTests : IAsyncLifetime
             "a plaintext URL is refused before anything is fetched");
         _factory.ProviderContent.Requests.Should().NotContain(new Uri("https://evil.example/cover.png"),
             "a redirect is checked against the policy before it is followed");
+    }
+
+    [Fact]
+    public async Task Cover_urls_that_point_at_private_or_local_addresses_are_refused_before_any_request()
+    {
+        // A request would succeed if one were made, so "no request" below is
+        // about the address check and not about the handler failing.
+        _factory.ProviderContent.Respond = _ => Image(CoverPng);
+
+        var urls = new[]
+        {
+            "https://localhost/cover.png",
+            "https://127.0.0.1/cover.png",
+            "https://10.0.0.5/cover.png",
+            "https://[::1]/cover.png",
+            "https://169.254.169.254/latest/meta-data/user-data",
+        };
+
+        for (var index = 0; index < urls.Length; index++)
+        {
+            var added = await CallAsync("add_book", new()
+            {
+                ["title"] = $"A cover from a private address {index}",
+                ["author"] = "P. Rivate",
+                ["coverUrl"] = urls[index],
+            });
+
+            added.GetProperty("outcome").GetString().Should().Be("created");
+            added.GetProperty("warning").GetString()
+                .Should().Be("added without cover: " + PublicAddressPolicy.RefusalReason, urls[index]);
+
+            var bookId = added.GetProperty("book").GetProperty("id").GetGuid();
+            (await _http.GetFromJsonAsync<BookDto>($"/api/books/{bookId}"))!.CoverUrl.Should().BeNull();
+        }
+
+        _factory.ProviderContent.Requests.Should().BeEmpty(
+            "a private or local address is refused before anything is fetched");
     }
 
     [Fact]

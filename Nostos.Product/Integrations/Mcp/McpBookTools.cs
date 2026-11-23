@@ -7,7 +7,6 @@ using ModelContextProtocol;
 using ModelContextProtocol.Server;
 using Nostos.Backend.Data.Interfaces;
 using Nostos.Backend.Integrations.Assistant;
-using Nostos.Backend.Providers.Acquisition;
 using Nostos.Backend.Services;
 using Nostos.Backend.Services.Knowledge;
 using Nostos.Backend.Services.Library;
@@ -428,11 +427,10 @@ public sealed class McpBookTools(IHttpContextAccessor http) : NostosMcpTool(http
         var logger = Services.GetRequiredService<ILogger<McpBookTools>>();
         try
         {
-            var downloader = Services.GetRequiredService<IProviderContentDownloader>();
-            var fetched = await CoverDownload.TryAsync(
-                downloader,
+            var httpClientFactory = Services.GetRequiredService<IHttpClientFactory>();
+            var fetched = await CoverDownload.TryUserUrlAsync(
+                httpClientFactory,
                 url,
-                new CoverUrlDownloadPolicy(url.Host),
                 logger,
                 ct);
             if (!fetched.Succeeded)
