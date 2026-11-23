@@ -6,14 +6,14 @@ using ModelContextProtocol.Server;
 namespace Nostos.Backend.Integrations.Mcp;
 
 /// <summary>
-/// The To read list: the books the user wants to read but does not have yet,
-/// and putting one on the list.
+/// The To read list: the books the user wants to read, whether or not they
+/// own them yet, and putting one on the list.
 /// </summary>
 [McpServerToolType]
 public sealed class McpReadingListTools(IHttpContextAccessor http) : NostosMcpTool(http)
 {
     [McpServerTool(Name = "reading_list", Title = "To read", ReadOnly = true, Idempotent = true, OpenWorld = false)]
-    [Description("The books the user wants to read but does not have yet: Next up first, then the rest.")]
+    [Description("The books the user wants to read, whether or not they own them yet: Next up first, then the rest. An entry with `ownedBookId` is already in the library (that book's id); the user keeps it on To read until they take it off the list.")]
     public async Task<JsonElement> ReadingListAsync(
         [Description("`all`, `next` (Next up only) or `someday`. Defaults to all.")] string? shelf = null,
         [Description("How many, at most 200. Defaults to 50.")] int? limit = null,
@@ -27,7 +27,7 @@ public sealed class McpReadingListTools(IHttpContextAccessor http) : NostosMcpTo
     }
 
     [McpServerTool(Name = "add_to_reading_list", Title = "Put a book on To read", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
-    [Description("Puts a book the user wants to read on their To read list. A book already there is not added twice. Check `list_books` first if they may own it.")]
+    [Description("Puts a book the user wants to read on their To read list. A book already there is not added twice. A book they already own may go on the list too: the entry comes back with `ownedBookId` set.")]
     public async Task<JsonElement> AddToReadingListAsync(
         [Description("The book's title.")] string title,
         [Description("The author.")] string? author = null,

@@ -175,6 +175,11 @@
      they were previously two independent numbers (a 58px rail against a 96px
      reserve), which left 38px of dead space above the dock on every page. */
   --dock-rail-h: 60px;
+  /* The room a visible selection bar reserves at the viewport bottom. The bar
+     measures itself into this token on `:root`; the toast container adds it so
+     a notification lands above the bar's actions instead of on top of them.
+     Zero when no list is in multi-select mode. */
+  --selection-bar-lift: 0px;
 
   /* The dock's selected item is ink, not the accent. */
   --dock-item-active-ink: var(--color-primary);

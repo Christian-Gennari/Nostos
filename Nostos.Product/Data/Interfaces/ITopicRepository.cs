@@ -195,6 +195,17 @@ public interface ITopicRepository
         bool swapColor,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Writes every kind's position as 1..N in one transaction, in the order
+    /// given. Refuses with <see cref="TopicKindReorderStatus.Conflict"/> — and
+    /// changes nothing — unless <paramref name="ids"/> names every current kind
+    /// exactly once, so a concurrent create or delete cannot leave two kinds on
+    /// one position.
+    /// </summary>
+    Task<TopicKindReorderResult> ReorderKindsAsync(
+        IReadOnlyList<Guid>? ids,
+        CancellationToken cancellationToken = default);
+
     Task<bool> DeleteKindAsync(Guid id, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -239,6 +250,17 @@ public enum TopicKindMutationStatus
 public sealed record TopicKindMutationResult(
     TopicKindMutationStatus Status,
     TopicKindDto? Kind = null,
+    string? ErrorMessage = null);
+
+public enum TopicKindReorderStatus
+{
+    Success,
+    Conflict,
+}
+
+public sealed record TopicKindReorderResult(
+    TopicKindReorderStatus Status,
+    IReadOnlyList<TopicKindDto>? Kinds = null,
     string? ErrorMessage = null);
 
 public enum SetTopicsKindStatus

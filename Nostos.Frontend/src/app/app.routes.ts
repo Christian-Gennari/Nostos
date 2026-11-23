@@ -68,7 +68,7 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./writing-studio/writing-studio.component').then((m) => m.WritingStudio),
       },
-      // Books the user wants and does not have yet. Before `library/:id` so
+      // Books the user wants to read, owned or not yet. Before `library/:id` so
       // the literal segment always wins.
       {
         path: 'library/to-read',

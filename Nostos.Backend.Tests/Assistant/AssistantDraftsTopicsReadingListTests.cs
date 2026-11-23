@@ -284,6 +284,9 @@ public sealed class AssistantDraftsTopicsReadingListTests : IClassFixture<Sqlite
     public async Task Reading_list_list_puts_next_up_first_and_filters_by_shelf()
     {
         using var h = CreateHarness();
+        var ownedBook = new PhysicalBookModel { Id = Guid.NewGuid(), Title = "First Up", Author = "Bergson" };
+        ownedBook.FileDetails.SetCover("cover.jpg");
+        h.Db.Books.Add(ownedBook);
         h.Db.ReadingListEntries.AddRange(
             new ReadingListEntryModel { Title = "Someday Book", CreatedAt = DateTime.UtcNow },
             new ReadingListEntryModel { Title = "Second Up", NextPosition = 1, CreatedAt = DateTime.UtcNow.AddDays(-3) },
@@ -300,6 +303,9 @@ public sealed class AssistantDraftsTopicsReadingListTests : IClassFixture<Sqlite
         entries.Select(e => e.GetProperty("title").GetString()).Should().Equal("First Up", "Second Up", "Someday Book");
         entries[0].GetProperty("shelf").GetString().Should().Be("next");
         entries[0].GetProperty("why").GetString().Should().Be("Everyone quotes it");
+        entries[0].GetProperty("ownedBookId").GetGuid().Should().Be(ownedBook.Id);
+        entries[0].GetProperty("ownedCoverUrl").GetString().Should().Be($"/api/books/{ownedBook.Id}/cover");
+        entries[1].GetProperty("ownedCoverUrl").ValueKind.Should().Be(JsonValueKind.Null);
 
         var someday = await Invoke(h, "reading_list_list", new { shelf = "someday" });
         someday.Data!.Value.GetProperty("entries").EnumerateArray()

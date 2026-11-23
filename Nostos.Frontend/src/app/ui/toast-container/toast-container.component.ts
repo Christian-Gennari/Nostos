@@ -64,7 +64,11 @@ import { NostosIconComponent } from '../icon/nostos-icon.component';
   styles: [
     `
       .toast-container {
-        --toast-bottom: calc(24px + var(--dock-rail-h) + 12px);
+        /* A selection bar publishes the room it takes; toasts sit above it
+           rather than on top of the actions the reader is about to press. */
+        --toast-bottom: calc(
+          24px + var(--dock-rail-h) + 12px + var(--selection-bar-lift, 0px)
+        );
         position: fixed;
         bottom: var(--toast-bottom);
         right: max(1rem, env(safe-area-inset-right, 0px));
@@ -201,7 +205,8 @@ import { NostosIconComponent } from '../icon/nostos-icon.component';
         .toast-container {
           --toast-bottom: calc(
             var(--dock-rail-h) +
-              env(safe-area-inset-bottom, 0px) + 12px
+              env(safe-area-inset-bottom, 0px) + 12px +
+              var(--selection-bar-lift, 0px)
           );
           right: max(0.75rem, env(safe-area-inset-right, 0px));
           left: max(0.75rem, env(safe-area-inset-left, 0px));

@@ -112,6 +112,15 @@ describe('TopicsService', () => {
     request.flush(null, { status: 204, statusText: 'No Content' });
   });
 
+  it('reorders the kinds with one request that lists the whole order', () => {
+    service.reorderKinds(['k2', 'k1', 'k3']).subscribe();
+
+    const request = http.expectOne('/api/topic-kinds/order');
+    expect(request.request.method).toBe('PUT');
+    expect(request.request.body).toEqual({ ids: ['k2', 'k1', 'k3'] });
+    request.flush([]);
+  });
+
   it('passes a refused merge through to the caller', () => {
     let status: number | undefined;
     service.merge('t1', 't1').subscribe({

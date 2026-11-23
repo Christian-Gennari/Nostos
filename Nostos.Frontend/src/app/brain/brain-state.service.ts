@@ -62,6 +62,18 @@ export class BrainStateService {
    * every typed topic as untyped.
    */
   readonly kindsLoaded = signal(false);
+  /**
+   * The kind list was asked for and did not arrive. The screens that can add or
+   * edit a kind say so, and offer the same "Try again" as the topics list: a
+   * create form over an unknown list would pick a colour another kind holds and
+   * be refused by the server.
+   */
+  readonly kindsFailed = signal(false);
+  /**
+   * A read of the kind list is open. The screens with a "Try again" keep it from
+   * starting a second read, whose answer would replace the first one's.
+   */
+  readonly kindsLoading = signal(false);
   readonly summary = signal<NoteSummary | null>(null);
   readonly topicSort = signal<TopicSort>(readStored(TOPIC_SORT_KEY, isTopicSort, 'usage'));
   private readonly mapColorModeChoice = signal<MapColorMode | null>(
@@ -96,9 +108,15 @@ export class BrainStateService {
   private summaryRequested = false;
   /** A screen asked for kinds, so every later refresh reads them again. */
   private kindsRequested = false;
-  private kindsLoading = false;
   /** A reload was asked for while one was in flight; it runs when that one lands. */
   private kindsQueued = false;
+  /**
+   * Bumped when a kind read is superseded by another. The answer to a
+   * superseded read is the server's order from before the write that replaced
+   * it, so applying it would put that order back on screen until the queued
+   * read lands.
+   */
+  private kindsSeq = 0;
 
   /** Loads the topics and counts the first time anything asks. */
   ensureLoaded(): void {
@@ -113,7 +131,9 @@ export class BrainStateService {
    */
   ensureKindsLoaded(): void {
     this.kindsRequested = true;
-    if (this.kindsLoaded()) return;
+    // A read already on its way answers this caller too. Starting another here
+    // would number it over the first, whose valid answer was then thrown away.
+    if (this.kindsLoaded() || this.kindsLoading()) return;
     this.loadKinds();
   }
 
@@ -180,24 +200,38 @@ export class BrainStateService {
   }
 
   private loadKinds(): void {
-    if (this.kindsLoading) {
+    if (this.kindsLoading()) {
       // A write landed while the last answer was in flight: read again once it
-      // does, so the counts are the ones after the write.
+      // does, so the counts are the ones after the write. That answer is stale
+      // now — it holds the server's order from before the write — so it must
+      // not be applied when it lands.
       this.kindsQueued = true;
+      this.kindsSeq += 1;
       return;
     }
-    this.kindsLoading = true;
+    this.kindsLoading.set(true);
+    // A read that starts is no longer a failure: the screens show they are
+    // loading, and only a read that actually fails says so again.
+    this.kindsFailed.set(false);
+    const seq = ++this.kindsSeq;
     this.topicsService.listKinds().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (kinds) => {
-        this.topicKinds.set(kinds);
-        this.kindsLoaded.set(true);
-        this.kindsLoading = false;
+        // A newer read replaced this one: applying its order would revert a
+        // reorder the reader can see for as long as the queued read takes.
+        if (seq === this.kindsSeq) {
+          this.topicKinds.set(kinds);
+          this.kindsLoaded.set(true);
+          this.kindsFailed.set(false);
+        }
+        this.kindsLoading.set(false);
         this.runQueuedKinds();
       },
-      // Kind metadata decorates the map and topic views; tolerate transient errors
-      // and let the next full load ask again.
+      // Kind metadata decorates the map and topic views, so a failure leaves the
+      // loaded list (if any) in place; a first failure is reported to the
+      // screens that let the reader add or edit a kind.
       error: () => {
-        this.kindsLoading = false;
+        if (seq === this.kindsSeq) this.kindsFailed.set(!this.kindsLoaded());
+        this.kindsLoading.set(false);
         this.runQueuedKinds();
       },
     });

@@ -173,6 +173,65 @@ public sealed class TopicKindEndpointTests : IClassFixture<LibraryEndpointFactor
     }
 
     [Fact]
+    public async Task Reorder_writes_every_position_from_one_request_in_the_order_given()
+    {
+        var before = (await Client.GetFromJsonAsync<TopicKindDto[]>("/api/topic-kinds"))!;
+        var ids = before.Select(k => k.Id).Reverse().ToList();
+
+        var response = await Client.PutAsJsonAsync(
+            "/api/topic-kinds/order",
+            new ReorderTopicKindsDto(ids));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var reordered = (await response.Content.ReadFromJsonAsync<TopicKindDto[]>())!;
+        reordered.Select(k => k.Id).Should().Equal(ids);
+        // 1..N with no gaps and no duplicates: the arrows move one place, so the
+        // list never reads two kinds on the same number.
+        reordered.Select(k => k.SortOrder).Should().Equal(Enumerable.Range(1, ids.Count));
+
+        var stored = (await Client.GetFromJsonAsync<TopicKindDto[]>("/api/topic-kinds"))!;
+        stored.Select(k => k.Id).Should().Equal(ids);
+        stored.Select(k => k.SortOrder).Should().Equal(Enumerable.Range(1, ids.Count));
+    }
+
+    [Fact]
+    public async Task Reorder_refuses_a_different_set_and_changes_nothing()
+    {
+        var before = (await Client.GetFromJsonAsync<TopicKindDto[]>("/api/topic-kinds"))!;
+        var ids = before.Select(k => k.Id).ToList();
+
+        // A kind deleted while the reorder was on its way: one id too few.
+        var missing = ids.Take(ids.Count - 1).ToList();
+        // A kind created in the meantime: one id too many.
+        var extra = ids.Append(Guid.NewGuid()).ToList();
+        // The same count, but one kind twice and another not at all.
+        var duplicated = ids.Take(ids.Count - 1).Append(ids[0]).ToList();
+
+        foreach (var requested in new[] { missing, extra, duplicated })
+        {
+            var response = await Client.PutAsJsonAsync(
+                "/api/topic-kinds/order",
+                new ReorderTopicKindsDto(requested));
+            response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        }
+
+        var after = (await Client.GetFromJsonAsync<TopicKindDto[]>("/api/topic-kinds"))!;
+        after.Select(k => (k.Id, k.SortOrder)).Should().Equal(before.Select(k => (k.Id, k.SortOrder)));
+    }
+
+    [Fact]
+    public async Task Reorder_refuses_an_empty_body_without_an_id_list()
+    {
+        var before = (await Client.GetFromJsonAsync<TopicKindDto[]>("/api/topic-kinds"))!;
+
+        (await Client.PutAsJsonAsync("/api/topic-kinds/order", new ReorderTopicKindsDto(null)))
+            .StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        var after = (await Client.GetFromJsonAsync<TopicKindDto[]>("/api/topic-kinds"))!;
+        after.Select(k => (k.Id, k.SortOrder)).Should().Equal(before.Select(k => (k.Id, k.SortOrder)));
+    }
+
+    [Fact]
     public async Task Delete_removes_kind_and_clears_topic_kind_assignments()
     {
         await CreateBookWithNotesAsync("[[Plato]] and [[Athens]]");

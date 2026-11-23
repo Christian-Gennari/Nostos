@@ -1,5 +1,5 @@
 /**
- * A book the user wants to read and does not have yet. Not a library book: it
+ * A book the user wants to read, owned or not yet. Not a library book: it
  * has no format, no file and no reading state.
  */
 export interface ReadingListEntry {
@@ -17,6 +17,10 @@ export interface ReadingListEntry {
   createdAt: string;
   /** A library book that looks like the same title, when there is one. */
   ownedBookId?: string | null;
+  /** The owned library book's cover endpoint, when that book has a cover. */
+  ownedCoverUrl?: string | null;
+  /** Changes whenever the owned book's cover bytes change; build image URLs with `coverImageUrl`. */
+  ownedCoverVersion?: string | null;
 }
 
 export interface SaveReadingListEntry {

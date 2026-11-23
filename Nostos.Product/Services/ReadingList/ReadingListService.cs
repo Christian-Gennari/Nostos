@@ -257,9 +257,9 @@ public sealed class ReadingListService(NostosDbContext db, INoteService notes) :
         return string.IsNullOrEmpty(trimmed) ? null : trimmed;
     }
 
-    private static ReadingListEntryDto ToDto(ReadingListEntryModel e, Guid? ownedBookId) =>
+    private static ReadingListEntryDto ToDto(ReadingListEntryModel e, OwnedBook? owned) =>
         new(e.Id, e.Title, e.Author, e.Isbn, e.PublishedDate, e.Why, e.RecommendedBy,
-            e.NextPosition, e.CreatedAt, ownedBookId);
+            e.NextPosition, e.CreatedAt, owned?.Id, owned?.CoverUrl, owned?.CoverVersion);
 
     private readonly record struct EntryFields(
         string Title, string? Author, string? Isbn, string? PublishedDate, string? Why, string? RecommendedBy)
@@ -275,6 +275,8 @@ public sealed class ReadingListService(NostosDbContext db, INoteService notes) :
         }
     }
 
+    private readonly record struct OwnedBook(Guid Id, string? CoverUrl, string? CoverVersion);
+
     /// <summary>
     /// Which library books an entry might already be. An ISBN match is exact;
     /// otherwise the title must match and, when both sides name an author, so
@@ -282,34 +284,45 @@ public sealed class ReadingListService(NostosDbContext db, INoteService notes) :
     /// </summary>
     private sealed class OwnedBookIndex
     {
-        private readonly Dictionary<string, Guid> _byIsbn = new(StringComparer.Ordinal);
-        private readonly Dictionary<string, List<(string Author, Guid BookId)>> _byTitle = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, OwnedBook> _byIsbn = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, List<(string Author, OwnedBook Book)>> _byTitle = new(StringComparer.Ordinal);
 
         public static async Task<OwnedBookIndex> LoadAsync(NostosDbContext db, CancellationToken ct)
         {
             var books = await db.Books.AsNoTracking()
                 .OrderBy(b => b.CreatedAt)
-                .Select(b => new { b.Id, b.NormalizedIsbn, b.Title, b.Author })
+                .Select(b => new
+                {
+                    b.Id,
+                    b.NormalizedIsbn,
+                    b.Title,
+                    b.Author,
+                    b.FileDetails.CoverFileName,
+                    b.FileDetails.CoverVersion,
+                })
                 .ToListAsync(ct);
 
             var index = new OwnedBookIndex();
             foreach (var book in books)
             {
+                var coverUrl = book.CoverFileName is null ? null : $"/api/books/{book.Id}/cover";
+                var owned = new OwnedBook(book.Id, coverUrl, coverUrl is null ? null : book.CoverVersion);
+
                 if (book.NormalizedIsbn is { } isbn)
-                    index._byIsbn.TryAdd(isbn, book.Id);
+                    index._byIsbn.TryAdd(isbn, owned);
 
                 var title = BookIdentityNormalizer.NormalizeTitle(book.Title);
                 if (title.Length == 0)
                     continue;
                 if (!index._byTitle.TryGetValue(title, out var sameTitle))
                     index._byTitle[title] = sameTitle = [];
-                sameTitle.Add((BookIdentityNormalizer.NormalizeAuthor(book.Author), book.Id));
+                sameTitle.Add((BookIdentityNormalizer.NormalizeAuthor(book.Author), owned));
             }
 
             return index;
         }
 
-        public Guid? Find(ReadingListEntryModel entry)
+        public OwnedBook? Find(ReadingListEntryModel entry)
         {
             if (entry.Isbn is { } isbn && _byIsbn.TryGetValue(isbn, out var byIsbn))
                 return byIsbn;
@@ -322,7 +335,7 @@ public sealed class ReadingListService(NostosDbContext db, INoteService notes) :
             foreach (var candidate in sameTitle)
             {
                 if (author.Length == 0 || candidate.Author.Length == 0 || candidate.Author == author)
-                    return candidate.BookId;
+                    return candidate.Book;
             }
 
             return null;

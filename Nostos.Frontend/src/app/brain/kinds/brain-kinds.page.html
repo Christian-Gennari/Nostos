@@ -38,12 +38,19 @@
           <h2 id="kinds-editor-title">Your kinds</h2>
           <p class="section-lead">What a topic is: a Person, a Place, an Idea. Twelve at most, one colour each.</p>
         </div>
-        <button appButton variant="secondary" size="sm" type="button" class="new-kind"
-          [disabled]="atKindLimit()" [attr.title]="atKindLimit() ? 'All 12 kinds are in use. Delete one to add another.' : null"
+        <button #newKindTrigger appButton variant="secondary" size="sm" type="button" class="new-kind"
+          [disabled]="!!newKindBlocked()" [attr.title]="newKindBlocked()"
           (click)="startNewKind()">
           <nostos-icon name="plus" [size]="14" />New kind
         </button>
       </header>
+
+      @if (kindsFailed()) {
+        <div class="kinds-failed" role="alert">
+          <p>Could not load your kinds. The topics keep the kinds they have.</p>
+          <button appButton variant="secondary" size="sm" type="button" (click)="retryKinds()">Try again</button>
+        </div>
+      }
 
       @if (atKindLimit()) {
         <p class="kind-limit">All {{ maxKinds }} kinds are in use. Delete one to add another.</p>
@@ -54,6 +61,7 @@
           <span class="new-kind-swatch" [style.--kind-color]="nextKindColorCss()" aria-hidden="true"></span>
           <label class="visually-hidden" for="new-kind-name">Name for the new kind</label>
           <input
+            #newKindField
             appInput
             id="new-kind-name"
             type="text"
@@ -98,7 +106,7 @@
                     [label]="'Rename ' + current.name"
                     requiredMessage="A kind needs a name."
                     [error]="renameError()"
-                    [busy]="renaming()"
+                    [busy]="isRenaming(current.id)"
                     (committed)="commitRename(current.id, $event)"
                     (cancelled)="cancelRename()"
                   />
@@ -193,7 +201,7 @@
         <button appButton variant="ghost" size="sm" type="button" (click)="toggleAll()"
           [disabled]="!topicsLoaded() || !topics().length">
           <nostos-icon name="check-square" [size]="15" />
-          {{ allVisibleSelected() ? 'Clear selection' : 'Select all' }}
+          {{ selectAllActive() ? 'Clear selection' : 'Select all' }}
         </button>
         @if (topicsLoaded()) {
           <span class="sorter-count" role="status">{{ plural(topics().length, 'topic') }}</span>
@@ -210,7 +218,7 @@
       } @else if (!topics().length) {
         <nostos-empty-state concept="topic" [message]="q() || filter() !== 'all' ? 'No topics match.' : 'Topics appear here when a note carries one.'">
           @if (q() || filter() !== 'all') {
-            <button appButton variant="secondary" size="sm" type="button" (click)="clearSearch(); setFilter('all')">Clear filters</button>
+            <button appButton variant="secondary" size="sm" type="button" (click)="clearFilters()">Clear filters</button>
           }
         </nostos-empty-state>
       } @else {
@@ -233,6 +241,9 @@
               @if (showRowKind()) {
                 @if (kindOf(topic); as kind) {
                   <app-topic-kind-pill [name]="kind.name" [colorKey]="kind.colorKey" />
+                } @else if (kindUnavailable(topic)) {
+                  <!-- The list failed: say so, rather than claiming a typed topic has no kind. -->
+                  <app-topic-kind-pill untypedLabel="Kind unavailable" />
                 } @else {
                   <app-topic-kind-pill [name]="null" />
                 }
@@ -286,6 +297,13 @@
     <div class="bulk-kind-panel">
       @if (overBulkLimit()) {
         <p class="kind-error" role="alert">Select at most {{ bulkLimit }} topics at once.</p>
+      } @else if (kindsFailed()) {
+        <div class="bulk-kind-failed" role="alert">
+          <p>Could not load your kinds.</p>
+          <button appButton variant="secondary" size="sm" type="button" (click)="retryKinds()">Try again</button>
+        </div>
+      } @else if (!kindsLoaded()) {
+        <nostos-loading-indicator class="bulk-kind-loading" label="Loading kinds" />
       } @else {
         <app-kind-choice-list
           [kinds]="kinds()"

@@ -19,8 +19,12 @@ import { TopicsService } from '../../core/services/topics.service';
 import { ToastService } from '../../core/services/toast.service';
 import { ButtonComponent } from '../../ui/button/button.component';
 import { InputDirective } from '../../ui/form-control/form-control.directive';
+import { LoadingIndicatorComponent } from '../../ui/loading-indicator/loading-indicator.component';
 import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
-import { SettingsPopoverComponent } from '../../ui/settings-popover/settings-popover.component';
+import {
+  SettingsPopoverComponent,
+  type SettingsPopoverDismissal,
+} from '../../ui/settings-popover/settings-popover.component';
 import { BrainStateService } from '../brain-state.service';
 import { KindChoiceListComponent } from './kind-choice-list.component';
 import { MAX_TOPIC_KINDS, firstFreeKindColor, normalizeName } from './kinds.helpers';
@@ -43,6 +47,7 @@ import { TopicKindPillComponent } from './topic-kind-pill.component';
     RouterLink,
     ButtonComponent,
     InputDirective,
+    LoadingIndicatorComponent,
     NostosIconComponent,
     SettingsPopoverComponent,
     KindChoiceListComponent,
@@ -71,26 +76,53 @@ export class TopicKindPickerComponent {
   private readonly trigger = viewChild<ElementRef<HTMLButtonElement>>('trigger');
 
   readonly kinds = this.state.topicKinds;
+  readonly kindsLoaded = computed(() => this.state.kindsLoaded());
+  readonly kindsFailed = computed(() => this.state.kindsFailed());
   readonly currentKind = computed<TopicKindDto | null>(() => {
     const id = this.topic().kindId;
     return id ? this.kinds().find((kind) => kind.id === id) ?? null : null;
   });
   readonly isOpen = computed(() => (this.showTrigger() ? this.localOpen() : this.open()));
   readonly anchor = computed(() => this.origin() ?? this.trigger()?.nativeElement ?? null);
+  /**
+   * The topic has a kind, but the list that could name it did not arrive. The
+   * trigger must say that rather than "Add a kind": the topic is not untyped,
+   * and the invitation would overwrite a kind the reader already has.
+   */
+  readonly kindUnavailable = computed(
+    () => !!this.topic().kindId && !this.kindsLoaded() && !this.currentKind(),
+  );
   readonly triggerLabel = computed(() => {
     const kind = this.currentKind();
-    return kind
-      ? `Change kind for ${this.topic().name}: ${kind.name}`
-      : `Add a kind to ${this.topic().name}`;
+    if (kind) return `Change kind for ${this.topic().name}: ${kind.name}`;
+    if (this.kindUnavailable()) return `Kind for ${this.topic().name} is unavailable`;
+    return `Add a kind to ${this.topic().name}`;
   });
   readonly maxKinds = MAX_TOPIC_KINDS;
   readonly atKindLimit = computed(() => this.kinds().length >= MAX_TOPIC_KINDS);
+  /** Why "New kind…" cannot be offered, or null. */
+  readonly createBlocked = computed(() => {
+    if (!this.kindsLoaded()) return 'Your kinds have not loaded yet. Try again first.';
+    if (this.atKindLimit()) return `All ${MAX_TOPIC_KINDS} kinds are in use. Delete one to add another.`;
+    return null;
+  });
   readonly nextColor = computed(() => firstFreeKindColor(this.kinds()));
 
   readonly creating = signal(false);
   readonly draftName = signal('');
   readonly busy = signal(false);
   readonly error = signal<string | null>(null);
+
+  // `#createTrigger` sits on a `button[appButton]`, which is a component: the
+  // plain query would hand back the ButtonComponent, whose `nativeElement` is
+  // undefined. Reading the ElementRef explicitly is what makes it focusable.
+  private readonly createTrigger = viewChild<string, ElementRef<HTMLElement>>('createTrigger', {
+    read: ElementRef,
+  });
+  private readonly createField = viewChild<ElementRef<HTMLInputElement>>('createField');
+  private panelWasOpen = false;
+  /** Why the panel just closed; a press elsewhere must keep focus where it went. */
+  private dismissal: SettingsPopoverDismissal | null = null;
 
   constructor() {
     this.state.ensureKindsLoaded();
@@ -103,31 +135,75 @@ export class TopicKindPickerComponent {
         this.error.set(null);
       });
     });
+    // The panel closed under the reader (a choice, Escape): the field it was in
+    // is gone, so put focus back on the pill instead of the page body. A press
+    // outside is the exception: the reader chose where focus should go, and
+    // pulling it back to the pill would steal the control they just pressed.
+    effect(() => {
+      const open = this.isOpen();
+      untracked(() => {
+        if (open) {
+          this.panelWasOpen = true;
+          return;
+        }
+        if (!this.panelWasOpen) return;
+        this.panelWasOpen = false;
+        const reason = this.dismissal;
+        this.dismissal = null;
+        if (reason === 'outside') return;
+        if (this.showTrigger() && this.trigger()?.nativeElement.isConnected) {
+          this.trigger()?.nativeElement.focus();
+        }
+      });
+    });
   }
 
   toggle(): void {
     if (this.busy()) return;
     this.localOpen.update((open) => !open);
-    if (!this.localOpen()) this.resetDraft();
+    if (!this.localOpen()) {
+      this.dismissal = 'close';
+      this.resetDraft();
+    }
   }
 
-  close(): void {
+  /**
+   * Closes the panel and says why. `outside` is the one reason focus must not
+   * come back here: a press elsewhere is the reader moving focus themselves.
+   */
+  close(reason: SettingsPopoverDismissal = 'close'): void {
+    this.dismissal = reason;
     this.localOpen.set(false);
     this.resetDraft();
     this.closed.emit();
   }
 
   startCreating(): void {
-    if (this.atKindLimit() || this.busy()) return;
+    if (this.createBlocked() || this.busy()) return;
     this.creating.set(true);
     this.draftName.set('');
     this.error.set(null);
+    this.focusCreateField();
   }
 
   cancelCreating(): void {
     this.creating.set(false);
     this.draftName.set('');
     this.error.set(null);
+    // The button that opened the form only exists once the form closes.
+    window.requestAnimationFrame(() => this.createTrigger()?.nativeElement.focus());
+  }
+
+  /** The kind list failed to load: ask for it again. */
+  retryKinds(): void {
+    // Pressing again while the retry is open would supersede its answer; the
+    // panel already shows the loading state, so there is nothing to press for.
+    if (this.state.kindsLoading()) return;
+    this.state.reloadKinds();
+  }
+
+  private focusCreateField(): void {
+    window.requestAnimationFrame(() => this.createField()?.nativeElement.focus());
   }
 
   choose(kindId: string | null): void {
@@ -149,7 +225,7 @@ export class TopicKindPickerComponent {
   }
 
   createKind(): void {
-    if (this.busy()) return;
+    if (this.busy() || this.createBlocked()) return;
     const name = this.draftName().trim();
     if (!name) {
       this.error.set('A kind needs a name.');

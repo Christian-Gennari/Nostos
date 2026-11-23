@@ -17,6 +17,7 @@ import {
   personSuggestionFor,
   rangeSelection,
   topicMatchesAuthor,
+  topicMatchesAuthorIndex,
 } from './kinds.helpers';
 
 const kind = (id: string, name: string, colorKey: string, topicCount = 0): TopicKindDto => ({
@@ -103,6 +104,29 @@ describe('kinds helpers', () => {
     expect(topicMatchesAuthor('Education', authors)).toBe(false);
     // A very short word is not a surname match: no "K" or "Le" suggestions.
     expect(topicMatchesAuthor('K', authors)).toBe(false);
+  });
+
+
+  it('matches a non-Latin author, where an [a-z0-9] fold left nothing to compare', () => {
+    // Both sides fold with the same function, so the badge on a Cyrillic or
+    // Japanese name must survive the fold at all.
+    expect(normalizePersonName('村上春樹')).toBe('村上春樹');
+    expect(topicMatchesAuthor('村上春樹', ['村上春樹'])).toBe(true);
+    expect(topicMatchesAuthor('Достоевский', ['Фёдор Достоевский'])).toBe(true);
+    expect(topicMatchesAuthor('Ürsula K. Le Guin', ['Ursula K. Le Guin'])).toBe(true);
+  });
+
+  it('reads "Last, First" and drops a credential instead of naming it', () => {
+    expect(authorNames('Le Guin, Ursula K.')).toContain('Ursula K. Le Guin');
+    expect(topicMatchesAuthor('Ursula K. Le Guin', ['Le Guin, Ursula K.'])).toBe(true);
+    expect(topicMatchesAuthor('Le Guin', ['Le Guin, Ursula K.'])).toBe(true);
+
+    expect(authorNames('Ursula K. Le Guin, PhD')).toEqual(['Ursula K. Le Guin']);
+    const index = authorNameIndex(['Ursula K. Le Guin, PhD']);
+    expect(topicMatchesAuthorIndex('PhD', index)).toBe(false);
+    expect(topicMatchesAuthorIndex('Ursula K. Le Guin', index)).toBe(true);
+    // A comma-joined pair still names two authors.
+    expect(topicMatchesAuthor('Tolkien', ['Ursula K. Le Guin, J.R.R. Tolkien'])).toBe(true);
   });
 
   it('suggests Person only for an untyped topic named after a library author', () => {

@@ -215,7 +215,7 @@ public static partial class AssistantCapabilities
             "reading_list_list",
             AssistantTrustClass.Suggest,
             AssistantCapabilityCategory.LibraryRead,
-            "Lists the user's To read list: books they want to read and do not have yet. \"Next up\" comes first, in the order they chose, then \"Someday\", newest first. An entry with ownedBookId is probably already in the library.",
+            "Lists the user's To read list: the books they want to read, whether or not they own them yet. \"Next up\" comes first, in the order they chose, then \"Someday\", newest first. An entry with ownedBookId is already in the library (that book's id); it stays on the list until the user takes it off.",
             """
             {
               "type": "object",
@@ -257,7 +257,7 @@ public static partial class AssistantCapabilities
             "reading_list_add",
             AssistantTrustClass.Act,
             AssistantCapabilityCategory.OrdinaryAction,
-            "Puts a book on the user's To read list when they ask for it. A book already on the list is not added twice: the existing entry comes back with duplicate=true. Use library_resolve_book first if the user may already own it.",
+            "Puts a book on the user's To read list when they ask for it. A book already on the list is not added twice: the existing entry comes back with duplicate=true. A book the user already owns may go on the list too: the entry comes back with ownedBookId set.",
             """
             {
               "type": "object",
@@ -333,6 +333,7 @@ public static partial class AssistantCapabilities
         shelf = entry.NextPosition is null ? "someday" : "next",
         nextPosition = entry.NextPosition is { } slot ? slot + 1 : (int?)null,
         ownedBookId = entry.OwnedBookId,
+        ownedCoverUrl = entry.OwnedCoverUrl,
         addedAt = entry.CreatedAt,
     };
 

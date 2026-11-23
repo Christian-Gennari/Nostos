@@ -220,6 +220,43 @@ describe('TopicMapRenderer', () => {
     renderer.dispose();
   });
 
+  it('does not grey the map when the selected or root node is no longer drawn', () => {
+    const renderer = new TopicMapRenderer();
+    const graph = new Graph();
+    graph.addNode('a', { x: 0, y: 0, size: 10 });
+    graph.addNode('b', { x: 80, y: 0, size: 6 });
+    const edge = graph.addEdge('a', 'b', { size: 2 });
+
+    // The URL still focuses a topic whose kind was hidden, so the graph no
+    // longer holds it: nothing is focused, and every node keeps its own colour.
+    const callbacks = createCallbacks({ getSelectedId: () => 'hidden' });
+    const sigma = renderer.mount(graph, document.createElement('div'), callbacks);
+
+    expect(renderer.emphasisOf('a')).toBeNull();
+    expect(renderer.emphasisOf('b')).toBeNull();
+
+    const reducers = sigma as unknown as {
+      nodeReducer: (node: string, data: Record<string, unknown>, attrs: Record<string, unknown>) => Record<string, unknown>;
+      edgeReducer: (edge: string, data: Record<string, unknown>) => Record<string, unknown>;
+    };
+    expect(reducers.nodeReducer('a', {}, graph.getNodeAttributes('a'))).toEqual({});
+    expect(reducers.edgeReducer(edge, { size: 2 })).toEqual({});
+
+    // A selection that IS drawn still focuses the neighbourhood, and a hovered
+    // id that left the graph falls through to it instead of blanking the map.
+    const hovered = { id: 'hidden' as string | null };
+    const focused = createCallbacks({
+      getHoveredId: () => hovered.id,
+      getSelectedId: () => 'a',
+    });
+    renderer.dispose();
+    renderer.mount(graph, document.createElement('div'), focused);
+    expect(renderer.emphasisOf('a')).toBe('active');
+    expect(renderer.emphasisOf('b')).toBe('neighbour');
+
+    renderer.dispose();
+  });
+
   it('routes non-drag Sigma events and resolves coarse-pointer nearestNodeForTouch hits', () => {
     const renderer = new TopicMapRenderer();
     const graph = new Graph();

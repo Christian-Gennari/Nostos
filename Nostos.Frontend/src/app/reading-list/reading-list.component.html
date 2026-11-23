@@ -79,7 +79,13 @@
             @for (entry of next(); track entry.id; let first = $first; let last = $last) {
               <li class="shelf-card" [class.is-first]="first" [class.is-busy]="isBusy(entry)">
                 <div class="shelf-card__main">
-                  <nostos-book-cover class="cover" size="lg" decorative />
+                  <nostos-book-cover
+                    class="cover"
+                    size="lg"
+                    [src]="coverUrl(entry, 320)"
+                    [bookTitle]="entry.title"
+                    decorative
+                  />
                   <div class="shelf-card__body">
                     <div class="shelf-card__top">
                       <span class="shelf-card__rank">{{ first ? 'Reading next' : 'Then' }}</span>
@@ -216,7 +222,13 @@
           <ul class="someday">
             @for (entry of someday(); track entry.id) {
               <li class="someday-row" [class.is-busy]="isBusy(entry)" [class.is-owned]="!!entry.ownedBookId">
-                <nostos-book-cover class="cover cover--small" size="md" decorative />
+                <nostos-book-cover
+                  class="cover cover--small"
+                  size="md"
+                  [src]="coverUrl(entry, 120)"
+                  [bookTitle]="entry.title"
+                  decorative
+                />
                 <div class="someday-row__book">
                   <h3 class="entry-title">{{ entry.title }}</h3>
                   @if (entry.author) {

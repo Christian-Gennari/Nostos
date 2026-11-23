@@ -63,6 +63,7 @@ by writing its reference into the text, unless the caller removed it.
 | `GET /api/topic-kinds` | List kinds in sort order with topic counts |
 | `POST /api/topic-kinds` | Create a kind (`409` duplicate name/colour, `422` at 12-kind cap) |
 | `PUT /api/topic-kinds/{id}` | Update name, colour (`swapColor` swaps with another kind), or sort order |
+| `PUT /api/topic-kinds/order` | Write the whole order as `1..N` in one transaction (`409` unless `ids` is exactly the current set) |
 | `DELETE /api/topic-kinds/{id}` | Delete a kind; its topics become untyped |
 | `POST /api/books/{bookId}/notes`, `PUT /api/notes/{id}` | Create or edit a note; optional `topics` are its pill topics (see "Writing a note") |
 | `POST /api/topics/link` | Add the named topics to many notes (creates new topics); one unit of work |

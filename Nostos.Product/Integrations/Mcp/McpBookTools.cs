@@ -110,7 +110,7 @@ public sealed class McpBookTools(IHttpContextAccessor http) : NostosMcpTool(http
     }
 
     [McpServerTool(Name = "add_book", Title = "Add a book to the library", ReadOnly = false, Destructive = false, Idempotent = true, OpenWorld = false)]
-    [Description("Adds a book to the user's library from the details you give: a paper book by default, or an ebook or audiobook entry without its file. Use it only when the user asks to add a book. Nostos looks nothing up elsewhere, so pass the details you have. A book already in the library (same ISBN, or same title and author) comes back with `duplicate: true` and no second copy is made. When Nostos cannot tell, it returns `candidates` and adds nothing: ask the user, then call again with `confirmedBookId` or `forceCreate: true`. A matching entry on To read moves to the library, and its reason stays as a note on the book.")]
+    [Description("Adds a book to the user's library from the details you give: a paper book by default, or an ebook or audiobook entry without its file. Use it only when the user asks to add a book. Nostos looks nothing up elsewhere, so pass the details you have. A book already in the library (same ISBN, or same title and author) comes back with `duplicate: true` and no second copy is made. When Nostos cannot tell, it returns `candidates` and adds nothing: ask the user, then call again with `confirmedBookId` or `forceCreate: true`. A To read entry for a book this call adds moves to the library, and its reason stays as a note on the book. An entry that was already in the library before the call stays on To read and comes back in `onToRead`.")]
     public async Task<McpAddedBook> AddBookAsync(
         [Description("The title.")] string title,
         [Description("The author or authors.")] string? author = null,
@@ -156,6 +156,14 @@ public sealed class McpBookTools(IHttpContextAccessor http) : NostosMcpTool(http
             ["forceCreate"] = forceCreate,
         };
 
+        // Which To read entries were already in the library before this call:
+        // those stay on the list whatever the call does (see below).
+        var readingList = Services.GetRequiredService<IReadingListService>();
+        var ownedBefore = (await readingList.ListAsync(cancellationToken))
+            .Where(e => e.OwnedBookId is not null)
+            .Select(e => e.Id)
+            .ToHashSet();
+
         // A client may resend a call it never saw an answer to: the same
         // request is one book. The receipt lives for days, so a replay that
         // points at a book deleted since then is asked again with a new key.
@@ -199,20 +207,33 @@ public sealed class McpBookTools(IHttpContextAccessor http) : NostosMcpTool(http
         var book = addedBook.Book ?? throw new McpException("Nostos did not add the book.");
         var matched = addedBook.Outcome == "matched";
 
-        // To read lists books the user does not have yet. Once the book is in
-        // the library its entry moves, exactly as the app's "Got it" does: the
-        // reason the user wanted it stays on the book as a note.
+        // To read holds the books the user wants to read, owned or not. An
+        // entry this call brought into the library moves, exactly as the app's
+        // "Got it" does: the reason the user wanted it stays on the book as a
+        // note. An entry that was already in the library before the call is
+        // the user's own choice to keep it there ("It's in your library"), so
+        // it stays, and is reported for the model to ask about.
         var moved = new List<McpMovedFromToRead>();
-        var readingList = Services.GetRequiredService<IReadingListService>();
+        var stillOnToRead = new List<McpOnToRead>();
         var editions = (book.OtherEditions ?? []).Select(e => e.Id).Append(book.Id).ToHashSet();
         foreach (var entry in await readingList.ListAsync(cancellationToken))
         {
             if (entry.OwnedBookId is not { } owned || !editions.Contains(owned))
                 continue;
+            if (ownedBefore.Contains(entry.Id))
+            {
+                stillOnToRead.Add(new McpOnToRead(entry.Id, entry.Title, entry.NextPosition is null ? "someday" : "next"));
+                continue;
+            }
             var done = await readingList.MarkAcquiredAsync(entry.Id, book.Id, cancellationToken);
             if (done.Success)
                 moved.Add(new McpMovedFromToRead(entry.Id, entry.Title, !string.IsNullOrWhiteSpace(entry.Why) || !string.IsNullOrWhiteSpace(entry.RecommendedBy)));
         }
+
+        var message = matched ? "This book was already in the library, so nothing new was added." : null;
+        if (stillOnToRead.Count > 0)
+            message = (message is null ? "" : message + " ")
+                + "It is also on To read and stays there: the user takes a book they own off the list themselves, in the app.";
 
         return new McpAddedBook(
             matched ? "matched" : "created",
@@ -220,7 +241,8 @@ public sealed class McpBookTools(IHttpContextAccessor http) : NostosMcpTool(http
             Summary(book, citations),
             moved.Count > 0 ? moved : null,
             null,
-            matched ? "This book was already in the library, so nothing new was added." : null);
+            message,
+            stillOnToRead.Count > 0 ? stillOnToRead : null);
     }
 
     [McpServerTool(Name = "update_book", Title = "Fill in or correct a book's details", ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]

@@ -407,6 +407,7 @@
       "shelf": "string",
       "nextPosition": "number",
       "ownedBookId": "null",
+      "ownedCoverUrl": "null",
       "addedAt": "string"
     }
   },
@@ -424,6 +425,7 @@
       "shelf": "string",
       "nextPosition": "number",
       "ownedBookId": "null",
+      "ownedCoverUrl": "null",
       "addedAt": "string"
     }
   },
@@ -444,6 +446,7 @@
         "shelf": "string",
         "nextPosition": "number",
         "ownedBookId": "null",
+        "ownedCoverUrl": "null",
         "addedAt": "string"
       }
     ]

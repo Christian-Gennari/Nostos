@@ -200,6 +200,15 @@ export class TopicsService {
     return this.http.put<TopicKindDto>(`/api/topic-kinds/${id}`, dto);
   }
 
+  /**
+   * Writes the whole order in one request: every kind's id, in the order the
+   * reader now sees them. The server answers with the kinds at positions 1..N,
+   * or refuses with a 409 when the list no longer matches the kinds it holds.
+   */
+  reorderKinds(ids: string[]): Observable<TopicKindDto[]> {
+    return this.http.put<TopicKindDto[]>('/api/topic-kinds/order', { ids });
+  }
+
   deleteKind(id: string): Observable<void> {
     return this.http.delete<void>(`/api/topic-kinds/${id}`);
   }
