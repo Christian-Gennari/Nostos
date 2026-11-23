@@ -58,13 +58,17 @@ describe('NoteItemComponent', () => {
     element = fixture.nativeElement as HTMLElement;
   });
 
-  it('shows the quote, the words without the reference line, and the topics as chips', () => {
+  it('shows the quote, the words without the reference line, and the topics as one quiet line', () => {
     render();
 
     expect(element.querySelector('.note-item-quote')?.textContent).toContain('Virtue, then, is a state');
     expect(element.querySelector('.note-item-thought')?.textContent?.trim()).toBe('A compact definition of virtue.');
-    const chips = Array.from(element.querySelectorAll('.topic-chip-name')).map((chip) => chip.textContent?.trim());
-    expect(chips).toEqual(['mean', 'virtue']);
+    const line = element.querySelector('.topic-line') as HTMLElement;
+    const names = Array.from(line.querySelectorAll('.topic-line-name')).map((chip) => chip.textContent?.trim());
+    expect(names).toEqual(['#mean', '#virtue']);
+    // No pills, no crosses and no add pill until the line is tapped.
+    expect(element.querySelector('.topic-chip')).toBeNull();
+    expect(element.querySelector('[data-testid="topic-row-add"]')).toBeNull();
   });
 
   it('says how many writings cite the note as a quiet button whose menu opens each (issue #1162)', () => {
@@ -203,16 +207,50 @@ describe('NoteItemComponent', () => {
     expect(element.querySelector('.note-item-book')).toBeNull();
   });
 
-  it('links a topic chip to its page and asks to remove a topic', () => {
+  it('links a topic name to its page, and turns the line into its controls on a tap', () => {
     render();
     const removed: string[] = [];
     fixture.componentInstance.topicRemoved.subscribe((name) => removed.push(name));
 
-    const chip = element.querySelector('.topic-chip-name') as HTMLAnchorElement;
-    (element.querySelector('.topic-chip-remove') as HTMLButtonElement).click();
-
+    const chip = element.querySelector('.topic-line-name') as HTMLAnchorElement;
     expect(new URL(chip.href).pathname).toBe('/brain/topics/t-mean');
+    expect(element.querySelector('.topic-chip')).toBeNull();
+
+    // One tap on the line's control: the same topics become removable pills
+    // with **+ Topic** beside them.
+    (element.querySelector('[data-testid="topic-line-edit"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(element.querySelectorAll('.topic-chip')).toHaveLength(2);
+    expect(element.querySelector('[data-testid="topic-row-add"]')).not.toBeNull();
+
+    (element.querySelector('.topic-chip-remove') as HTMLButtonElement).click();
     expect(removed).toEqual(['mean']);
+  });
+
+  it('collapses five topics to three names and a +2 count (issue #1797)', () => {
+    render({ topicNames: ['one', 'two', 'three', 'four', 'five'], content: 'A thought.' });
+
+    const line = element.querySelector('.topic-line') as HTMLElement;
+    expect(Array.from(line.querySelectorAll('.topic-line-name')).map((name) => name.textContent?.trim()))
+      .toEqual(['#one', '#two', '#three']);
+    expect(line.querySelector('[data-testid="topic-line-more"]')?.textContent?.trim()).toBe('+2');
+    expect(element.querySelector('.topic-chip')).toBeNull();
+
+    // Opening it shows all five, with a cross each and the add control.
+    (line.querySelector('[data-testid="topic-line-more"]') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(element.querySelectorAll('.topic-chip')).toHaveLength(5);
+    expect(element.querySelector('[data-testid="topic-row-add"]')).not.toBeNull();
+  });
+
+  it('does not unfold the controls when a topic name is tapped', () => {
+    render();
+    const link = element.querySelector('.topic-line-name') as HTMLAnchorElement;
+
+    link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
+    fixture.detectChanges();
+
+    expect(element.querySelector('.topic-chip')).toBeNull();
   });
 
   it('opens an inline [[link]] in the app, at the address the link names', async () => {

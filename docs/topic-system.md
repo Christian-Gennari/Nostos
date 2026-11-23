@@ -144,7 +144,10 @@ offers both:
 
 The rules that make the two one system (issue #1445):
 
-1. Every topic on a note shows as a pill under its words, typed or added.
+1. Every topic on a note is listed under its words, typed or added. Where the
+   note is written (the composer) each is a pill with its own cross; on a card
+   in a list it is one quiet line of up to three linked names and `+N`, and the
+   add/remove controls wait behind a tap on that line (issue #1797).
 2. Every place a note is written is the note composer
    (`ui/note-composer`): the words with `[[` autocomplete, and the topic row
    (`ui/topic-row`) under them. That is the Brain's card editor, the reader's
