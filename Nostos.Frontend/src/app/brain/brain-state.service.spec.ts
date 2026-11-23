@@ -176,6 +176,65 @@ describe('BrainStateService loading', () => {
     expect(reloaded.mapColorMode()).toBe('none');
   });
 
+  it('keeps a kinds read that is already in flight when another screen asks', () => {
+    const pending = new Subject<TopicKindDto[]>();
+    listKinds.mockReset().mockReturnValueOnce(pending);
+    const brain = create();
+
+    // The map asked; the picker mounts before the answer lands. The second
+    // caller must wait for that answer instead of queueing a read that replaces
+    // it and drops the first one.
+    brain.ensureKindsLoaded();
+    brain.ensureKindsLoaded();
+    expect(listKinds).toHaveBeenCalledTimes(1);
+
+    const kinds = [{
+      id: 'k1', name: 'Schools', colorKey: 'kind-1', sortOrder: 1, createdAt: '2026-01-01T00:00:00Z', topicCount: 1,
+    }] satisfies TopicKindDto[];
+    pending.next(kinds);
+    pending.complete();
+
+    expect(brain.topicKinds()).toEqual(kinds);
+    expect(brain.kindsLoaded()).toBe(true);
+    expect(listKinds).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears a failed kinds read as soon as a retry starts', () => {
+    const pending = new Subject<TopicKindDto[]>();
+    listKinds
+      .mockReset()
+      .mockReturnValueOnce(throwError(() => new Error('kinds unavailable')))
+      .mockReturnValueOnce(pending);
+    const brain = create();
+
+    brain.ensureKindsLoaded();
+    expect(brain.kindsFailed()).toBe(true);
+
+    brain.reloadKinds();
+    // The loading branch can only show if the failure has been cleared.
+    expect(brain.kindsFailed()).toBe(false);
+
+    pending.next([]);
+    pending.complete();
+    expect(brain.kindsFailed()).toBe(false);
+    expect(brain.kindsLoaded()).toBe(true);
+  });
+
+  it('reports a retry that fails again', () => {
+    listKinds
+      .mockReset()
+      .mockReturnValueOnce(throwError(() => new Error('kinds unavailable')))
+      .mockReturnValueOnce(throwError(() => new Error('still unavailable')));
+    const brain = create();
+
+    brain.ensureKindsLoaded();
+    expect(brain.kindsFailed()).toBe(true);
+
+    brain.reloadKinds();
+    expect(brain.kindsFailed()).toBe(true);
+    expect(brain.kindsLoaded()).toBe(false);
+  });
+
   it('tolerates blocked localStorage without throwing', () => {
     vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
       throw new DOMException('Blocked', 'SecurityError');

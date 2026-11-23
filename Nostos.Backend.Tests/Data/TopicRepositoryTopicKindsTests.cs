@@ -240,6 +240,53 @@ public sealed class TopicRepositoryTopicKindsTests
         (await db.Topics.AsNoTracking().SingleAsync(t => t.Id == topic.Id)).KindId.Should().BeNull();
     }
 
+    [Fact]
+    public async Task ReorderKindsAsync_writes_the_whole_order_in_one_transaction_or_changes_nothing()
+    {
+        await using var library = await LocalPortableTestLibrary.CreateAsync();
+        var dbPath = Path.Combine(library.Root, "nostos.db");
+
+        var before = await ReadKindOrderAsync(dbPath);
+        var reversed = before.OrderByDescending(row => row.SortOrder).Select(row => row.Id).ToList();
+
+        // The write fails while saving. Writing kind by kind would have committed
+        // the rows before it; one transaction leaves every position as it was.
+        var interceptor = new ThrowOnSaveInterceptor();
+        await using (var db = CreateFileContext(dbPath, interceptor))
+        {
+            var repo = new TopicRepository(db);
+            interceptor.Arm();
+            await Assert.ThrowsAsync<InvalidOperationException>(() => repo.ReorderKindsAsync(reversed));
+        }
+
+        (await ReadKindOrderAsync(dbPath)).Should().Equal(before);
+
+        await using (var db = CreateFileContext(dbPath))
+        {
+            var repo = new TopicRepository(db);
+            var result = await repo.ReorderKindsAsync(reversed);
+
+            result.Status.Should().Be(TopicKindReorderStatus.Success);
+            result.Kinds!.Select(kind => kind.Id).Should().Equal(reversed);
+            result.Kinds.Select(kind => kind.SortOrder).Should().Equal(Enumerable.Range(1, reversed.Count));
+        }
+
+        (await ReadKindOrderAsync(dbPath))
+            .Should()
+            .Equal(reversed.Select((id, position) => (id, position + 1)));
+    }
+
+    private static async Task<List<(Guid Id, int SortOrder)>> ReadKindOrderAsync(string databasePath)
+    {
+        await using var db = CreateFileContext(databasePath);
+        return await db.TopicKinds
+            .AsNoTracking()
+            .OrderBy(kind => kind.SortOrder)
+            .ThenBy(kind => kind.Id)
+            .Select(kind => new ValueTuple<Guid, int>(kind.Id, kind.SortOrder))
+            .ToListAsync();
+    }
+
     private static NostosDbContext CreateFileContext(string databasePath, params IInterceptor[] interceptors)
     {
         var builder = new DbContextOptionsBuilder<NostosDbContext>()
@@ -250,6 +297,27 @@ public sealed class TopicRepositoryTopicKindsTests
         }
 
         return new NostosDbContext(builder.Options);
+    }
+
+    private sealed class ThrowOnSaveInterceptor : SaveChangesInterceptor
+    {
+        private bool _armed;
+
+        public void Arm() => _armed = true;
+
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (_armed)
+            {
+                _armed = false;
+                throw new InvalidOperationException("Simulated failure while saving the new order.");
+            }
+
+            return base.SavingChangesAsync(eventData, result, cancellationToken);
+        }
     }
 
     private sealed class InjectConflictingKindOnSaveInterceptor : SaveChangesInterceptor

@@ -51,6 +51,21 @@ public static class TopicsEndpoints
         );
 
         group.MapPut(
+            "/order",
+            async (ReorderTopicKindsDto dto, ITopicRepository repo, CancellationToken ct) =>
+            {
+                var result = await repo.ReorderKindsAsync(dto.Ids, ct);
+                return result.Status switch
+                {
+                    TopicKindReorderStatus.Success => Results.Ok(result.Kinds),
+                    TopicKindReorderStatus.Conflict =>
+                        ApiErrors.Error(result.ErrorMessage!, StatusCodes.Status409Conflict),
+                    _ => ApiErrors.Error(result.ErrorMessage!),
+                };
+            }
+        );
+
+        group.MapPut(
             "/{id:guid}",
             async (Guid id, UpdateTopicKindDto dto, ITopicRepository repo, CancellationToken ct) =>
             {

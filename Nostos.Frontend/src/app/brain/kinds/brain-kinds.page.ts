@@ -479,14 +479,12 @@ export class BrainKindsPage {
   /**
    * Moves a kind one place up or down.
    *
-   * The whole new order is computed here and every kind's `1..N` position is
-   * written, so the server's order is the one on screen whatever it held
-   * before. Trading two values was wrong in three ways: a second click landing
-   * before the refreshed list arrived read the same old values and produced
-   * duplicates, two kinds with equal orders could never be separated again, and
-   * a view left behind by a reload could leave out a row whose position it
-   * thought was already right, so that row kept an old number another kind now
-   * held.
+   * The whole new order goes in one request, so the server writes every kind's
+   * `1..N` position or none of them: one failure, or a kind another reader
+   * deleted at the same moment, can no longer leave two kinds on one position.
+   * The answered list holds the order; its names may be older than a rename
+   * that landed while the request was open, so the positions are applied to the
+   * list as it stands now.
    */
   moveKind(kind: TopicKindDto, direction: -1 | 1): void {
     if (this.busy()) return;
@@ -498,22 +496,13 @@ export class BrainKindsPage {
     const reordered = [...list];
     const [moved] = reordered.splice(index, 1);
     reordered.splice(target, 0, moved);
-    const positions = reordered.map((item, position) => ({ id: item.id, sortOrder: position + 1 }));
 
     this.busy.set(true);
-    forkJoin(
-      positions.map((position) => this.topicsService.updateKind(position.id, { sortOrder: position.sortOrder }))
-    ).subscribe({
-      next: () => {
-        // The reload is a fire-and-forget read: `busy` used to drop before its
-        // answer, so a click landing in between traded the old orders again and
-        // duplicated them. The write's own order is the truth until it lands.
-        const order = new Map(positions.map((position) => [position.id, position.sortOrder]));
-        // The positions are applied to the list as it stands NOW: a rename, a
-        // recolour, a create or a delete may have finished while the writes were
-        // in flight, and the array captured before them would undo it.
-        this.state.topicKinds.update((kinds) =>
-          kinds
+    this.topicsService.reorderKinds(reordered.map((item) => item.id)).subscribe({
+      next: (kinds) => {
+        const order = new Map(kinds.map((item) => [item.id, item.sortOrder]));
+        this.state.topicKinds.update((current) =>
+          current
             .map((item) => {
               const sortOrder = order.get(item.id);
               return sortOrder === undefined ? item : { ...item, sortOrder };
@@ -521,14 +510,14 @@ export class BrainKindsPage {
             .sort((first, second) => first.sortOrder - second.sortOrder),
         );
         this.busy.set(false);
-        this.state.refresh();
       },
-      error: () => {
+      error: (error: unknown) => {
         this.busy.set(false);
-        // Some of the writes may have landed; read the server's list back so
-        // the arrows start from the orders it actually holds.
+        // A refused order means the list changed under the reader (a kind was
+        // created or deleted meanwhile); read it back so the arrows start from
+        // the list the server actually holds.
         this.state.refresh();
-        this.toast.error('Could not reorder the kinds. Try again.');
+        this.toast.error(serverMessage(error) ?? 'Could not reorder the kinds. Try again.');
       },
     });
   }
@@ -850,6 +839,10 @@ export class BrainKindsPage {
 
   /** The kind list failed to load: ask for it again without a full page reload. */
   retryKinds(): void {
+    // A second press while the first retry is open would start another read and
+    // throw the first answer away. The button is gone as soon as the retry
+    // starts (the failure is cleared); this covers a click already in flight.
+    if (this.state.kindsLoading()) return;
     this.state.reloadKinds();
   }
 

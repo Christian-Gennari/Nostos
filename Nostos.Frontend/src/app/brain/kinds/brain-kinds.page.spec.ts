@@ -1,5 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { OverlayModule } from '@angular/cdk/overlay';
+import { HttpErrorResponse } from '@angular/common/http';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router, type ParamMap } from '@angular/router';
 import { readFileSync } from 'node:fs';
 import { BehaviorSubject, of, Subject, throwError } from 'rxjs';
@@ -40,6 +41,7 @@ describe('BrainKindsPage', () => {
   let topicsFail: boolean;
   let setTopicsKind: ReturnType<typeof vi.fn>;
   let updateKind: ReturnType<typeof vi.fn>;
+  let reorderKinds: ReturnType<typeof vi.fn>;
   let createKind: ReturnType<typeof vi.fn>;
   let deleteKind: ReturnType<typeof vi.fn>;
   let listKinds: ReturnType<typeof vi.fn>;
@@ -67,6 +69,7 @@ describe('BrainKindsPage', () => {
             listKinds,
             setTopicsKind,
             updateKind,
+            reorderKinds,
             createKind,
             deleteKind,
           },
@@ -112,6 +115,10 @@ describe('BrainKindsPage', () => {
     setTopicsKind = vi.fn((ids: string[], kindId: string | null) =>
       of({ updatedTopicIds: ids, kindId, kindSource: kindId ? 'reader' : null }));
     updateKind = vi.fn(() => of(person));
+    // The server answers a reorder with the kinds in the order sent, numbered
+    // 1..N. A spec that cares about the answer overrides this.
+    reorderKinds = vi.fn((ids: string[]) =>
+      of(ids.map((id, position) => ({ ...kinds.find((item) => item.id === id)!, sortOrder: position + 1 }))));
     createKind = vi.fn(() => of(kind('k3', 'Field', 'kind-3', 3)));
     deleteKind = vi.fn(() => of(undefined));
     listKinds = vi.fn(() => (kindsFail ? throwError(() => new Error('kinds unavailable')) : of(kinds)));
@@ -273,10 +280,17 @@ describe('BrainKindsPage', () => {
     expect(updateKind).toHaveBeenCalledWith('k1', { colorKey: 'kind-2', swapColor: true });
   });
 
-  it('reorders kinds by writing every position', () => {
+  it('reorders kinds with one request that lists the whole order', () => {
+    reorderKinds.mockReturnValue(of([{ ...idea, sortOrder: 1 }, { ...person, sortOrder: 2 }]));
+
     component().moveKind(person, 1);
-    expect(updateKind).toHaveBeenCalledWith('k2', { sortOrder: 1 });
-    expect(updateKind).toHaveBeenCalledWith('k1', { sortOrder: 2 });
+
+    expect(reorderKinds).toHaveBeenCalledTimes(1);
+    expect(reorderKinds).toHaveBeenCalledWith(['k2', 'k1']);
+    expect(updateKind).not.toHaveBeenCalled();
+    expect(component().busy()).toBe(false);
+    expect(component().kinds().map((item) => item.id)).toEqual(['k2', 'k1']);
+    expect(component().kinds().map((item) => item.sortOrder)).toEqual([1, 2]);
   });
 
   it('asks before deleting and keeps the topics', () => {
@@ -416,16 +430,32 @@ describe('BrainKindsPage', () => {
       'Kept 1 topic as yours, but 1 topic could not be kept. Try again.');
   });
 
-  it('rereads the kinds after a failed reorder, so equal sort orders do not stick', () => {
+  it('rereads the kinds after a failed reorder, so the arrows start from the server', () => {
     const state = TestBed.inject(BrainStateService);
     const refresh = vi.spyOn(state, 'refresh');
-    updateKind.mockReturnValue(throwError(() => new Error('network')));
+    reorderKinds.mockReturnValue(throwError(() => new Error('network')));
+
+    component().moveKind(person, 1);
+
+    expect(refresh).toHaveBeenCalled();
+    expect(component().busy()).toBe(false);
+    expect(TestBed.inject(ToastService).error).toHaveBeenCalledWith(
+      'Could not reorder the kinds. Try again.');
+  });
+
+  it('says why a reorder was refused and reads the order back', () => {
+    const state = TestBed.inject(BrainStateService);
+    const refresh = vi.spyOn(state, 'refresh');
+    reorderKinds.mockReturnValue(throwError(() => new HttpErrorResponse({
+      status: 409,
+      error: { error: 'The order must list every topic kind exactly once.' },
+    })));
 
     component().moveKind(person, 1);
 
     expect(refresh).toHaveBeenCalled();
     expect(TestBed.inject(ToastService).error).toHaveBeenCalledWith(
-      'Could not reorder the kinds. Try again.');
+      'The order must list every topic kind exactly once.');
   });
 
   it('ignores a rename answer for a kind whose field has since closed', () => {
@@ -590,53 +620,28 @@ describe('BrainKindsPage', () => {
     expect(label).toBe('Clear selection');
   });
 
-  it('keeps the new order while the reload is in flight, so a second click reads it', () => {
-    const answer = new Subject<TopicKindDto>();
-    updateKind.mockReturnValue(answer);
-    // Each read answers on its own subject: the first is the order the writes
-    // replaced, the second the one the queued read finds.
-    const read = new Subject<TopicKindDto[]>();
-    const queued = new Subject<TopicKindDto[]>();
-    listKinds.mockReturnValueOnce(read).mockReturnValueOnce(queued);
+  it('ignores a second move while the first request is in flight', () => {
+    const answer = new Subject<TopicKindDto[]>();
+    reorderKinds.mockReturnValue(answer);
 
     component().moveKind(person, 1);
     expect(component().busy()).toBe(true);
-    // The buttons are disabled while `busy`, but a second click can already be
-    // queued; it read the same old sort orders and duplicated them.
-    component().moveKind(person, 1);
-    expect(updateKind).toHaveBeenCalledTimes(2);
+    expect(reorderKinds).toHaveBeenCalledWith(['k2', 'k1']);
 
-    answer.next(person);
+    // The arrows are disabled while `busy`, but a second click can already be
+    // queued: it must not send a second order computed from the old list.
+    component().moveKind(idea, -1);
+    expect(reorderKinds).toHaveBeenCalledTimes(1);
+
+    answer.next([{ ...idea, sortOrder: 1 }, { ...person, sortOrder: 2 }]);
     answer.complete();
 
     expect(component().busy()).toBe(false);
     expect(component().kinds().map((item) => item.id)).toEqual(['k2', 'k1']);
     expect(component().kinds().map((item) => item.sortOrder)).toEqual([1, 2]);
-
-    // A click sent before the GET answered now moves from the order the reader
-    // just made, instead of trading the old values a second time.
-    updateKind.mockReturnValue(of(person));
-    updateKind.mockClear();
-    component().moveKind(component().kinds()[0], 1);
-    expect(updateKind.mock.calls).toEqual([
-      ['k1', { sortOrder: 1 }],
-      ['k2', { sortOrder: 2 }],
-    ]);
-
-    // The read lands with the order from before that second move. It was
-    // superseded while in flight, so it must not put the old order back on
-    // screen while nothing is busy.
-    read.next([{ ...idea, sortOrder: 1 }, { ...person, sortOrder: 2 }]);
-    read.complete();
-    expect(component().kinds().map((item) => item.id)).toEqual(['k1', 'k2']);
-
-    // The queued read answers with the server's order; nothing jumps.
-    queued.next([{ ...person, sortOrder: 1 }, { ...idea, sortOrder: 2 }]);
-    queued.complete();
-    expect(component().kinds().map((item) => item.id)).toEqual(['k1', 'k2']);
   });
 
-  it('drops a stale kinds read and still writes every row after it', () => {
+  it('drops a superseded kinds read and then sends the whole order on screen', () => {
     kinds = [
       kind('k1', 'A', 'kind-1', 1),
       kind('k2', 'B', 'kind-2', 2),
@@ -645,60 +650,44 @@ describe('BrainKindsPage', () => {
     TestBed.inject(BrainStateService).reloadKinds();
     fixture.detectChanges();
 
-    // A server that applies what it is sent: a reorder that leaves a row out
-    // shows up as two kinds holding the same position.
-    const stored = new Map(kinds.map((item) => [item.id, item.sortOrder]));
-    updateKind.mockImplementation((id: string, change: { sortOrder: number }) => {
-      stored.set(id, change.sortOrder);
-      return of(kinds.find((item) => item.id === id)!);
-    });
-
     // Each read answers on its own subject. The first holds the order from
-    // before the second move and lands after it.
+    // before the second read, and lands after it.
     const first = new Subject<TopicKindDto[]>();
     const second = new Subject<TopicKindDto[]>();
-    const third = new Subject<TopicKindDto[]>();
-    listKinds.mockReturnValueOnce(first).mockReturnValueOnce(second).mockReturnValueOnce(third);
+    listKinds.mockReturnValueOnce(first).mockReturnValueOnce(second);
 
     const ids = (): string[] => component().kinds().map((item) => item.id);
     const [a, b, c] = component().kinds();
 
-    component().moveKind(c, -1); // A C B, and the first read starts
-    expect(ids()).toEqual(['k1', 'k3', 'k2']);
-    component().moveKind(b, -1); // A B C; the first read is now superseded
-    expect(ids()).toEqual(['k1', 'k2', 'k3']);
+    const state = TestBed.inject(BrainStateService);
+    state.reloadKinds();
+    state.reloadKinds(); // supersedes the read above and is queued behind it
 
-    // The stale answer arrives with the order from before the second move.
+    // The stale answer arrives with the order from before the second read.
     // Applying it would revert the list while `busy` is false, and the next
-    // move would read that order and leave a row out.
-    first.next([{ ...a, sortOrder: 1 }, { ...c, sortOrder: 2 }, { ...b, sortOrder: 3 }]);
+    // move would then send an order the reader can no longer see.
+    first.next([{ ...c, sortOrder: 1 }, { ...b, sortOrder: 2 }, { ...a, sortOrder: 3 }]);
     fixture.detectChanges();
     expect(ids()).toEqual(['k1', 'k2', 'k3']);
 
-    // The third move sends its whole order, so a view that thinks a row is
-    // already in place can never leave it on a shared position.
-    const writesBefore = updateKind.mock.calls.length;
-    component().moveKind(component().kinds()[2], -1); // C A B
-    const sent = updateKind.mock.calls.slice(writesBefore) as Array<[string, { sortOrder: number }]>;
-    expect(sent.map(([id]) => id).sort()).toEqual(['k1', 'k2', 'k3']);
-    expect(new Set(sent.map(([, change]) => change.sortOrder)).size).toBe(3);
+    second.next([{ ...a, sortOrder: 1 }, { ...b, sortOrder: 2 }, { ...c, sortOrder: 3 }]);
+    second.complete();
+    expect(ids()).toEqual(['k1', 'k2', 'k3']);
 
-    // The server ends with every kind on its own position, in the order shown.
-    expect(new Set(stored.values()).size).toBe(3);
-    expect([...stored.entries()].sort((x, y) => x[1] - y[1])).toEqual(
-      component().kinds().map((item) => [item.id, item.sortOrder]),
-    );
+    // The request carries the whole order on screen, not just the moved row.
+    reorderKinds.mockClear();
+    component().moveKind(component().kinds()[2], -1); // A C B
+    expect(reorderKinds).toHaveBeenCalledWith(['k1', 'k3', 'k2']);
   });
 
   it('keeps a rename that landed while a reorder was in flight', () => {
-    const writes = new Subject<TopicKindDto>();
-    updateKind.mockImplementation((_id: string, change: { name?: string }) =>
-      change.name ? of({ ...person, name: change.name }) : writes);
+    const answer = new Subject<TopicKindDto[]>();
+    reorderKinds.mockReturnValue(answer);
 
     component().moveKind(person, 1);
 
     // The rename finished first: its reload put "People" in the shared list
-    // while the reorder's writes were still in flight.
+    // while the reorder's request was still open.
     listKinds.mockReturnValue(of([
       { ...person, name: 'People', sortOrder: 1 },
       { ...idea, sortOrder: 2 },
@@ -708,24 +697,18 @@ describe('BrainKindsPage', () => {
     fixture.detectChanges();
     expect(component().kinds().map((item) => item.name)).toEqual(['People', 'Idea']);
 
-    // The write's reload is held open so the list can be read before it
-    // confirms: the positions must be applied to the list as it stands now, and
-    // the array captured before the writes would put "Person" back.
-    const confirming = new Subject<TopicKindDto[]>();
-    listKinds.mockReturnValueOnce(confirming);
-    writes.next(person);
-    writes.complete();
+    // The reorder answers with the kinds as they stood before the rename: its
+    // positions are the truth, but its names are not. Applying the answered
+    // list wholesale would put "Person" back.
+    answer.next([{ ...person, sortOrder: 2 }, { ...idea, sortOrder: 1 }]);
+    answer.complete();
 
     expect(component().kinds().map((item) => item.id)).toEqual(['k2', 'k1']);
     expect(component().kinds().map((item) => item.name)).toEqual(['Idea', 'People']);
     expect(component().kinds().map((item) => item.sortOrder)).toEqual([1, 2]);
-
-    confirming.next([{ ...idea, sortOrder: 1 }, { ...person, name: 'People', sortOrder: 2 }]);
-    confirming.complete();
-    expect(component().kinds().map((item) => item.name)).toEqual(['Idea', 'People']);
   });
 
-  it('repairs equal sort orders instead of trading two equal values', () => {
+  it('sends the whole order when the stored sort orders are equal', () => {
     kinds = [
       kind('k1', 'Person', 'kind-1', 1),
       kind('k2', 'Idea', 'kind-2', 1),
@@ -733,17 +716,13 @@ describe('BrainKindsPage', () => {
     ];
     TestBed.inject(BrainStateService).reloadKinds();
     fixture.detectChanges();
-    updateKind.mockClear();
+    reorderKinds.mockClear();
 
     component().moveKind(component().kinds()[1], 1); // Idea down, past Field
 
-    // Undoing the duplicates needs the whole order written: Person first, Field
-    // second and Idea third, each on its own position.
-    expect(updateKind.mock.calls).toEqual([
-      ['k1', { sortOrder: 1 }],
-      ['k3', { sortOrder: 2 }],
-      ['k2', { sortOrder: 3 }],
-    ]);
+    // The server writes 1..N for the whole list, so two kinds that shared a
+    // position can be separated again by one move.
+    expect(reorderKinds).toHaveBeenCalledWith(['k1', 'k3', 'k2']);
   });
 
   it('forgets a capped Select all once its rows are pruned', () => {
@@ -992,6 +971,57 @@ describe('BrainKindsPage', () => {
 
     expect(fixture.nativeElement.querySelector('.kinds-failed')).toBeNull();
     expect((fixture.nativeElement.querySelector('.new-kind') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('shows the kinds loading while a retry is in flight, and the failure again if it fails', async () => {
+    kindsFail = true;
+    await remount();
+
+    checkbox(0, true);
+    component().setKindOpen.set(true);
+    fixture.detectChanges();
+    const panel = document.querySelector('.bulk-kind-panel') as HTMLElement;
+    expect(panel.textContent).toContain('Could not load your kinds');
+
+    const retry = new Subject<TopicKindDto[]>();
+    listKinds.mockReturnValueOnce(retry);
+    (panel.querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    // The failure is cleared when the read starts, so the panel says it is
+    // loading rather than offering a retry for a read that is already on.
+    expect(panel.querySelector('nostos-loading-indicator')).not.toBeNull();
+    expect(panel.textContent).not.toContain('Could not load your kinds');
+
+    retry.error(new Error('still unavailable'));
+    fixture.detectChanges();
+
+    expect(panel.querySelector('nostos-loading-indicator')).toBeNull();
+    expect(panel.textContent).toContain('Could not load your kinds');
+  });
+
+  it('does not replace a retry that is still in flight when Try again is pressed again', async () => {
+    kindsFail = true;
+    await remount();
+
+    const retry = new Subject<TopicKindDto[]>();
+    listKinds.mockReturnValueOnce(retry);
+    const callsBefore = listKinds.mock.calls.length;
+    component().retryKinds();
+    expect(listKinds).toHaveBeenCalledTimes(callsBefore + 1);
+
+    // A second press while the read is open would start another read and its
+    // answer would be the one kept, while this answer was thrown away. The
+    // list the second read would find is empty, so dropping this one is visible.
+    kinds = [];
+    component().retryKinds();
+    expect(listKinds).toHaveBeenCalledTimes(callsBefore + 1);
+
+    retry.next([person, idea]);
+    retry.complete();
+
+    expect(component().kindsLoaded()).toBe(true);
+    expect(component().kinds().map((item) => item.id)).toEqual(['k1', 'k2']);
   });
 
   it('explains a failed kind list inside the bulk Set kind panel', async () => {

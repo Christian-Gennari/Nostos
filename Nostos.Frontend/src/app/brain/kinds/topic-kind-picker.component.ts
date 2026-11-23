@@ -196,6 +196,9 @@ export class TopicKindPickerComponent {
 
   /** The kind list failed to load: ask for it again. */
   retryKinds(): void {
+    // Pressing again while the retry is open would supersede its answer; the
+    // panel already shows the loading state, so there is nothing to press for.
+    if (this.state.kindsLoading()) return;
     this.state.reloadKinds();
   }
 
