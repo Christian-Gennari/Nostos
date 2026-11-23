@@ -553,6 +553,268 @@ public sealed class AssistantTopicKindReaderProtectionTests : IClassFixture<Sqli
         clearStep.SkippedReason.Should().Be("kept: the topic already has no kind");
     }
 
+    [Fact]
+    public async Task A_kind_whose_only_set_was_refused_for_a_reader_kind_is_not_created()
+    {
+        using var h = CreateHarness();
+        var freire = await SeedTopicAsync(h, "Freire", TopicKindModel.PersonId, TopicKindSources.Reader);
+        var draft = new AssistantChangesetDraft(h.Library, h.Library);
+        (await StageAsync(h, draft, [freire], "Movement", createKind: true)).Success.Should().BeTrue();
+        var review = await h.Coordinator.FinishTurnAsync("c", "t-p1", draft, false, false, default);
+        if (review.AwaitingReview)
+        {
+            await h.Coordinator.ApplyAsync(review.Changeset!.ChangesetId,
+                new AssistantChangesetApplyRequest(review.Changeset.ActionToken, [], review.Changeset.DiffHash), default);
+        }
+        review.AwaitingReview.Should().BeFalse();
+        (await KindCountAsync(h, "Movement")).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task A_kind_whose_only_set_was_refused_is_not_created_when_other_changes_are_staged()
+    {
+        using var h = CreateHarness();
+        var freire = await SeedTopicAsync(h, "Freire", TopicKindModel.PersonId, TopicKindSources.Reader);
+        var dewey = await SeedTopicAsync(h, "Dewey");
+        var draft = new AssistantChangesetDraft(h.Library, h.Library);
+        (await StageAsync(h, draft, [dewey], "Idea")).Success.Should().BeTrue();
+        (await StageAsync(h, draft, [freire], "Movement", createKind: true)).Success.Should().BeTrue();
+
+        var review = await h.Coordinator.FinishTurnAsync("c", "t-p1b", draft, false, false, default);
+        review.AwaitingReview.Should().BeTrue();
+        review.Changeset!.Steps.Select(s => s.Summary).Should().NotContain(s => s.Contains("Movement"));
+
+        var applied = await h.Coordinator.ApplyAsync(review.Changeset.ChangesetId,
+            new AssistantChangesetApplyRequest(review.Changeset.ActionToken, [], review.Changeset.DiffHash), default);
+        applied.Success.Should().BeTrue(applied.ErrorMessage);
+        (await KindCountAsync(h, "Movement")).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task A_kind_the_model_abandoned_in_the_turn_is_not_created()
+    {
+        using var h = CreateHarness();
+        var dewey = await SeedTopicAsync(h, "Dewey");
+        var draft = new AssistantChangesetDraft(h.Library, h.Library);
+        (await StageAsync(h, draft, [dewey], "Movement", createKind: true)).Success.Should().BeTrue();
+        (await StageAsync(h, draft, [dewey], "Idea")).Success.Should().BeTrue();
+        var review = await h.Coordinator.FinishTurnAsync("c", "t-p5", draft, false, false, default);
+        review.Changeset!.Steps.Select(s => s.Summary).Should().NotContain(s => s.Contains("Movement"));
+    }
+
+    [Fact]
+    public async Task A_standalone_created_kind_with_no_set_call_is_still_created()
+    {
+        using var h = CreateHarness();
+        var draft = new AssistantChangesetDraft(h.Library, h.Library);
+        var created = await h.Registry.InvokeAsync(
+            "topics_create_kind",
+            Args("""{"name":"Movement"}"""),
+            new AssistantToolContext("client", "stage", draft, "Create a Movement topic kind."));
+        created.Success.Should().BeTrue(created.ErrorMessage);
+
+        var review = await h.Coordinator.FinishTurnAsync("c", "t-standalone-create", draft, false, false, default);
+        review.AwaitingReview.Should().BeTrue();
+        review.Changeset!.Steps.Should().ContainSingle(s =>
+            s.TopicKind != null && s.TopicKind.CreatesKind && s.TopicKind.KindName == "Movement");
+
+        var applied = await h.Coordinator.ApplyAsync(review.Changeset.ChangesetId,
+            new AssistantChangesetApplyRequest(review.Changeset.ActionToken, [], review.Changeset.DiffHash), default);
+        applied.Success.Should().BeTrue(applied.ErrorMessage);
+        (await KindCountAsync(h, "Movement")).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task A_colour_taken_during_the_review_does_not_block_the_apply()
+    {
+        using var h = CreateHarness();
+        var dewey = await SeedTopicAsync(h, "Dewey");
+        var draft = new AssistantChangesetDraft(h.Library, h.Library);
+        (await StageAsync(h, draft, [dewey], "Movement", createKind: true)).Success.Should().BeTrue();
+        var review = await h.Coordinator.FinishTurnAsync("c", "t-p2", draft, false, false, default);
+        var colour = review.Changeset!.Steps.Single(s => s.TopicKind?.CreatesKind == true).TopicKind!.ColorKey!;
+        await using (var db = await h.Factory.CreateDbContextAsync())
+        {
+            db.TopicKinds.Add(new TopicKindModel { Id = Guid.NewGuid(), Name = "Reader's own",
+                ColorKey = colour, SortOrder = 99, CreatedAt = DateTime.UtcNow });
+            await db.SaveChangesAsync();
+        }
+        var first = await h.Coordinator.ApplyAsync(review.Changeset.ChangesetId,
+            new AssistantChangesetApplyRequest(review.Changeset.ActionToken, [], review.Changeset.DiffHash), default);
+        var second = await h.Coordinator.ApplyAsync(review.Changeset.ChangesetId,
+            new AssistantChangesetApplyRequest(review.Changeset.ActionToken, [], first.Changeset!.DiffHash), default);
+        second.Success.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task A_colour_taken_during_the_review_refreshes_the_card_colour_after_diff_changed()
+    {
+        using var h = CreateHarness();
+        var dewey = await SeedTopicAsync(h, "Dewey");
+        var draft = new AssistantChangesetDraft(h.Library, h.Library);
+        (await StageAsync(h, draft, [dewey], "Movement", createKind: true)).Success.Should().BeTrue();
+        var review = await h.Coordinator.FinishTurnAsync("c", "t-p2-card", draft, false, false, default);
+        var stolenColour = review.Changeset!.Steps.Single(s => s.TopicKind?.CreatesKind == true).TopicKind!.ColorKey!;
+
+        await using (var db = await h.Factory.CreateDbContextAsync())
+        {
+            db.TopicKinds.Add(new TopicKindModel
+            {
+                Id = Guid.NewGuid(),
+                Name = "Reader's own",
+                ColorKey = stolenColour,
+                SortOrder = 99,
+                CreatedAt = DateTime.UtcNow,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var refreshed = await h.Coordinator.ApplyAsync(review.Changeset.ChangesetId,
+            new AssistantChangesetApplyRequest(review.Changeset.ActionToken, [], review.Changeset.DiffHash), default);
+        refreshed.Success.Should().BeFalse();
+        refreshed.ErrorCode.Should().Be(LibraryChangesetErrorCodes.DiffChanged);
+
+        var refreshedColour = refreshed.Changeset!.Diff.TopicKinds.Single().ColorKey;
+        refreshedColour.Should().NotBe(stolenColour);
+        refreshed.Changeset.Steps.Single(s => s.TopicKind?.CreatesKind == true).TopicKind!.ColorKey
+            .Should().Be(refreshedColour);
+        refreshed.Changeset.Steps.Single(s => s.TopicKind?.TopicId == dewey.Id).TopicKind!.ColorKey
+            .Should().Be(refreshedColour);
+
+        // Even after unticking the topic (so the step falls back to Baseline), the
+        // card still shows the refreshed colour instead of the stale stolen one.
+        var stepIndex = refreshed.Changeset.Steps.Single(s => s.TopicKind?.TopicId == dewey.Id).Index;
+        var unticked = await h.Coordinator.PreviewAsync(review.Changeset.ChangesetId,
+            new AssistantChangesetPreviewRequest(review.Changeset.ActionToken, [stepIndex]), default);
+        unticked.Success.Should().BeTrue(unticked.ErrorMessage);
+        unticked.Changeset!.Steps.Single(s => s.TopicKind?.CreatesKind == true).TopicKind!.ColorKey
+            .Should().Be(refreshedColour);
+        unticked.Changeset.Steps.Single(s => s.TopicKind?.TopicId == dewey.Id).TopicKind!.ColorKey
+            .Should().Be(refreshedColour);
+    }
+
+    [Fact]
+    public async Task A_preview_overlapping_an_in_flight_apply_is_rejected_and_does_not_overwrite_the_applied_changeset()
+    {
+        var applyEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var allowApplyFinish = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var previewCallsDuringApply = 0;
+
+        using var h = CreateHarness(wrapChangesets: inner => new OverlappingChangesetService(
+            inner,
+            onPreview: () =>
+            {
+                if (applyEntered.Task.IsCompleted)
+                    Interlocked.Increment(ref previewCallsDuringApply);
+            },
+            onApply: async () =>
+            {
+                applyEntered.TrySetResult();
+                await allowApplyFinish.Task;
+            }));
+
+        var dewey = await SeedTopicAsync(h, "Dewey");
+        var draft = new AssistantChangesetDraft(h.Library, h.Library);
+        (await StageAsync(h, draft, [dewey], "Idea")).Success.Should().BeTrue();
+        var review = await h.Coordinator.FinishTurnAsync("c", "t-race-1", draft, false, false, default);
+        review.AwaitingReview.Should().BeTrue();
+        var stepIndex = review.Changeset!.Steps.Single().Index;
+
+        var applyTask = h.Coordinator.ApplyAsync(
+            review.Changeset.ChangesetId,
+            new AssistantChangesetApplyRequest(review.Changeset.ActionToken, [], review.Changeset.DiffHash),
+            default);
+
+        AssistantChangesetActionResponse previewDuringApply;
+        try
+        {
+            await applyEntered.Task;
+
+            previewDuringApply = await h.Coordinator.PreviewAsync(
+                review.Changeset.ChangesetId,
+                new AssistantChangesetPreviewRequest(review.Changeset.ActionToken, [stepIndex]),
+                default);
+        }
+        finally
+        {
+            allowApplyFinish.TrySetResult();
+        }
+
+        var applied = await applyTask;
+
+        previewDuringApply.Success.Should().BeFalse();
+        previewDuringApply.ErrorCode.Should().Be(AssistantErrorCodes.ChangesetBusy);
+        Volatile.Read(ref previewCallsDuringApply).Should().Be(0);
+
+        applied.Success.Should().BeTrue(applied.ErrorMessage);
+        applied.Changeset!.Status.Should().Be("applied");
+        applied.Changeset.Diff.TopicKindAssignments.Should().ContainSingle(a => a.TopicId == dewey.Id);
+        applied.Changeset.Steps.Should().ContainSingle().Which.Included.Should().BeTrue();
+
+        var previewAfterApply = await h.Coordinator.PreviewAsync(
+            review.Changeset.ChangesetId,
+            new AssistantChangesetPreviewRequest(review.Changeset.ActionToken, [stepIndex]),
+            default);
+
+        previewAfterApply.Success.Should().BeFalse();
+        previewAfterApply.ErrorCode.Should().Be(AssistantErrorCodes.ChangesetNotReviewable);
+        previewAfterApply.Changeset!.Status.Should().Be("applied");
+        previewAfterApply.Changeset.Diff.TopicKindAssignments.Should().ContainSingle(a => a.TopicId == dewey.Id);
+        previewAfterApply.Changeset.Steps.Should().ContainSingle().Which.Included.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task An_apply_overlapping_an_in_flight_preview_is_rejected_until_the_preview_finishes()
+    {
+        var previewEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var allowPreviewFinish = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        using var h = CreateHarness(wrapChangesets: inner => new OverlappingChangesetService(
+            inner,
+            onPreviewAsync: async () =>
+            {
+                previewEntered.TrySetResult();
+                await allowPreviewFinish.Task;
+            }));
+
+        var dewey = await SeedTopicAsync(h, "Dewey");
+        var montessori = await SeedTopicAsync(h, "Montessori");
+        var draft = new AssistantChangesetDraft(h.Library, h.Library);
+        (await StageAsync(h, draft, [dewey, montessori], "Idea")).Success.Should().BeTrue();
+        var review = await h.Coordinator.FinishTurnAsync("c", "t-race-2", draft, false, false, default);
+        review.AwaitingReview.Should().BeTrue();
+        var deweyStep = review.Changeset!.Steps.Single(s => s.TopicKind?.TopicId == dewey.Id).Index;
+
+        var previewTask = h.Coordinator.PreviewAsync(
+            review.Changeset.ChangesetId,
+            new AssistantChangesetPreviewRequest(review.Changeset.ActionToken, [deweyStep]),
+            default);
+
+        AssistantChangesetActionResponse applyDuringPreview;
+        try
+        {
+            await previewEntered.Task;
+
+            applyDuringPreview = await h.Coordinator.ApplyAsync(
+                review.Changeset.ChangesetId,
+                new AssistantChangesetApplyRequest(review.Changeset.ActionToken, [], review.Changeset.DiffHash),
+                default);
+        }
+        finally
+        {
+            allowPreviewFinish.TrySetResult();
+        }
+
+        var preview = await previewTask;
+
+        applyDuringPreview.Success.Should().BeFalse();
+        applyDuringPreview.ErrorCode.Should().Be(AssistantErrorCodes.ChangesetBusy);
+
+        preview.Success.Should().BeTrue(preview.ErrorMessage);
+        preview.Changeset!.Steps.Single(s => s.TopicKind?.TopicId == dewey.Id).Included.Should().BeFalse();
+        preview.Changeset.Steps.Single(s => s.TopicKind?.TopicId == montessori.Id).Included.Should().BeTrue();
+    }
+
     // ------------------------------------------------------------------
     // Harness
     // ------------------------------------------------------------------
@@ -617,7 +879,9 @@ public sealed class AssistantTopicKindReaderProtectionTests : IClassFixture<Sqli
         return await db.Topics.AsNoTracking().SingleAsync(topic => topic.Id == topicId);
     }
 
-    private Harness CreateHarness(int autoApplyTopicKinds = 0)
+    private Harness CreateHarness(
+        int autoApplyTopicKinds = 0,
+        Func<ILibraryChangesetService, ILibraryChangesetService>? wrapChangesets = null)
     {
         var options = new DbContextOptionsBuilder<NostosDbContext>()
             .UseSqlite($"Data Source={_fixture.CreateDatabasePath()}")
@@ -640,7 +904,7 @@ public sealed class AssistantTopicKindReaderProtectionTests : IClassFixture<Sqli
         // when the preview and the apply happen.
         var coordinator = new AssistantChangesetCoordinator(
             new AssistantChangesetStore(),
-            library,
+            wrapChangesets is not null ? wrapChangesets(library) : library,
             new AssistantOptions { AutoApplyTopicKinds = autoApplyTopicKinds });
 
         return new Harness(db, factory, library, registry, coordinator);
@@ -681,5 +945,30 @@ public sealed class AssistantTopicKindReaderProtectionTests : IClassFixture<Sqli
     private sealed class NoopHttpClientFactory : IHttpClientFactory
     {
         public HttpClient CreateClient(string name) => new();
+    }
+
+    private sealed class OverlappingChangesetService(
+        ILibraryChangesetService inner,
+        Action? onPreview = null,
+        Func<Task>? onPreviewAsync = null,
+        Func<Task>? onApply = null) : ILibraryChangesetService
+    {
+        public async Task<LibraryChangesetResult> PreviewAsync(IReadOnlyList<LibraryChangeOp> ops, CancellationToken ct = default)
+        {
+            onPreview?.Invoke();
+            if (onPreviewAsync is not null)
+                await onPreviewAsync();
+            return await inner.PreviewAsync(ops, ct);
+        }
+
+        public async Task<LibraryChangesetResult> ApplyAsync(IReadOnlyList<LibraryChangeOp> ops, string? expectedDiffHash, CancellationToken ct = default)
+        {
+            if (onApply is not null)
+                await onApply();
+            return await inner.ApplyAsync(ops, expectedDiffHash, ct);
+        }
+
+        public Task<LibraryRevertResult> RevertAsync(LibraryUndoSnapshot undo, CancellationToken ct = default) =>
+            inner.RevertAsync(undo, ct);
     }
 }

@@ -35,7 +35,7 @@ public sealed class StoredAssistantChangeset
     /// read names, colours and "was …" notes from here and their tick state
     /// from the steps.
     /// </summary>
-    public required LibraryChangesetDiffDto Baseline { get; init; }
+    public required LibraryChangesetDiffDto Baseline { get; set; }
 
     public AssistantChangesetStatus Status { get; set; }
 
@@ -77,7 +77,7 @@ public sealed class StoredAssistantChangeset
 
     public bool TurnIncomplete { get; init; }
 
-    /// <summary>Set while an apply or undo for this changeset is running.</summary>
+    /// <summary>Set while an apply, preview or undo for this changeset is running.</summary>
     public bool Busy { get; set; }
 
     public IReadOnlyList<LibraryChangeOp> IncludedOps =>
@@ -86,6 +86,72 @@ public sealed class StoredAssistantChangeset
                 && !SkippedReasons.ContainsKey(index))
             .Select(s => s.Op)
             .ToList();
+
+    internal void SyncBaselineFromDiff()
+    {
+        if (Diff.TopicKinds.Count == 0 && Diff.TopicKindAssignments.Count == 0)
+            return;
+
+        var diffCreatedKindsByName = Diff.TopicKinds
+            .Where(kind => kind.Kind == "created")
+            .ToDictionary(kind => kind.Name, StringComparer.Ordinal);
+        var diffKindsById = Diff.TopicKinds
+            .ToDictionary(kind => kind.Id);
+
+        var updatedKinds = Baseline.TopicKinds
+            .Select(kind =>
+            {
+                if (kind.Kind == "created"
+                    && diffCreatedKindsByName.TryGetValue(kind.Name, out var created))
+                {
+                    return kind with { ColorKey = created.ColorKey };
+                }
+
+                if (diffKindsById.TryGetValue(kind.Id, out var existing))
+                {
+                    return kind with { Name = existing.Name, ColorKey = existing.ColorKey };
+                }
+
+                return kind;
+            })
+            .ToList();
+
+        var colorByBaselineKindId = updatedKinds.ToDictionary(kind => kind.Id, kind => kind.ColorKey);
+        var diffAssignmentsByTopic = Diff.TopicKindAssignments
+            .ToDictionary(assignment => assignment.TopicId);
+
+        var updatedAssignments = Baseline.TopicKindAssignments
+            .Select(assignment =>
+            {
+                if (diffAssignmentsByTopic.TryGetValue(assignment.TopicId, out var live))
+                {
+                    return assignment with
+                    {
+                        TopicName = live.TopicName,
+                        KindName = live.KindName,
+                        PreviousKindName = live.PreviousKindName,
+                        Source = live.Source,
+                        PreviousSource = live.PreviousSource,
+                        KindColorKey = live.KindColorKey,
+                    };
+                }
+
+                if (assignment.KindId is { } kindId
+                    && colorByBaselineKindId.TryGetValue(kindId, out var colorKey))
+                {
+                    return assignment with { KindColorKey = colorKey };
+                }
+
+                return assignment;
+            })
+            .ToList();
+
+        Baseline = Baseline with
+        {
+            TopicKinds = updatedKinds,
+            TopicKindAssignments = updatedAssignments,
+        };
+    }
 
     public AssistantChangesetDto ToDto() => new(
         ChangesetId,
@@ -110,7 +176,8 @@ public sealed class StoredAssistantChangeset
         Status == AssistantChangesetStatus.Applied && Undo is not null);
 
     /// <summary>
-    /// One step's topic-kind effect, read from the baseline diff so a step the
+    /// One step's topic-kind effect, preferring the latest diff's colour and
+    /// labels when present and falling back to the baseline diff so a step the
     /// reader has left out keeps its name, colour and "was …" note on the card.
     /// Null for a step that does not touch topic kinds.
     /// </summary>
@@ -120,12 +187,14 @@ public sealed class StoredAssistantChangeset
         {
             case CreateTopicKindOp create:
             {
-                var created = Baseline.TopicKinds.FirstOrDefault(kind =>
+                var current = Diff.TopicKinds.FirstOrDefault(kind =>
+                    kind.Kind == "created" && string.Equals(kind.Name, create.Name, StringComparison.Ordinal));
+                var baseline = Baseline.TopicKinds.FirstOrDefault(kind =>
                     kind.Kind == "created" && string.Equals(kind.Name, create.Name, StringComparison.Ordinal));
                 return new AssistantStepTopicKindDto(
-                    KindKey: created?.Id.ToString() ?? create.Ref,
+                    KindKey: baseline?.Id.ToString() ?? current?.Id.ToString() ?? create.Ref,
                     KindName: create.Name,
-                    ColorKey: created?.ColorKey ?? create.ColorKey,
+                    ColorKey: current?.ColorKey ?? baseline?.ColorKey ?? create.ColorKey,
                     CreatesKind: true,
                     IsNewKind: true,
                     TopicId: null,
@@ -138,21 +207,24 @@ public sealed class StoredAssistantChangeset
                     return null;
 
                 var topicId = setKind.TopicIds[0];
-                var assignment = Baseline.TopicKindAssignments
+                var current = Diff.TopicKindAssignments
                     .FirstOrDefault(candidate => candidate.TopicId == topicId);
+                var assignment = Baseline.TopicKindAssignments
+                    .FirstOrDefault(candidate => candidate.TopicId == topicId)
+                    ?? current;
                 if (assignment is null)
                     return null;
 
                 return new AssistantStepTopicKindDto(
                     KindKey: assignment.KindId?.ToString() ?? "none",
-                    KindName: assignment.KindName ?? "No kind",
-                    ColorKey: assignment.KindColorKey,
+                    KindName: current?.KindName ?? assignment.KindName ?? "No kind",
+                    ColorKey: current?.KindColorKey ?? assignment.KindColorKey,
                     CreatesKind: false,
-                    IsNewKind: assignment.KindId is { } kindId
-                        && Baseline.TopicKinds.Any(kind => kind.Id == kindId),
+                    IsNewKind: (assignment.KindId is { } kindId && Baseline.TopicKinds.Any(kind => kind.Id == kindId))
+                        || (current?.KindId is { } currentKindId && Diff.TopicKinds.Any(kind => kind.Id == currentKindId)),
                     TopicId: assignment.TopicId,
-                    TopicName: assignment.TopicName,
-                    PreviousKindName: assignment.PreviousKindName);
+                    TopicName: current?.TopicName ?? assignment.TopicName,
+                    PreviousKindName: current is not null ? current.PreviousKindName : assignment.PreviousKindName);
             }
             default:
                 return null;
@@ -328,15 +400,29 @@ public sealed class AssistantChangesetStore(TimeProvider? time = null)
     }
 
     /// <summary>
-    /// Claims a changeset for one apply or undo. Two clicks, two tabs or a retry
-    /// racing the first request cannot both run it.
+    /// Claims a changeset for one preview, apply, discard or undo. Two clicks,
+    /// two tabs or a retry racing the first request cannot both run it.
     /// </summary>
-    public bool TryBegin(StoredAssistantChangeset changeset, AssistantChangesetStatus expected)
+    public bool TryBegin(StoredAssistantChangeset changeset, AssistantChangesetStatus expected) =>
+        TryBegin(changeset, expected, out _);
+
+    public bool TryBegin(StoredAssistantChangeset changeset, AssistantChangesetStatus expected, out bool wasBusy)
     {
         lock (_gate)
         {
-            if (changeset.Busy || changeset.Status != expected)
+            if (changeset.Busy)
+            {
+                wasBusy = true;
                 return false;
+            }
+
+            if (changeset.Status != expected)
+            {
+                wasBusy = false;
+                return false;
+            }
+
+            wasBusy = false;
             changeset.Busy = true;
             return true;
         }
@@ -358,6 +444,12 @@ public sealed class AssistantChangesetStore(TimeProvider? time = null)
     {
         lock (_gate)
             update(changeset);
+    }
+
+    public AssistantChangesetDto Snapshot(StoredAssistantChangeset changeset)
+    {
+        lock (_gate)
+            return changeset.ToDto();
     }
 
     private void RemoveExpired()

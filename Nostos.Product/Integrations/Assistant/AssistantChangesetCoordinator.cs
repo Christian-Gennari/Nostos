@@ -44,7 +44,7 @@ public sealed class AssistantChangesetCoordinator(
         CancellationToken ct)
     {
         if (store.FindAppliedForTurn(_owner.Key, conversationKey, turnId) is { } earlier)
-            return new AssistantChangesetOutcome(earlier.ToDto(), null);
+            return new AssistantChangesetOutcome(store.Snapshot(earlier), null);
 
         if (draft.IsEmpty || draft.Diff is not { } diff || diff.IsEmpty || draft.DiffHash is not { } hash)
             return AssistantChangesetOutcome.None;
@@ -55,7 +55,7 @@ public sealed class AssistantChangesetCoordinator(
             var review = store.Add(_owner.Key, conversationKey, turnId, draft.Steps, diff, hash,
                 AssistantChangesetStatus.Review, decision.Reasons, undo: null,
                 readUntrustedContent, turnIncomplete);
-            return new AssistantChangesetOutcome(review.ToDto(), null);
+            return new AssistantChangesetOutcome(store.Snapshot(review), null);
         }
 
         // The write itself must not be abandoned half way by a client hang-up.
@@ -64,7 +64,7 @@ public sealed class AssistantChangesetCoordinator(
         {
             var stored = store.Add(_owner.Key, conversationKey, turnId, draft.Steps, applied.Diff!, applied.DiffHash!,
                 AssistantChangesetStatus.Applied, [], applied.Undo);
-            return new AssistantChangesetOutcome(stored.ToDto(), null);
+            return new AssistantChangesetOutcome(store.Snapshot(stored), null);
         }
 
         if (applied.ErrorCode == LibraryChangesetErrorCodes.DiffChanged && applied.Diff is { IsEmpty: false })
@@ -85,8 +85,9 @@ public sealed class AssistantChangesetCoordinator(
                 c.Diff = shown.Diff!;
                 c.DiffHash = shown.DiffHash!;
                 c.ReviewReasons = reasons;
+                c.SyncBaselineFromDiff();
             });
-            return new AssistantChangesetOutcome(review.ToDto(), null);
+            return new AssistantChangesetOutcome(store.Snapshot(review), null);
         }
 
         return new AssistantChangesetOutcome(null, new AssistantTurnErrorDto(
@@ -101,17 +102,34 @@ public sealed class AssistantChangesetCoordinator(
     {
         if (Find(changesetId, request.ActionToken, out var changeset) is { } refused)
             return refused;
-        if (changeset!.Status != AssistantChangesetStatus.Review || changeset.Busy)
-            return NotReviewable(changeset);
+        if (!store.TryBegin(changeset!, AssistantChangesetStatus.Review, out var wasBusy))
+        {
+            return wasBusy
+                ? Fail(AssistantErrorCodes.ChangesetBusy, "These changes are already being updated.", changeset)
+                : NotReviewable(changeset!);
+        }
 
-        var refresh = await RefreshAsync(changeset, UserExcluded(changeset, request.Excluded), ct);
+        ReviewRefresh refresh;
+        try
+        {
+            refresh = await RefreshAsync(changeset!, UserExcluded(changeset!, request.Excluded), ct);
+        }
+        catch
+        {
+            store.End(changeset!, _ => { });
+            throw;
+        }
+
         if (!refresh.Result.Success)
+        {
+            store.End(changeset!, _ => { });
             return Fail(refresh.Result.ErrorCode ?? "changeset_failed", refresh.Result.ErrorMessage, changeset);
+        }
 
         // The reasons are judged on what the remaining steps do now. A kind the
         // preview no longer creates must not still say it creates it.
-        var reasons = ReasonsFor(changeset, refresh.Result.Diff!);
-        store.Update(changeset, c =>
+        var reasons = ReasonsFor(changeset!, refresh.Result.Diff!);
+        store.End(changeset!, c =>
         {
             c.Excluded = refresh.Excluded;
             c.Kept = refresh.Kept;
@@ -119,8 +137,9 @@ public sealed class AssistantChangesetCoordinator(
             c.Diff = refresh.Result.Diff!;
             c.DiffHash = refresh.Result.DiffHash!;
             c.ReviewReasons = reasons;
+            c.SyncBaselineFromDiff();
         });
-        return Ok(changeset);
+        return Ok(changeset!);
     }
 
     public async Task<AssistantChangesetActionResponse> ApplyAsync(
@@ -135,8 +154,8 @@ public sealed class AssistantChangesetCoordinator(
         if (changeset!.Status == AssistantChangesetStatus.Applied)
             return Ok(changeset);
 
-        if (!store.TryBegin(changeset, AssistantChangesetStatus.Review))
-            return changeset.Busy
+        if (!store.TryBegin(changeset, AssistantChangesetStatus.Review, out var wasBusy))
+            return wasBusy
                 ? Fail(AssistantErrorCodes.ChangesetBusy, "These changes are already being applied.", changeset)
                 : NotReviewable(changeset);
 
@@ -183,7 +202,17 @@ public sealed class AssistantChangesetCoordinator(
             // what the remaining steps would do now, and keep the steps the
             // library made useless out of it: a second Apply must not run them
             // again, and must not create a kind no topic still needs.
-            var refresh = await RefreshAsync(changeset, userExcluded, ct);
+            ReviewRefresh refresh;
+            try
+            {
+                refresh = await RefreshAsync(changeset, userExcluded, ct);
+            }
+            catch
+            {
+                store.End(changeset, _ => { });
+                throw;
+            }
+
             var shown = refresh.Result.Success ? refresh.Result : result;
             var reasons = refresh.Result.Success
                 ? new[] { LibraryMovedReason }.Concat(ReasonsFor(changeset, shown.Diff!)).ToList()
@@ -196,6 +225,7 @@ public sealed class AssistantChangesetCoordinator(
                 c.Diff = shown.Diff!;
                 c.DiffHash = shown.DiffHash!;
                 c.ReviewReasons = reasons;
+                c.SyncBaselineFromDiff();
             });
             return Fail(result.ErrorCode, result.ErrorMessage, changeset);
         }
@@ -210,8 +240,10 @@ public sealed class AssistantChangesetCoordinator(
             return refused;
         if (changeset!.Status == AssistantChangesetStatus.Discarded)
             return Ok(changeset);
-        if (!store.TryBegin(changeset, AssistantChangesetStatus.Review))
-            return NotReviewable(changeset);
+        if (!store.TryBegin(changeset, AssistantChangesetStatus.Review, out var wasBusy))
+            return wasBusy
+                ? Fail(AssistantErrorCodes.ChangesetBusy, "These changes are already being updated.", changeset)
+                : NotReviewable(changeset);
 
         store.End(changeset, c => c.Status = AssistantChangesetStatus.Discarded);
         return Ok(changeset);
@@ -226,10 +258,17 @@ public sealed class AssistantChangesetCoordinator(
             return refused;
         if (changeset!.Status == AssistantChangesetStatus.Undone)
             return Ok(changeset);
-        if (changeset.Undo is null || !store.TryBegin(changeset, AssistantChangesetStatus.Applied))
+        if (changeset.Undo is null)
         {
             return Fail(AssistantErrorCodes.ChangesetNotUndoable,
-                changeset.Busy ? "These changes are already being undone." : "These changes can no longer be undone here.",
+                "These changes can no longer be undone here.",
+                changeset);
+        }
+
+        if (!store.TryBegin(changeset, AssistantChangesetStatus.Applied, out var wasBusy))
+        {
+            return Fail(AssistantErrorCodes.ChangesetNotUndoable,
+                wasBusy ? "These changes are already being undone." : "These changes can no longer be undone here.",
                 changeset);
         }
 
@@ -249,7 +288,7 @@ public sealed class AssistantChangesetCoordinator(
             c.Status = AssistantChangesetStatus.Undone;
             c.Undo = null;
         });
-        return new AssistantChangesetActionResponse(true, null, null, changeset.ToDto(), reverted.Conflicts);
+        return new AssistantChangesetActionResponse(true, null, null, store.Snapshot(changeset), reverted.Conflicts);
     }
 
     // ------------------------------------------------------------------
@@ -491,10 +530,10 @@ public sealed class AssistantChangesetCoordinator(
             .ToList();
     }
 
-    private static AssistantChangesetActionResponse Ok(StoredAssistantChangeset changeset) =>
-        new(true, null, null, changeset.ToDto(), []);
+    private AssistantChangesetActionResponse Ok(StoredAssistantChangeset changeset) =>
+        new(true, null, null, store.Snapshot(changeset), []);
 
-    private static AssistantChangesetActionResponse NotReviewable(StoredAssistantChangeset changeset) =>
+    private AssistantChangesetActionResponse NotReviewable(StoredAssistantChangeset changeset) =>
         Fail(AssistantErrorCodes.ChangesetNotReviewable, changeset.Status switch
         {
             AssistantChangesetStatus.Discarded => "These changes were set aside. Ask again to prepare them afresh.",
@@ -503,9 +542,9 @@ public sealed class AssistantChangesetCoordinator(
             _ => "These changes are being applied.",
         }, changeset);
 
-    private static AssistantChangesetActionResponse Fail(
+    private AssistantChangesetActionResponse Fail(
         string code,
         string? message,
         StoredAssistantChangeset? changeset) =>
-        new(false, code, message ?? "The changes could not be made.", changeset?.ToDto(), []);
+        new(false, code, message ?? "The changes could not be made.", changeset is null ? null : store.Snapshot(changeset), []);
 }

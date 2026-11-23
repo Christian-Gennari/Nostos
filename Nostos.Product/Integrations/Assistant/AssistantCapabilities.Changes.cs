@@ -411,6 +411,9 @@ public static partial class AssistantCapabilities
 
                 if (overwrite.Count == 0)
                 {
+                    if (kind is { Ref: { } kindRef })
+                        await draft.NoteTopicKindNamedAsync(kindRef, ct);
+
                     return AssistantToolResult.Ok(Element(new
                     {
                         status = "kept_reader_kinds",

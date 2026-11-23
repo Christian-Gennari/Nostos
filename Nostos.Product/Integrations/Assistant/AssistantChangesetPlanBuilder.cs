@@ -21,7 +21,8 @@ internal static class AssistantChangesetPlanBuilder
 
     public static CanonicalPlan Build(
         LibraryChangesetPreviewState state,
-        IReadOnlyList<LibraryChangeOp> rawOps)
+        IReadOnlyList<LibraryChangeOp> rawOps,
+        IReadOnlySet<string>? namedCreatedKindRefs = null)
     {
         var before = state.Before;
         var after = state.After;
@@ -54,7 +55,7 @@ internal static class AssistantChangesetPlanBuilder
                 out var moveStepByCollection,
                 out var deletedDescendantCounts))
         {
-            return FallbackToRaw(rawOps, before, after);
+            return FallbackToRaw(rawOps, before, after, state.CreatedRefs, namedCreatedKindRefs);
         }
 
         LibraryCollectionRef RefOf(Guid id) =>
@@ -117,7 +118,7 @@ internal static class AssistantChangesetPlanBuilder
                 ops.Add(update);
         }
 
-        ops.AddRange(BuildTopicKindOps(before, after, rawOps));
+        ops.AddRange(BuildTopicKindOps(before, after, rawOps, state.CreatedRefs, namedCreatedKindRefs));
 
         var dependsOn = ComputeDependencies(ops, before.Collections, moveStepByCollection);
         return new CanonicalPlan(ops, dependsOn, deletedDescendantCounts);
@@ -285,7 +286,9 @@ internal static class AssistantChangesetPlanBuilder
     private static CanonicalPlan FallbackToRaw(
         IReadOnlyList<LibraryChangeOp> rawOps,
         LibraryChangesetDiff.LibrarySnapshot before,
-        LibraryChangesetDiff.LibrarySnapshot after)
+        LibraryChangesetDiff.LibrarySnapshot after,
+        IReadOnlyDictionary<string, Guid>? createdRefs,
+        IReadOnlySet<string>? namedCreatedKindRefs)
     {
         // The collection sequence is the model's raw one because a name swap or
         // a parent cycle has no canonical order. Topic-kind operations have no
@@ -295,7 +298,7 @@ internal static class AssistantChangesetPlanBuilder
         var ops = rawOps
             .Where(op => op is not SetTopicKindOp and not CreateTopicKindOp)
             .ToList();
-        ops.AddRange(BuildTopicKindOps(before, after, rawOps));
+        ops.AddRange(BuildTopicKindOps(before, after, rawOps, createdRefs, namedCreatedKindRefs));
 
         var dependsOn = ComputeDependencies(ops, before.Collections, moveStepByCollection: null);
         var deletedDescendantCounts = new Dictionary<Guid, int>();
@@ -383,12 +386,37 @@ internal static class AssistantChangesetPlanBuilder
     internal static List<LibraryChangeOp> BuildTopicKindOps(
         LibraryChangesetDiff.LibrarySnapshot before,
         LibraryChangesetDiff.LibrarySnapshot after,
-        IReadOnlyList<LibraryChangeOp> rawOps)
+        IReadOnlyList<LibraryChangeOp> rawOps,
+        IReadOnlyDictionary<string, Guid>? createdRefs = null,
+        IReadOnlySet<string>? namedCreatedKindRefs = null)
     {
         var ops = new List<LibraryChangeOp>();
         var createdRefById = new Dictionary<Guid, string>();
         var usedRefs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var namedByRaw = NamedTopicIds(rawOps);
+
+        var rawCreateById = new Dictionary<Guid, CreateTopicKindOp>();
+        var rawCreateByName = new Dictionary<string, CreateTopicKindOp>(StringComparer.OrdinalIgnoreCase);
+        foreach (var rawCreate in rawOps.OfType<CreateTopicKindOp>())
+        {
+            rawCreateByName.TryAdd(rawCreate.Name, rawCreate);
+            if (createdRefs is not null && createdRefs.TryGetValue(rawCreate.Ref, out var createdId))
+                rawCreateById[createdId] = rawCreate;
+        }
+
+        var allNamedKindRefs = namedCreatedKindRefs is not null
+            ? new HashSet<string>(namedCreatedKindRefs, StringComparer.Ordinal)
+            : new HashSet<string>(StringComparer.Ordinal);
+        foreach (var setOp in rawOps.OfType<SetTopicKindOp>())
+        {
+            if (setOp.Kind?.Ref is { } kindRef)
+                allNamedKindRefs.Add(kindRef);
+        }
+
+        var usedKindIds = after.TopicKindAssignments.Values
+            .Where(assignment => assignment.KindId is not null)
+            .Select(assignment => assignment.KindId!.Value)
+            .ToHashSet();
 
         var createdKinds = after.TopicKinds
             .Where(pair => !before.TopicKinds.ContainsKey(pair.Key))
@@ -399,9 +427,19 @@ internal static class AssistantChangesetPlanBuilder
             .ToList();
         foreach (var (id, kind) in createdKinds)
         {
+            if (!rawCreateById.TryGetValue(id, out var rawCreate))
+                rawCreateByName.TryGetValue(kind.Name, out rawCreate);
+
+            var wasNamed = rawCreate is not null && allNamedKindRefs.Contains(rawCreate.Ref);
+            if (!usedKindIds.Contains(id) && wasNamed)
+                continue;
+
             var reference = AllocateRef($"kind:{kind.Name}", usedRefs);
             createdRefById[id] = reference;
-            ops.Add(new CreateTopicKindOp(reference, kind.Name, kind.ColorKey));
+            // Keep the raw op's ColorKey (null when the model omitted it) so
+            // apply picks a free palette colour instead of failing if the colour
+            // chosen during staging is taken while the review waits.
+            ops.Add(new CreateTopicKindOp(reference, kind.Name, rawCreate?.ColorKey));
         }
 
         var assignments = before.TopicKindAssignments.Keys

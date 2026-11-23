@@ -24,6 +24,7 @@ public sealed class AssistantChangesetDraft(ILibraryChangesetService changesets,
     private readonly List<AssistantStagedStep> _steps = [];
     private readonly Dictionary<string, LibraryCollectionRef> _liveNamedCollections = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, TopicKindRef> _liveNamedKinds = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _namedCreatedKindRefs = new(StringComparer.Ordinal);
     private readonly Dictionary<Guid, BookDto?> _books = [];
     private Dictionary<Guid, CollectionDto>? _collections;
     private LibraryChangesetPreviewState? _lastPreviewState;
@@ -181,7 +182,37 @@ public sealed class AssistantChangesetDraft(ILibraryChangesetService changesets,
                 ComputeSimpleDependsOn(rawCandidate), new Dictionary<Guid, int>(), rawPreview, ct);
         }
 
-        var plan = AssistantChangesetPlanBuilder.Build(previewState, rawCandidate);
+        return await CommitFromPreviewAsync(rawCandidate, nextRefId, previewState, rawPreview, ct);
+    }
+
+    /// <summary>
+    /// Records a created-kind ref that a <c>topics_set_kind</c> call named, even
+    /// when every topic in the batch was kept by reader protection and nothing
+    /// new was staged. If that kind was only created for those kept topics,
+    /// replanning drops its empty <see cref="CreateTopicKindOp"/> while keeping
+    /// the ref alive in case a later call in the same turn assigns other topics
+    /// to it.
+    /// </summary>
+    public async Task NoteTopicKindNamedAsync(string kindRef, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(kindRef) || !_namedCreatedKindRefs.Add(kindRef))
+            return;
+
+        if (_lastPreviewState is null)
+            return;
+
+        var rawCandidate = new List<LibraryChangeOp>(_rawOps);
+        await CommitFromPreviewAsync(rawCandidate, _refCounter, _lastPreviewState, rawPreview: null, ct);
+    }
+
+    private async Task<AssistantToolResult> CommitFromPreviewAsync(
+        List<LibraryChangeOp> rawCandidate,
+        int nextRefId,
+        LibraryChangesetPreviewState previewState,
+        LibraryChangesetResult? rawPreview,
+        CancellationToken ct)
+    {
+        var plan = AssistantChangesetPlanBuilder.Build(previewState, rawCandidate, _namedCreatedKindRefs);
         if (plan.Ops.Count == 0)
         {
             CommitState(rawCandidate, nextRefId, previewState);
@@ -203,7 +234,11 @@ public sealed class AssistantChangesetDraft(ILibraryChangesetService changesets,
                 .Where(op => op is not SetTopicKindOp and not CreateTopicKindOp)
                 .ToList();
             fallbackOps.AddRange(AssistantChangesetPlanBuilder.BuildTopicKindOps(
-                previewState.Before, previewState.After, rawCandidate));
+                previewState.Before,
+                previewState.After,
+                rawCandidate,
+                previewState.CreatedRefs,
+                _namedCreatedKindRefs));
 
             // The raw sequence is a last resort for a genuinely irregular plan
             // (a staged name swap, say), not a scaling path: it is a second full
@@ -220,7 +255,7 @@ public sealed class AssistantChangesetDraft(ILibraryChangesetService changesets,
 
             // The fallback drops and rebuilds the kind operations, so the raw
             // preview is only the fallback's own preview when nothing was rebuilt.
-            var fallbackPreview = fallbackOps.SequenceEqual(rawCandidate)
+            var fallbackPreview = rawPreview is not null && fallbackOps.SequenceEqual(rawCandidate)
                 ? rawPreview
                 : await changesets.PreviewAsync(fallbackOps, ct);
             if (!fallbackPreview.Success)
@@ -279,6 +314,11 @@ public sealed class AssistantChangesetDraft(ILibraryChangesetService changesets,
         _rawOps.AddRange(rawCandidate);
         _refCounter = nextRefId;
         _lastPreviewState = previewState;
+        foreach (var setOp in _rawOps.OfType<SetTopicKindOp>())
+        {
+            if (setOp.Kind?.Ref is { } kindRef)
+                _namedCreatedKindRefs.Add(kindRef);
+        }
 
         _liveNamedCollections.Clear();
         _liveNamedKinds.Clear();
