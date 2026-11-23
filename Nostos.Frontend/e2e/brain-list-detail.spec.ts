@@ -115,13 +115,14 @@ test.describe('Brain list and detail on a wide screen (#1531)', () => {
     await expect(selected).toContainText(quotes.get(first) ?? '');
   });
 
-  test('a phone keeps the list and the note’s own page, and opens ?note= there', async ({ page }) => {
+  test('a phone lists rows without a reader pane, and opens ?note= on the note’s own page', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(`${baseUrl}/brain?q=${encodeURIComponent(query)}`, { waitUntil: 'domcontentloaded' });
 
-    await expect(page.getByRole('listbox')).toHaveCount(0);
+    // Since #1808 a phone lists the same plain rows as the wide Brain, but
+    // there is no reader pane beside them: a row opens the note's own page.
     await expect(page.getByRole('region', { name: 'Selected note' })).toHaveCount(0);
-    await expect(page.locator('app-note-item')).toHaveCount(3);
+    await expect(page.locator('[data-note-row]')).toHaveCount(3);
 
     const [first] = [...quotes.keys()];
     await page.goto(`${baseUrl}/brain?note=${first}`, { waitUntil: 'domcontentloaded' });
