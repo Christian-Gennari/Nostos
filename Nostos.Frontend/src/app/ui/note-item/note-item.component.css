@@ -1,6 +1,7 @@
 /* One note in a reading column. No box: notes are separated by a hairline, the
-   quote is the hero (serif, the pen's rule), the reader's own words follow in
-   the sans, then the topics, then where the note comes from. */
+   quote is the hero (serif, the pen's rule) with its citation under it, the
+   reader's own words follow in the sans, then a quiet line of topics, then the
+   date. */
 :host {
   position: relative;
   display: flex;
@@ -104,7 +105,7 @@
 }
 
 /* A long note's quote is cut at five lines. Fading the last clamped line says
-   there is more of it, and gives the "Show all" control something to belong to.
+   there is more of it, and gives the "More" control something to belong to.
    A mask, so it does not have to know the surface behind the card. */
 .note-item-quote.is-faded {
   mask-image: linear-gradient(to bottom, black 76%, transparent 100%);
@@ -118,11 +119,74 @@
   -webkit-line-clamp: 5;
 }
 
+/* Clamped text is the control that unfolds the note (issue #1799): the pointer
+   says so, and the mask fades the last line into the "More" link. */
+.note-item-quote.is-faded,
+.note-item-thought.is-faded {
+  cursor: pointer;
+}
+
 /* The same fade for the reader's own words, but only when they are the
    paragraph that is actually cut (see thoughtClipped). */
 .note-item-thought.is-faded {
   mask-image: linear-gradient(to bottom, black 76%, transparent 100%);
   -webkit-mask-image: linear-gradient(to bottom, black 76%, transparent 100%);
+}
+
+/* --- Citation --------------------------------------------------------------
+   The note's source sits under the quote it belongs to (issue #1798), and is
+   the way into the book at that place. Small and muted, so it names the source
+   without competing with the note. */
+.note-item-citation-line {
+  display: flex;
+  min-width: 0;
+}
+
+.note-item-citation {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.28rem;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.note-item-citation-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-item-citation-dash {
+  flex: none;
+  color: var(--color-text-light);
+}
+
+.note-item-citation:hover .note-item-citation-text,
+.note-item-citation:hover .note-item-citation-dash {
+  color: var(--color-text-main);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.note-item-citation:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.note-item-format {
+  display: inline-flex;
+  align-self: center;
+  color: var(--color-text-light);
 }
 
 /* --- The reader's own words ------------------------------------------------ */
@@ -156,12 +220,16 @@
 
 .note-item-expand {
   align-self: flex-start;
+  /* It belongs to the last line of the clamped text, not to a row of its own. */
+  margin-top: -0.35rem;
 }
 
 /* --- Topics ---------------------------------------------------------------- */
-/* The topics are the shared pill row (ui/topic-row). */
+/* A quiet line of linked names, turned into the shared pill row (ui/topic-row)
+   by a tap. */
 
 /* --- Where it comes from --------------------------------------------------- */
+/* The date and the writings that cite the note: the smallest ink on the card. */
 .note-item-meta {
   display: flex;
   flex-wrap: wrap;
@@ -171,21 +239,9 @@
   font-size: var(--text-xs);
 }
 
-.note-item-format {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-}
-
-.note-item-book {
-  color: var(--color-text-muted);
-  font-weight: var(--fw-medium);
-}
-
 /* "Cited in N writings" (issue #1162): reads as the meta text it sits in,
    and opens the writings that cite the note. */
-.note-item-cited,
-.note-item-time {
+.note-item-cited {
   padding: 0;
   border: 0;
   background: none;
@@ -194,49 +250,15 @@
   cursor: pointer;
 }
 
-/* An audiobook note's moment (issue #906): read like the meta text, and a
-   way back to that moment in the open book. */
-.note-item-time {
-  color: var(--color-text-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.note-item-cited:hover,
-.note-item-time:hover {
+.note-item-cited:hover {
   color: var(--color-text-main);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 
-.note-item-cited:focus-visible,
-.note-item-time:focus-visible,
-button.note-item-source:focus-visible {
+.note-item-cited:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
-}
-
-/* "Show in book" inside the reader: the link's look on a button. */
-button.note-item-source {
-  padding: 0;
-  border: 0;
-  background: none;
-  font: inherit;
-  cursor: pointer;
-}
-
-.note-item-source {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  margin-left: 0.35rem;
-  color: var(--color-text-main);
-  font-weight: var(--fw-medium);
-  text-decoration: none;
-}
-
-.note-item-source:hover {
-  text-decoration: underline;
-  text-underline-offset: 3px;
 }
 
 /* --- More ------------------------------------------------------------------ */
@@ -281,17 +303,15 @@ button.note-item-source {
 }
 
 /* Touch: every control answers a 44px tap. The small ones (the add pill, the
-   source link; the chips do it themselves) keep their look and grow an
-   invisible hit area instead; the gaps between chips are wide enough that no
-   two areas meet. */
+   citation; the chips do it themselves) keep their look and grow an invisible
+   hit area instead; the gaps between them are wide enough that no two areas
+   meet. */
 @media (pointer: coarse), (hover: none) {
-  .note-item-source,
-  .note-item-time {
+  .note-item-citation {
     position: relative;
   }
 
-  .note-item-source::after,
-  .note-item-time::after {
+  .note-item-citation::after {
     content: '';
     position: absolute;
     inset-block: calc(50% - 22px);

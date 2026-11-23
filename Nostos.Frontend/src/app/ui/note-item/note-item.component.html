@@ -91,7 +91,23 @@
     [lines]="isPassage() ? 4 : long() && !expanded() ? 5 : null"
     [class.is-opening]="isPassage()"
     [class.is-faded]="quoteClipped()"
+    (click)="onClampedTextClick($event)"
   >{{ quote() }}</blockquote>
+  }
+
+  @if (quote() && showMeta() && citation()) {
+  @if (inBook()) {
+  <button type="button" class="note-item-citation" data-testid="note-citation"
+    [attr.aria-label]="citationLabel()" [attr.title]="citationLabel()" (click)="jumpRequested.emit()">
+    <ng-container [ngTemplateOutlet]="citationBody" />
+  </button>
+  } @else {
+  <a class="note-item-citation" data-testid="note-citation"
+    [routerLink]="source().commands" [queryParams]="source().queryParams"
+    [attr.aria-label]="citationLabel()" [attr.title]="citationLabel()">
+    <ng-container [ngTemplateOutlet]="citationBody" />
+  </a>
+  }
   }
 
   @if (thought()) {
@@ -105,11 +121,27 @@
   ></div>
   }
 
+  @if (!quote() && showMeta() && citation()) {
+  <footer class="note-item-citation-line">
+    @if (inBook()) {
+    <button type="button" class="note-item-citation" data-testid="note-citation"
+      [attr.aria-label]="citationLabel()" [attr.title]="citationLabel()" (click)="jumpRequested.emit()">
+      <ng-container [ngTemplateOutlet]="citationBody" />
+    </button>
+    } @else {
+    <a class="note-item-citation" data-testid="note-citation"
+      [routerLink]="source().commands" [queryParams]="source().queryParams"
+      [attr.aria-label]="citationLabel()" [attr.title]="citationLabel()">
+      <ng-container [ngTemplateOutlet]="citationBody" />
+    </a>
+    }
+  </footer>
+  }
+
   @if (long()) {
-  <button appButton variant="secondary" size="sm" type="button" class="note-item-expand"
+  <button appButton variant="link" size="sm" type="button" class="note-item-expand"
     [attr.aria-expanded]="expanded()" (click)="expanded.set(!expanded())">
-    {{ expanded() ? 'Show less' : 'Show all' }}
-    <nostos-icon [name]="expanded() ? 'caret-up' : 'caret-down'" [size]="14" />
+    {{ expanded() ? 'Less' : 'More' }}
   </button>
   }
 
@@ -119,6 +151,7 @@
     [names]="topicNames()"
     [topics]="topics()"
     [topicMap]="lookup()"
+    [quiet]="true"
     [disabled]="busy()"
     [suggestions]="suggestions()"
     [suggestionState]="suggestionState()"
@@ -134,30 +167,7 @@
 
   @if (showMeta()) {
   <footer class="note-item-meta">
-    @if (audioTimeLabel(); as time) {
-    <button
-      type="button"
-      class="note-item-time"
-      data-testid="note-audio-time"
-      [attr.aria-label]="'Jump to ' + time"
-      title="Jump to this time"
-      (click)="jumpRequested.emit()"
-    >{{ time }}</button>
-    <span class="note-item-dot" aria-hidden="true">·</span>
-    }
-    @if (showBook()) {
-    <span class="note-item-book">{{ note().bookTitle || unknownBook }}</span>
-    @if (note().bookAuthor) { <span class="note-item-dot" aria-hidden="true">·</span><span>{{ note().bookAuthor }}</span> }
-    <span class="note-item-dot" aria-hidden="true">·</span>
-    }
     <time [attr.datetime]="note().createdAt">{{ note().createdAt | nostosDate }}</time>
-    @if (editionFormat(); as edition) {
-    <span class="note-item-dot" aria-hidden="true">·</span>
-    <span class="note-item-format" data-testid="note-edition-format">
-      <nostos-icon [concept]="edition.concept" [size]="12" aria-hidden="true" />{{ edition.format }}
-    </span>
-    }
-    @if (audioTimeLabel() === null && location(); as where) { <span class="note-item-dot" aria-hidden="true">·</span><span>{{ where }}</span> }
     @if (citedWritings(); as writings) {
     @if (writings.length) {
     <span class="note-item-dot" aria-hidden="true">·</span>
@@ -173,20 +183,19 @@
     </ng-template>
     }
     }
-    @if (inBook()) {
-    <button type="button" class="note-item-source" (click)="jumpRequested.emit()">
-      Show in book <nostos-icon name="arrow-right" [size]="12" />
-    </button>
-    } @else {
-    <a class="note-item-source" [routerLink]="source().commands" [queryParams]="source().queryParams">
-      {{ note().bookFormat === 'physical' ? 'Open book' : 'Open in book' }}
-      <nostos-icon name="arrow-right" [size]="12" />
-    </a>
-    }
   </footer>
   }
   }
 </article>
+
+<ng-template #citationBody>
+  <span class="note-item-citation-text"><span class="note-item-citation-dash" aria-hidden="true">—</span> {{ citationText() }}</span>
+  @if (editionFormat(); as edition) {
+  <span class="note-item-format" role="img" data-testid="note-edition-format"
+    [attr.aria-label]="edition.format" [attr.title]="edition.format"
+  ><nostos-icon [concept]="edition.concept" [size]="12" aria-hidden="true" /></span>
+  }
+</ng-template>
 
 @if (!editing() && !readOnly()) {
 <button

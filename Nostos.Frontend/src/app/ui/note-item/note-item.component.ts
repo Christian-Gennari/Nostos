@@ -14,6 +14,7 @@ import {
 } from '@angular/core';
 import { NostosDatePipe } from '../pipes/nostos-date.pipe';
 import { FormsModule } from '@angular/forms';
+import { NgTemplateOutlet } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 
 import { formatAudioTime, isPassage, passageSizeLabel, type NoteSearchHit } from '../../core/dtos/note.dtos';
@@ -57,7 +58,7 @@ export interface NoteItemEdit {
   baseUpdatedAt?: string;
 }
 
-/** Above this many characters a quote is cut to a few lines, with "Show all". */
+/** Above this many characters a quote is cut to a few lines, behind "More". */
 const LONG_QUOTE = 420;
 /** Above this many characters the note's own words are cut too. */
 const LONG_THOUGHT = 600;
@@ -84,6 +85,7 @@ export interface CitingWriting {
   imports: [
     NostosDatePipe,
     FormsModule,
+    NgTemplateOutlet,
     RouterLink,
     ...NOSTOS_MENU,
     NostosIconComponent,
@@ -131,14 +133,13 @@ export class NoteItemComponent {
   readonly showBook = input(true);
   /**
    * The note is shown inside its own open book (the reader's notes panel):
-   * "Open in book" turns into "Show in book" and asks for `jumpRequested`
-   * instead of opening the reader again.
+   * the citation's location asks for `jumpRequested` instead of opening the
+   * reader again.
    */
   readonly inBook = input(false);
   /**
    * The playback time an audiobook note was taken at, in seconds (issue #906).
-   * Shown at the start of the meta line; activating it asks for `jumpRequested`.
-   * Null shows nothing.
+   * Named in the citation, which goes back to that moment. Null shows nothing.
    */
   readonly audioTime = input<number | null>(null);
   /**
@@ -156,9 +157,9 @@ export class NoteItemComponent {
   /** False where the surface names the note's source itself: no meta line. */
   readonly showMeta = input(true);
   /**
-   * Names the edition the note was made in (its format glyph and label) beside
-   * the note's location. For a list that mixes the notes of several editions of
-   * one book; off by default, so a single-edition list stays as it was.
+   * Marks the edition the note was made in with its format glyph on the
+   * citation. For a list that mixes the notes of several editions of one book;
+   * off by default, so a single-edition list stays as it was.
    */
   readonly showFormat = input(false);
   /** Offer "More from this book" (not when the list is already that book). */
@@ -302,20 +303,77 @@ export class NoteItemComponent {
     return seconds === null ? null : formatAudioTime(seconds);
   });
 
+  /** Where the note sits, as the citation names it (issue #1798). The reader's
+   *  own audio time wins when it gave one: it is the edition on screen. */
+  private readonly citationLocation = computed(() => this.audioTimeLabel() ?? this.location());
+
+  /**
+   * The note's source as the citation under its quote shows it, in parts that
+   * are joined with commas: the author, the book, then where in it the note
+   * sits. Empty where there is nothing to cite.
+   *
+   * The book is hidden where a heading already names it, except when that
+   * would leave nothing to read: the citation is also the way into the book,
+   * so it falls back to the title rather than disappearing.
+   */
+  readonly citation = computed<readonly string[]>(() => {
+    const note = this.note();
+    const location = this.citationLocation();
+    if (this.inBook()) return location ? [location] : ['Show in book'];
+    const parts: string[] = [];
+    if (this.showBook()) {
+      const author = note.bookAuthor?.trim();
+      if (author) parts.push(author);
+      parts.push(note.bookTitle?.trim() || this.unknownBook);
+    } else if (!location) {
+      parts.push(note.bookTitle?.trim() || this.unknownBook);
+    }
+    if (location) parts.push(location);
+    return parts;
+  });
+
+  readonly citationText = computed(() => this.citation().join(', '));
+
+  /** What activating the citation does, in words a screen reader hears. */
+  readonly citationLabel = computed(() => {
+    const action = this.inBook() ? 'Show in book' : this.source().queryParams ? 'Open in book' : 'Open book';
+    const location = this.citationLocation();
+    const edition = this.editionFormat()?.format;
+    return `${action}${location ? ' at ' + location : ''}${edition ? ' (' + edition + ')' : ''}`;
+  });
+
   readPassage(): void {
     this.passageViewer.open(this.note().id, this.passageViewerOptions() ?? {});
   }
 
   /**
+   * A tap on the faded, clamped text opens the whole note (issue #1799). A tap
+   * inside it on a link belongs to the link; a click that finishes selecting
+   * text is not a tap on the card.
+   */
+  onClampedTextClick(event: MouseEvent): void {
+    if (!this.long() || this.expanded()) return;
+    const target = event.target as HTMLElement | null;
+    if (target?.closest('a, button, input, textarea, select, label')) return;
+    const selection = typeof window === 'undefined' ? null : window.getSelection();
+    if (selection && !selection.isCollapsed) return;
+    this.expanded.set(true);
+  }
+
+  /**
    * An inline `[[link]]` in the note's words opens in the app rather than with
    * a page load, at the address the link itself names, so a plain click and a
-   * modified click (new tab) go to the same place.
+   * modified click (new tab) go to the same place. Anywhere else is the tap
+   * that unfolds the note.
    */
   onThoughtClick(event: MouseEvent): void {
     const href = inlineTopicHref(event);
-    if (!href) return;
-    event.preventDefault();
-    void this.router.navigateByUrl(href);
+    if (href) {
+      event.preventDefault();
+      void this.router.navigateByUrl(href);
+      return;
+    }
+    this.onClampedTextClick(event);
   }
 
   startEdit(): void {
