@@ -230,3 +230,14 @@
   }
 }
 
+
+/* The meta line above the text already carries the date (#1808): the card's
+   own footer keeps only "Cited in …", and goes when there is nothing else. */
+:host ::ng-deep .reader-note-item .note-item-meta > time,
+:host ::ng-deep .reader-note-item .note-item-meta > time + .note-item-dot {
+  display: none;
+}
+
+:host ::ng-deep .reader-note-item .note-item-meta:not(:has(.note-item-cited)) {
+  display: none;
+}

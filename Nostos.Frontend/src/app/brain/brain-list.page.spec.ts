@@ -157,6 +157,22 @@ describe('BrainListPage', () => {
     expect(counts).toEqual(['· 2 notes', '· 1 note']);
   });
 
+  it('below the wide layout, moves focus with the arrows and opens the focused note with Enter (#1808)', () => {
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    const rows = Array.from(el().querySelectorAll<HTMLElement>('[data-note-row]'));
+    expect(rows.length).toBe(3);
+
+    rows[0].focus();
+    rows[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
+    fixture.detectChanges();
+
+    expect(document.activeElement).toBe(rows[1]);
+    expect(navigate).not.toHaveBeenCalled();
+
+    rows[1].dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    expect(navigate).toHaveBeenCalledWith(['/brain/notes', 'today-b']);
+  });
+
   describe('selecting in the wide list (#1662)', () => {
     let navigate: ReturnType<typeof vi.spyOn>;
 

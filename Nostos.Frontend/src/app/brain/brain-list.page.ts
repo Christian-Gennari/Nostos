@@ -554,7 +554,6 @@ export class BrainListPage {
    * or, while notes are being ticked, ticks the focused one.
    */
   onListKeydown(event: KeyboardEvent): void {
-    if (!this.wide()) return;
     const target = (event.target as HTMLElement | null)?.closest<HTMLElement>('[data-note-row]');
     // Only a note row is a listbox option. The paging status below the list
     // keeps its own keyboard behaviour.
@@ -576,13 +575,19 @@ export class BrainListPage {
       const row = rows[next];
       const id = row?.dataset['noteId'];
       if (!id) return;
-      this.selectNote(id, true);
+      // Below the wide layout a note opens on its own page, so the arrows only
+      // move focus; Enter or Space opens the focused note (#1808).
+      if (this.wide()) this.selectNote(id, true);
       row.focus();
       return;
     }
 
     if (event.key === 'Enter') {
       event.preventDefault();
+      if (!this.wide()) {
+        if (currentId) this.selectNote(currentId);
+        return;
+      }
       if (currentId && this.selectedNoteId() !== currentId) this.selectNote(currentId);
       this.focusDetail();
       return;

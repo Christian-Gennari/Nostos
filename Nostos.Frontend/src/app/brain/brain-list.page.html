@@ -95,7 +95,7 @@
             class="search-input"
             id="brain-search"
             [attr.aria-label]="'Search ' + (place() === 'topic' ? 'in ' + title() : title().toLocaleLowerCase())"
-            [placeholder]="place() === 'topic' ? 'Search in ' + title() + '…' : 'Search notes, quotes, books, topics…'"
+            [placeholder]="place() === 'topic' ? 'Search in ' + title() + '…' : wide() ? 'Search notes…' : 'Search notes, quotes, books, topics…'"
             [value]="searchDraft()"
             (input)="onSearchInput($any($event.target).value)"
             (keydown.escape)="clearSearch()"

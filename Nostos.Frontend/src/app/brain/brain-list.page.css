@@ -306,15 +306,34 @@
 
 /* --- Wide (≥1280px): 380px list column + 1fr reader pane ------------------ */
 @media (min-width: 1280px) {
+  /* Each pane scrolls itself here; a gutter on this never-scrolling box only
+     left a dead strip at the window's right edge (#1808). */
   .brain-scroller {
     overflow: hidden;
+    scrollbar-gutter: auto;
   }
 
   .brain-work {
+    position: relative;
     display: grid;
     grid-template-columns: 380px minmax(0, 1fr);
     height: 100%;
     min-height: 0;
+  }
+
+  /* The shared header line, drawn once across list and reader: the reader's
+     own header sits inside its scroll container, so its border stops at the
+     scrollbar gutter and left a gap at the window edge (#1808). */
+  .brain-work::after {
+    content: '';
+    position: absolute;
+    top: 55px;
+    right: 0;
+    left: 0;
+    z-index: 3;
+    height: 1px;
+    background: var(--border-color);
+    pointer-events: none;
   }
 
   .brain-list-column {
@@ -507,6 +526,11 @@
 
 /* --- Forced colours ------------------------------------------------------- */
 @media (forced-colors: active) {
+  .brain-work::after {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
+
   .list-header,
   .note-detail-head-empty {
     border-bottom-color: CanvasText;
