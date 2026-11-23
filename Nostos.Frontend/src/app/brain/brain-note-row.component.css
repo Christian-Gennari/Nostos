@@ -6,7 +6,7 @@
   align-items: flex-start;
   gap: 0.65rem;
   width: 100%;
-  padding: 10px 12px;
+  padding: 9px 11px;
   border: 1px solid transparent;
   border-radius: var(--radius-row);
   color: var(--color-text-main);
