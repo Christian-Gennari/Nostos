@@ -386,6 +386,10 @@ public sealed class NostosProductCompositionTests
         downloader.Timeout.Should().Be(Timeout.InfiniteTimeSpan);
         downloader.DefaultRequestHeaders.UserAgent.ToString().Should().Contain("Nostos/1.0");
 
+        using var coverUrl = factory.CreateClient(CoverDownload.HttpClientName);
+        coverUrl.Timeout.Should().Be(Timeout.InfiniteTimeSpan);
+        coverUrl.DefaultRequestHeaders.UserAgent.ToString().Should().Contain("Nostos/1.0");
+
         using var gutenberg = factory.CreateClient(GutenbergProvider.HttpClientName);
         gutenberg.BaseAddress.Should().Be(new Uri(GutenbergCatalog.BaseUrl));
         gutenberg.Timeout.Should().Be(TimeSpan.FromSeconds(20));

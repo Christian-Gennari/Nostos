@@ -172,7 +172,9 @@ public sealed record McpAddedBook(
     IReadOnlyList<McpMovedFromToRead>? MovedFromToRead,
     IReadOnlyList<McpBookCandidate>? Candidates,
     string? Message,
-    IReadOnlyList<McpOnToRead>? OnToRead = null);
+    IReadOnlyList<McpOnToRead>? OnToRead = null,
+    // APPENDED (issue #1793): why a given coverUrl did not become the cover.
+    string? Warning = null);
 
 public sealed record McpBookCandidate(Guid Id, string Title, string? Author, string? Isbn, string Url);
 
@@ -191,7 +193,9 @@ public sealed record McpUpdatedBook(
     IReadOnlyList<BookFieldKept>? Kept,
     IReadOnlyList<string>? Unchanged,
     IReadOnlyDictionary<string, object?>? Undo,
-    string Message);
+    string Message,
+    // APPENDED (issue #1793): why a given coverUrl did not become the cover.
+    string? Warning = null);
 
 /// <summary>
 /// <c>find_quote</c>'s answer. <see cref="Citation"/> is present only for a

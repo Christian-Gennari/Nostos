@@ -4,12 +4,12 @@
     {
       "name": "add_book",
       "title": "Add a book to the library",
-      "description": "Adds a book to the user's library from the details you give: a paper book by default, or an ebook or audiobook entry without its file. Use it only when the user asks to add a book. Nostos looks nothing up elsewhere, so pass the details you have. A book already in the library (same ISBN, or same title and author) comes back with `duplicate: true` and no second copy is made. When Nostos cannot tell, it returns `candidates` and adds nothing: ask the user, then call again with `confirmedBookId` or `forceCreate: true`. A To read entry for a book this call adds moves to the library, and its reason stays as a note on the book. An entry that was already in the library before the call stays on To read and comes back in `onToRead`.",
+      "description": "Adds a book to the user's library from the details you give: a paper book by default, or an ebook or audiobook entry without its file. Use it only when the user asks to add a book. Nostos looks nothing else up, so pass the details you have. An `https` `coverUrl` is fetched as the book's cover; when it cannot be used the book is still added and the result says why. A book already in the library (same ISBN, or same title and author) comes back with `duplicate: true` and no second copy is made. When Nostos cannot tell, it returns `candidates` and adds nothing: ask the user, then call again with `confirmedBookId` or `forceCreate: true`. A To read entry for a book this call adds moves to the library, and its reason stays as a note on the book. An entry that was already in the library before the call stays on To read and comes back in `onToRead`.",
       "annotations": {
         "title": "Add a book to the library",
         "destructiveHint": false,
         "idempotentHint": true,
-        "openWorldHint": false,
+        "openWorldHint": true,
         "readOnlyHint": false
       },
       "inputSchema": {
@@ -109,6 +109,14 @@
           },
           "volumeNumber": {
             "description": "Its number in the series.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "coverUrl": {
+            "description": "An https URL of the cover image. Nostos downloads it; the book is added without a cover if it cannot be used.",
             "type": [
               "string",
               "null"
@@ -958,12 +966,12 @@
     {
       "name": "update_book",
       "title": "Fill in or correct a book's details",
-      "description": "Fills in or corrects one book's details: title, subtitle, author, description, year, ISBN, publisher, language and series. Use it only when the user asks. Pass only the details to set. A detail the book already has is kept unless you pass `replace: true`, which only the user's request to change it allows. The result lists every changed detail with its old value, and `undo` holds the arguments that put them back.",
+      "description": "Fills in or corrects one book's details: title, subtitle, author, description, year, ISBN, publisher, language, series, and the cover from an `https` `coverUrl`. Use it only when the user asks. Pass only the details to set. A detail the book already has is kept unless you pass `replace: true`, which only the user's request to change it allows. An existing cover is kept unless `replace: true` is passed when `coverUrl` is; the previous cover cannot be restored by this tool. The result lists every changed detail with its old value, and `undo` holds the arguments that put them back.",
       "annotations": {
         "title": "Fill in or correct a book's details",
         "destructiveHint": true,
         "idempotentHint": true,
-        "openWorldHint": false,
+        "openWorldHint": true,
         "readOnlyHint": false
       },
       "inputSchema": {
@@ -1054,8 +1062,16 @@
             ],
             "default": null
           },
+          "coverUrl": {
+            "description": "An https URL of a new cover image. Sets a cover the book has none of; replaces an existing cover only with `replace: true`.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
           "replace": {
-            "description": "True to change details the book already has. With it, an empty string clears a detail.",
+            "description": "True to change details the book already has. With it, an empty string clears a detail, and a `coverUrl` replaces an existing cover.",
             "type": "boolean",
             "default": false
           }

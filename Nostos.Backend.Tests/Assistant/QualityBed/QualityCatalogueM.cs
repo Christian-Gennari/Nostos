@@ -203,7 +203,11 @@ public sealed partial class QualityBedMcpScenarios(QualityMcpBed bed)
         {
             var hints = tool.ProtocolTool.Annotations;
             hints.Should().NotBeNull(tool.Name);
-            hints!.OpenWorldHint.Should().BeFalse(tool.Name);
+            // add_book and update_book may fetch a cover image from a URL the
+            // client gives; every other tool answers from the library alone.
+            hints!.OpenWorldHint.Should().Be(
+                tool.Name is "add_book" or "update_book",
+                tool.Name);
             hints.IdempotentHint.Should().BeTrue(tool.Name);
             if (Writes.Contains(tool.Name))
             {

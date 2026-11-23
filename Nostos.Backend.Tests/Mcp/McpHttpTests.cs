@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Claims;
+using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using FluentAssertions;
@@ -16,6 +17,8 @@ using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using Nostos.Backend.Data;
 using Nostos.Backend.Integrations.Mcp;
+using Nostos.Backend.Providers.Acquisition;
+using Nostos.Backend.Services;
 using Nostos.Backend.Tests.Support;
 using Nostos.Shared.Dtos;
 using Xunit;
@@ -35,6 +38,12 @@ public sealed class McpEndpointFactory : LibraryEndpointFactory
     public const string ReadOnlyToken = "test-mcp-read-only-token";
     private const string SchemeName = "TestMcp";
 
+    /// <summary>
+    /// Answers the provider-content client, so a cover URL is a fake HTTP
+    /// exchange in every MCP test and never the network.
+    /// </summary>
+    public StubProviderContentHandler ProviderContent { get; } = new();
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         base.ConfigureWebHost(builder);
@@ -46,7 +55,31 @@ public sealed class McpEndpointFactory : LibraryEndpointFactory
             services.AddAuthorization(options => options.AddPolicy(
                 NostosMcp.AuthorizationPolicy,
                 policy => policy.AddAuthenticationSchemes(SchemeName).RequireAuthenticatedUser()));
+            services.AddHttpClient(ProviderContentDownloader.HttpClientName)
+                .ConfigurePrimaryHttpMessageHandler(() => ProviderContent);
+            // A user-supplied cover URL is fetched on its own guarded client.
+            // The same stub answers it, so the pre-request address check is the
+            // part under test: it must refuse before this handler is reached.
+            services.AddHttpClient(CoverDownload.HttpClientName)
+                .ConfigurePrimaryHttpMessageHandler(() => ProviderContent);
         });
+    }
+
+    public sealed class StubProviderContentHandler : HttpMessageHandler
+    {
+        public List<Uri> Requests { get; } = [];
+
+        /// <summary>What the next request gets; 404 unless a test says otherwise.</summary>
+        public Func<HttpRequestMessage, HttpResponseMessage> Respond { get; set; } =
+            _ => new HttpResponseMessage(HttpStatusCode.NotFound);
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            Requests.Add(request.RequestUri!);
+            return Task.FromResult(Respond(request));
+        }
     }
 
     /// <summary>Stands in for a host gate (Cloud's revoked OAuth clients): refuses a marked request.</summary>
@@ -190,6 +223,9 @@ public sealed class McpHttpTests : IAsyncLifetime
                 tool.Name is "update_book" or "set_topic_kinds" or "update_note" or "update_passage" or "delete_note" or "delete_passage",
                 tool.Name);
         }
+        foreach (var tool in tools.Where(t => t.Name is "add_book" or "update_book"))
+            tool.ProtocolTool.Annotations!.OpenWorldHint.Should().BeTrue(
+                $"{tool.Name} may fetch a cover image from an https URL the client gives it");
         _mcp.ServerInstructions.Should().Contain("Quote only words a Nostos tool returned");
         _mcp.ServerInstructions.Should().Contain("Edit or delete a note, highlight or passage only when the user asks");
     }
@@ -455,6 +491,191 @@ public sealed class McpHttpTests : IAsyncLifetime
         restored!.Title.Should().Be("The Rings of Saturn");
         restored.Author.Should().Be("W. G. Sebald");
         restored.Description.Should().Be("A walk along the Suffolk coast.");
+    }
+
+    [Fact]
+    public async Task A_book_added_with_a_cover_url_has_the_cover_the_app_shows()
+    {
+        _factory.ProviderContent.Respond = _ => Image(CoverPng);
+
+        var added = await CallAsync("add_book", new()
+        {
+            ["title"] = "The Rings of Saturn",
+            ["author"] = "W. G. Sebald",
+            ["coverUrl"] = "https://covers.example/rings-of-saturn.png",
+        });
+
+        added.GetProperty("outcome").GetString().Should().Be("created");
+        added.TryGetProperty("warning", out _).Should().BeFalse("nothing went wrong with the cover");
+        var bookId = added.GetProperty("book").GetProperty("id").GetGuid();
+
+        var shown = await _http.GetFromJsonAsync<BookDto>($"/api/books/{bookId}");
+        shown!.CoverUrl.Should().NotBeNullOrEmpty();
+        shown.CoverVersion.Should().NotBeNullOrEmpty();
+
+        var stored = await _http.GetAsync($"/api/books/{bookId}/cover");
+        stored.EnsureSuccessStatusCode();
+        (await stored.Content.ReadAsByteArrayAsync()).Should().Equal(CoverPng);
+        _factory.ProviderContent.Requests.Should().Equal(new Uri("https://covers.example/rings-of-saturn.png"));
+    }
+
+    [Fact]
+    public async Task A_cover_url_that_cannot_be_used_still_adds_the_book_and_says_why()
+    {
+        _factory.ProviderContent.Respond = request => request.RequestUri!.AbsolutePath switch
+        {
+            "/page.html" => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("<html><body>Not found</body></html>", Encoding.UTF8, "text/html"),
+            },
+            "/huge.png" => TooLargeResponse(),
+            "/redirect.png" => new HttpResponseMessage(HttpStatusCode.Redirect)
+            {
+                Headers = { Location = new Uri("https://evil.example/cover.png") },
+            },
+            _ => Image(CoverPng),
+        };
+
+        var notAnImage = await CallAsync("add_book", new()
+        {
+            ["title"] = "An HTML page",
+            ["author"] = "A. Page",
+            ["coverUrl"] = "https://covers.example/page.html",
+        });
+        var tooLarge = await CallAsync("add_book", new()
+        {
+            ["title"] = "A huge image",
+            ["author"] = "H. Image",
+            ["coverUrl"] = "https://covers.example/huge.png",
+        });
+        var insecure = await CallAsync("add_book", new()
+        {
+            ["title"] = "A plaintext URL",
+            ["author"] = "P. Text",
+            ["coverUrl"] = "http://covers.example/cover.png",
+        });
+        var redirected = await CallAsync("add_book", new()
+        {
+            ["title"] = "A redirected URL",
+            ["author"] = "R. Direct",
+            ["coverUrl"] = "https://covers.example/redirect.png",
+        });
+
+        foreach (var (added, title) in new[]
+                 {
+                     (notAnImage, "An HTML page"),
+                     (tooLarge, "A huge image"),
+                     (insecure, "A plaintext URL"),
+                     (redirected, "A redirected URL"),
+                 })
+        {
+            added.GetProperty("outcome").GetString().Should().Be("created");
+            added.GetProperty("book").GetProperty("title").GetString().Should().Be(title);
+            added.GetProperty("warning").GetString().Should().StartWith("added without cover: ");
+        }
+
+        notAnImage.GetProperty("warning").GetString().Should().Contain("PNG or JPEG");
+        tooLarge.GetProperty("warning").GetString().Should().Contain("larger than 12 MB");
+        insecure.GetProperty("warning").GetString().Should().Contain("https");
+        redirected.GetProperty("warning").GetString().Should().Contain("not allowed");
+
+        var bookIds = new[] { notAnImage, tooLarge, insecure, redirected }
+            .Select(added => added.GetProperty("book").GetProperty("id").GetGuid());
+        foreach (var bookId in bookIds)
+        {
+            var shown = await _http.GetFromJsonAsync<BookDto>($"/api/books/{bookId}");
+            shown!.CoverUrl.Should().BeNull();
+        }
+
+        _factory.ProviderContent.Requests.Should().NotContain(new Uri("http://covers.example/cover.png"),
+            "a plaintext URL is refused before anything is fetched");
+        _factory.ProviderContent.Requests.Should().NotContain(new Uri("https://evil.example/cover.png"),
+            "a redirect is checked against the policy before it is followed");
+    }
+
+    [Fact]
+    public async Task Cover_urls_that_point_at_private_or_local_addresses_are_refused_before_any_request()
+    {
+        // A request would succeed if one were made, so "no request" below is
+        // about the address check and not about the handler failing.
+        _factory.ProviderContent.Respond = _ => Image(CoverPng);
+
+        var urls = new[]
+        {
+            "https://localhost/cover.png",
+            "https://127.0.0.1/cover.png",
+            "https://10.0.0.5/cover.png",
+            "https://[::1]/cover.png",
+            "https://169.254.169.254/latest/meta-data/user-data",
+        };
+
+        for (var index = 0; index < urls.Length; index++)
+        {
+            var added = await CallAsync("add_book", new()
+            {
+                ["title"] = $"A cover from a private address {index}",
+                ["author"] = "P. Rivate",
+                ["coverUrl"] = urls[index],
+            });
+
+            added.GetProperty("outcome").GetString().Should().Be("created");
+            added.GetProperty("warning").GetString()
+                .Should().Be("added without cover: " + PublicAddressPolicy.RefusalReason, urls[index]);
+
+            var bookId = added.GetProperty("book").GetProperty("id").GetGuid();
+            (await _http.GetFromJsonAsync<BookDto>($"/api/books/{bookId}"))!.CoverUrl.Should().BeNull();
+        }
+
+        _factory.ProviderContent.Requests.Should().BeEmpty(
+            "a private or local address is refused before anything is fetched");
+    }
+
+    [Fact]
+    public async Task An_app_sets_a_cover_on_a_book_with_none_and_replaces_it_only_with_replace()
+    {
+        _factory.ProviderContent.Respond = _ => Image(CoverPng);
+        var bookId = await CreateBookAsync("Austerlitz", "W. G. Sebald", "2001");
+
+        var set = await CallAsync("update_book", new()
+        {
+            ["bookId"] = bookId,
+            ["coverUrl"] = "https://covers.example/austerlitz.png",
+        });
+        set.GetProperty("message").GetString().Should().Contain("Cover set");
+        set.GetProperty("changed")[0].GetProperty("field").GetString().Should().Be("cover");
+        set.GetProperty("undo").GetProperty("cover").GetString().Should().Contain("cannot be removed");
+
+        var afterSet = await _http.GetFromJsonAsync<BookDto>($"/api/books/{bookId}");
+        afterSet!.CoverVersion.Should().NotBeNullOrEmpty();
+        var version = afterSet.CoverVersion;
+        (await (await _http.GetAsync($"/api/books/{bookId}/cover")).Content.ReadAsByteArrayAsync())
+            .Should().Equal(CoverPng);
+
+        // Without replace, an existing cover is kept, exactly as a detail is.
+        _factory.ProviderContent.Respond = _ => Image(SecondCoverPng);
+        var kept = await CallAsync("update_book", new()
+        {
+            ["bookId"] = bookId,
+            ["coverUrl"] = "https://covers.example/other-austerlitz.png",
+        });
+        kept.GetProperty("kept")[0].GetProperty("field").GetString().Should().Be("cover");
+        kept.GetProperty("message").GetString().Should().Contain("Kept what the book already has for cover");
+        (await _http.GetFromJsonAsync<BookDto>($"/api/books/{bookId}"))!.CoverVersion.Should().Be(version);
+
+        // With replace, the bytes and the version change.
+        var replaced = await CallAsync("update_book", new()
+        {
+            ["bookId"] = bookId,
+            ["coverUrl"] = "https://covers.example/other-austerlitz.png",
+            ["replace"] = true,
+        });
+        replaced.GetProperty("message").GetString().Should().Contain("Cover replaced").And.Contain("cannot be restored");
+        replaced.GetProperty("undo").GetProperty("cover").GetString().Should().Contain("cannot be restored");
+
+        var afterReplace = await _http.GetFromJsonAsync<BookDto>($"/api/books/{bookId}");
+        afterReplace!.CoverVersion.Should().NotBeNullOrEmpty().And.NotBe(version);
+        (await (await _http.GetAsync($"/api/books/{bookId}/cover")).Content.ReadAsByteArrayAsync())
+            .Should().Equal(SecondCoverPng);
     }
 
     [Fact]
@@ -747,6 +968,28 @@ public sealed class McpHttpTests : IAsyncLifetime
     }
 
     // ------------------------------------------------------------------
+
+    /// <summary>A 1x1 PNG, a valid cover image.</summary>
+    private static readonly byte[] CoverPng = Convert.FromBase64String(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGM4IScHAAK2AQU0pnWqAAAAAElFTkSuQmCC");
+
+    /// <summary>A different 2x2 PNG, so a replacement can be told from the cover it replaced.</summary>
+    private static readonly byte[] SecondCoverPng = Convert.FromBase64String(
+        "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEElEQVR4nGOQqzgBRAwQCgAjrgV5XtGN4QAAAABJRU5ErkJggg==");
+
+    private static HttpResponseMessage Image(byte[] bytes)
+    {
+        var content = new ByteArrayContent(bytes);
+        content.Headers.ContentType = new MediaTypeHeaderValue("image/png");
+        return new HttpResponseMessage(HttpStatusCode.OK) { Content = content };
+    }
+
+    private static HttpResponseMessage TooLargeResponse()
+    {
+        var content = new ByteArrayContent([1, 2, 3]);
+        content.Headers.ContentLength = CoverDownload.MaxCoverBytes + 1;
+        return new HttpResponseMessage(HttpStatusCode.OK) { Content = content };
+    }
 
     private async Task<JsonElement> CallAsync(string tool, Dictionary<string, object?> args)
     {
