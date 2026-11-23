@@ -76,6 +76,60 @@ public sealed class AssistantChangesetStoreTests
     }
 
     [Fact]
+    public void A_stored_diff_from_a_host_without_the_appended_fields_serialises_without_throwing()
+    {
+        // Both step descriptions and the step-index pass read the diff's
+        // topic-kind lists; an old host's JSON leaves them out entirely.
+        var topicId = Guid.NewGuid();
+        var store = new AssistantChangesetStore(_clock);
+        var stored = store.Add(
+            "owner", "conversation", "turn",
+            [
+                new AssistantStagedStep(
+                    new CreateTopicKindOp("school", "School of thought", "kind-7"),
+                    "Create the topic kind “School of thought”", []),
+                new AssistantStagedStep(
+                    new SetTopicKindOp([topicId], TopicKindRef.Created("school")),
+                    "Set “Freire” to “School of thought”", [0]),
+            ],
+            LegacyDiffJson.Read(), "hash", AssistantChangesetStatus.Review, [], undo: null);
+
+        var dto = stored.ToDto();
+
+        dto.Diff.TopicKinds.Should().NotBeNull().And.BeEmpty();
+        dto.Diff.TopicKindAssignments.Should().NotBeNull().And.BeEmpty();
+        dto.Steps.Should().HaveCount(2);
+        dto.Steps[0].TopicKind.Should().NotBeNull("the step says what it does even when the diff cannot");
+        dto.Steps[0].TopicKind!.CreatesKind.Should().BeTrue();
+        dto.Steps[1].TopicKind.Should().BeNull("there is no assignment in the diff to describe");
+    }
+
+    [Fact]
+    public void A_kept_step_says_why_it_was_left_out()
+    {
+        var store = new AssistantChangesetStore(_clock);
+        var topicId = Guid.NewGuid();
+        var stored = store.Add(
+            "owner", "conversation", "turn",
+            [
+                new AssistantStagedStep(
+                    new SetTopicKindOp([topicId], TopicKindRef.Existing(Guid.NewGuid())),
+                    "Set “Freire” to “Idea”", []),
+            ],
+            EmptyDiff, "hash", AssistantChangesetStatus.Review, [], undo: null);
+
+        store.Update(stored, changeset =>
+        {
+            changeset.Excluded.Add(0);
+            changeset.SkippedReasons[0] = "kept: you set this kind yourself";
+        });
+
+        var step = stored.ToDto().Steps.Single();
+        step.Included.Should().BeFalse();
+        step.SkippedReason.Should().Be("kept: you set this kind yourself");
+    }
+
+    [Fact]
     public void An_owner_past_its_capacity_expires_only_its_own_oldest()
     {
         var store = new AssistantChangesetStore(_clock);

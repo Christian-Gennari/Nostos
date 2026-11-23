@@ -343,7 +343,12 @@ public sealed record AssistantChangeStepDto(
     // APPENDED (issue #1770 review): what this step does to topic kinds, so the
     // review card can group and untick steps from the steps themselves rather
     // than from a diff that a preview recomputes without the excluded ones.
-    AssistantStepTopicKindDto? TopicKind = null);
+    AssistantStepTopicKindDto? TopicKind = null,
+    // APPENDED (issue #1770 review, round 3): why the server left this step out
+    // of the review itself — it would now do nothing, because the reader set the
+    // kind before the apply, say. Such a step is not included, so an apply never
+    // runs it, and the card shows the reason instead of a tick.
+    string? SkippedReason = null);
 
 /// <summary>
 /// One review step's topic-kind effect. A step either creates a kind

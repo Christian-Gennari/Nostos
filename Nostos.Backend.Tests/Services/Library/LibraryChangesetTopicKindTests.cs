@@ -126,7 +126,13 @@ public sealed class LibraryChangesetTopicKindTests : IClassFixture<SqliteTestFix
             [new SetTopicKindOp([h.Person], TopicKindRef.Existing(TopicKindModel.PlaceId))],
             expectedDiffHash: null);
 
-        kept.Success.Should().BeTrue(kept.ErrorMessage);
+        // Protected away: the apply would change nothing, so it says so instead
+        // of committing an empty change with an undo record (issue #1770 review,
+        // round 3).
+        kept.Success.Should().BeFalse();
+        kept.ErrorCode.Should().Be(LibraryChangesetErrorCodes.Empty);
+        kept.Committed.Should().BeFalse();
+        kept.Undo.Should().BeNull();
         kept.Diff!.TopicKindAssignments.Should().BeEmpty();
 
         var replaced = await h.Service.ApplyAsync(

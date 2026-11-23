@@ -125,6 +125,28 @@ public sealed class LibraryChangesetTests : IClassFixture<SqliteTestFixture>
     }
 
     [Fact]
+    public async Task An_apply_that_would_change_nothing_is_refused_rather_than_reported_as_applied()
+    {
+        var h = await SeedAsync();
+        // Creating a collection that already exists at this level reuses it:
+        // the changeset runs, but the library stays exactly as it was.
+        LibraryChangeOp[] ops = [new CreateCollectionOp("fiction", "Fiction")];
+        var preview = await h.Service.PreviewAsync(ops);
+        preview.Diff!.IsEmpty.Should().BeTrue();
+        var before = await StateAsync(h);
+
+        var applied = await h.Service.ApplyAsync(ops, preview.DiffHash);
+
+        // The hash agrees, so this is not a DiffChanged. Nothing happened, and
+        // an apply must not answer "Applied" with an undo record for that.
+        applied.Success.Should().BeFalse();
+        applied.ErrorCode.Should().Be(LibraryChangesetErrorCodes.Empty);
+        applied.Committed.Should().BeFalse();
+        applied.Undo.Should().BeNull();
+        (await StateAsync(h)).Should().BeEquivalentTo(before);
+    }
+
+    [Fact]
     public async Task An_apply_reviewed_against_an_older_library_is_refused_with_the_new_diff()
     {
         var h = await SeedAsync();

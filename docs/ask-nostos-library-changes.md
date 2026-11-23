@@ -28,8 +28,16 @@ collections, file books into them or take them out, edit a book's own details
   topics Apply would actually change. A new kind's create step counts only
   while at least one of its topics is ticked, so **Apply changes** is disabled
   once nothing is left ticked. Once the card is applied, undone or set aside,
-  **Show every change** lists only what was applied, as plain rows with no
-  checkboxes.
+  **Show every change** lists only what the applied diff contains, as plain
+  rows with no checkboxes — a step the server kept out never happened, so it is
+  not listed as applied.
+- **A kind you set yourself is kept.** If you give a staged topic a kind of
+  your own before applying, the apply leaves it alone. The step stays on the
+  card, unticked, and says `kept: you set this kind yourself` instead of
+  claiming it was applied; a kind created only for topics that were already
+  sorted is not created at all. When nothing is left to do the card says so,
+  **Apply changes** is disabled, and an apply that would change nothing is
+  refused rather than reported as a change with Undo.
 - **Nothing is applied half way.** A review changes nothing until you apply it,
   and an apply is all or nothing.
 
@@ -118,7 +126,11 @@ through the AI provider you configured.
    reports the earlier result instead of applying again.
 3. Applying runs the stored steps in one transaction and commits only if they
    still produce the diff the user reviewed (the diff hash). If the library
-   changed in between, the card is refreshed with what the steps would do now.
+   changed in between, the card is refreshed with what the steps would do now:
+   a step that would change nothing (the reader set that topic's kind
+   themselves) is left out of the review with its reason, and an apply that
+   would leave the library exactly as it is is refused as `changeset_empty`
+   rather than committed with an undo record.
 4. Undo restores each row the changeset touched from a before/after snapshot,
    but only rows still as the changeset left them. Anything changed since is
    kept and listed on the card.

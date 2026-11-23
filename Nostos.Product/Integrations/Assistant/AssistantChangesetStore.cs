@@ -45,6 +45,23 @@ public sealed class StoredAssistantChangeset
     public LibraryUndoSnapshot? Undo { get; set; }
     public DateTimeOffset ExpiresAt { get; set; }
 
+    /// <summary>
+    /// Why the server itself left a step out on the last recompute: the step is
+    /// included in the review, but it now does nothing (the reader set that
+    /// kind themselves, say). Such a step is also in <see cref="Excluded"/>, so
+    /// a later apply never runs it again.
+    /// </summary>
+    public Dictionary<int, string> SkippedReasons { get; set; } = [];
+
+    /// <summary>
+    /// The two turn conditions the change policy judged, kept so a preview can
+    /// recompute the reasons against the library as it is now instead of
+    /// keeping a reason whose change is gone.
+    /// </summary>
+    public bool ReadUntrustedContent { get; init; }
+
+    public bool TurnIncomplete { get; init; }
+
     /// <summary>Set while an apply or undo for this changeset is running.</summary>
     public bool Busy { get; set; }
 
@@ -61,7 +78,8 @@ public sealed class StoredAssistantChangeset
             _ => "discarded",
         },
         Steps.Select((step, index) => new AssistantChangeStepDto(
-            index, step.Summary, !Excluded.Contains(index), step.DependsOn, StepTopicKind(index))).ToList(),
+            index, step.Summary, !Excluded.Contains(index), step.DependsOn, StepTopicKind(index),
+            SkippedReasons.GetValueOrDefault(index))).ToList(),
         WithStepIndexes(),
         DiffHash,
         ActionToken,
@@ -203,7 +221,9 @@ public sealed class AssistantChangesetStore(TimeProvider? time = null)
         string diffHash,
         AssistantChangesetStatus status,
         IReadOnlyList<string> reviewReasons,
-        LibraryUndoSnapshot? undo)
+        LibraryUndoSnapshot? undo,
+        bool readUntrustedContent = false,
+        bool turnIncomplete = false)
     {
         lock (_gate)
         {
@@ -235,6 +255,8 @@ public sealed class AssistantChangesetStore(TimeProvider? time = null)
                 DiffHash = diffHash,
                 ReviewReasons = reviewReasons,
                 Undo = undo,
+                ReadUntrustedContent = readUntrustedContent,
+                TurnIncomplete = turnIncomplete,
                 ExpiresAt = Now + (status == AssistantChangesetStatus.Review ? ReviewLifetime : UndoLifetime),
             };
             _byId[stored.ChangesetId] = stored;

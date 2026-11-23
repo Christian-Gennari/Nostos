@@ -98,6 +98,20 @@ public sealed class LibraryChangesetService(
                     null, diff, hash, before.Version, false, null));
             }
 
+            // Everything the changeset ran left the library exactly as it was:
+            // the reader set the kind of every staged topic themselves, say, so
+            // the apply was protected out of every change. Committing that would
+            // report Applied with an undo record while the diff says nothing
+            // changed, so answer what actually happened.
+            if (diff.IsEmpty)
+            {
+                return (false, new LibraryChangesetResult(
+                    false,
+                    LibraryChangesetErrorCodes.Empty,
+                    "There are no changes to make.",
+                    null, diff, hash, before.Version, false, null));
+            }
+
             var undo = LibraryChangesetDiff.BuildUndo(before, after);
             return (true, new LibraryChangesetResult(true, null, null, null, diff, hash, stateVersion, true, undo));
         }, ct);
