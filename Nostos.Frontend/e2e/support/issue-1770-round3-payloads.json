@@ -1,0 +1,611 @@
+{
+  "allKept": {
+    "changesetId": "8270cab0e9af4ed8ba714d54e215626c",
+    "status": "review",
+    "steps": [
+      {
+        "index": 0,
+        "summary": "Create the topic kind “School of thought”",
+        "included": false,
+        "dependsOn": [],
+        "topicKind": {
+          "kindKey": "e3aa2806-cc96-4cb2-9d65-f99ce0496d8b",
+          "kindName": "School of thought",
+          "colorKey": "kind-7",
+          "createsKind": true,
+          "isNewKind": true,
+          "topicId": null,
+          "topicName": null,
+          "previousKindName": null
+        },
+        "skippedReason": "kept: no topic still needs this kind"
+      },
+      {
+        "index": 1,
+        "summary": "Set “Freire” to “School of thought”",
+        "included": false,
+        "dependsOn": [
+          0
+        ],
+        "topicKind": {
+          "kindKey": "e3aa2806-cc96-4cb2-9d65-f99ce0496d8b",
+          "kindName": "School of thought",
+          "colorKey": "kind-7",
+          "createsKind": false,
+          "isNewKind": true,
+          "topicId": "3b26a6dc-c3c1-47e1-99a6-36395625842d",
+          "topicName": "Freire",
+          "previousKindName": null
+        },
+        "skippedReason": "kept: you set this kind yourself"
+      }
+    ],
+    "diff": {
+      "collections": [],
+      "memberships": [],
+      "bookEdits": [],
+      "counts": {
+        "collectionsCreated": 0,
+        "collectionsDeleted": 0,
+        "collectionsUpdated": 0,
+        "booksTouched": 0,
+        "membershipsAdded": 0,
+        "membershipsRemoved": 0,
+        "booksLosingMembership": 0,
+        "bookEdits": 0,
+        "topicKindsCreated": 0,
+        "topicKindChanges": 0,
+        "topicKindsGiven": 0,
+        "topicKindsChanged": 0,
+        "topicKindsCleared": 0
+      },
+      "topicKinds": [],
+      "topicKindAssignments": [],
+      "isEmpty": true
+    },
+    "diffHash": "0317103bb43052280ebb863b5b451ced47acbb7aac3572b17d8d1aa1d3b5add1",
+    "actionToken": "fdd8cb96e5203dc8efdc2768469f05dfce75235a4b210ec6",
+    "reviewReasons": [
+      "The library changed while I was working, so check this before applying."
+    ],
+    "canUndo": false
+  },
+  "partialClaim": {
+    "changesetId": "675c48baf643409bad3a85b59ec260e3",
+    "status": "review",
+    "steps": [
+      {
+        "index": 0,
+        "summary": "Create the topic kind “School of thought”",
+        "included": true,
+        "dependsOn": [],
+        "topicKind": {
+          "kindKey": "19b4c511-cea0-4cbc-a3c9-2d5d55fa76b4",
+          "kindName": "School of thought",
+          "colorKey": "kind-7",
+          "createsKind": true,
+          "isNewKind": true,
+          "topicId": null,
+          "topicName": null,
+          "previousKindName": null
+        },
+        "skippedReason": null
+      },
+      {
+        "index": 1,
+        "summary": "Set “Dewey” to “School of thought”",
+        "included": true,
+        "dependsOn": [
+          0
+        ],
+        "topicKind": {
+          "kindKey": "19b4c511-cea0-4cbc-a3c9-2d5d55fa76b4",
+          "kindName": "School of thought",
+          "colorKey": "kind-7",
+          "createsKind": false,
+          "isNewKind": true,
+          "topicId": "c868f422-b8ac-40dd-9737-bf6903be634e",
+          "topicName": "Dewey",
+          "previousKindName": null
+        },
+        "skippedReason": null
+      },
+      {
+        "index": 2,
+        "summary": "Set “Freire” to “School of thought”",
+        "included": false,
+        "dependsOn": [
+          0
+        ],
+        "topicKind": {
+          "kindKey": "19b4c511-cea0-4cbc-a3c9-2d5d55fa76b4",
+          "kindName": "School of thought",
+          "colorKey": "kind-7",
+          "createsKind": false,
+          "isNewKind": true,
+          "topicId": "1d707d73-5c9f-4f1c-88da-510ee12e9fe9",
+          "topicName": "Freire",
+          "previousKindName": null
+        },
+        "skippedReason": "kept: you set this kind yourself"
+      },
+      {
+        "index": 3,
+        "summary": "Set “Montessori” to “School of thought”",
+        "included": true,
+        "dependsOn": [
+          0
+        ],
+        "topicKind": {
+          "kindKey": "19b4c511-cea0-4cbc-a3c9-2d5d55fa76b4",
+          "kindName": "School of thought",
+          "colorKey": "kind-7",
+          "createsKind": false,
+          "isNewKind": true,
+          "topicId": "1fb1afdc-c983-4b6d-a005-ac2a68feb716",
+          "topicName": "Montessori",
+          "previousKindName": null
+        },
+        "skippedReason": null
+      }
+    ],
+    "diff": {
+      "collections": [],
+      "memberships": [],
+      "bookEdits": [],
+      "counts": {
+        "collectionsCreated": 0,
+        "collectionsDeleted": 0,
+        "collectionsUpdated": 0,
+        "booksTouched": 0,
+        "membershipsAdded": 0,
+        "membershipsRemoved": 0,
+        "booksLosingMembership": 0,
+        "bookEdits": 0,
+        "topicKindsCreated": 1,
+        "topicKindChanges": 2,
+        "topicKindsGiven": 2,
+        "topicKindsChanged": 0,
+        "topicKindsCleared": 0
+      },
+      "topicKinds": [
+        {
+          "id": "9e16066e-352d-489d-82c0-b37cd472c3f5",
+          "kind": "created",
+          "name": "School of thought",
+          "previousName": null,
+          "colorKey": "kind-7",
+          "topicCount": 2,
+          "stepIndex": 0
+        }
+      ],
+      "topicKindAssignments": [
+        {
+          "topicId": "c868f422-b8ac-40dd-9737-bf6903be634e",
+          "topicName": "Dewey",
+          "kindId": "9e16066e-352d-489d-82c0-b37cd472c3f5",
+          "kindName": "School of thought",
+          "previousKindName": null,
+          "source": "assistant",
+          "stepIndex": 1,
+          "kindColorKey": "kind-7",
+          "previousSource": null
+        },
+        {
+          "topicId": "1fb1afdc-c983-4b6d-a005-ac2a68feb716",
+          "topicName": "Montessori",
+          "kindId": "9e16066e-352d-489d-82c0-b37cd472c3f5",
+          "kindName": "School of thought",
+          "previousKindName": null,
+          "source": "assistant",
+          "stepIndex": 3,
+          "kindColorKey": "kind-7",
+          "previousSource": null
+        }
+      ],
+      "isEmpty": false
+    },
+    "diffHash": "5f8b6bacc3d22aa8e86ae32f82813c54df788e99705d19274affbdc05d58f70c",
+    "actionToken": "cd2496c88fe969201d7f7e5f4b07ef3115c18719e7ba0f31",
+    "reviewReasons": [
+      "The library changed while I was working, so check this before applying.",
+      "Creates the topic kind “School of thought”, so you decide what it means.",
+      "Gives 2 topics a kind."
+    ],
+    "canUndo": false
+  },
+  "partialClaimApplied": {
+    "changesetId": "675c48baf643409bad3a85b59ec260e3",
+    "status": "applied",
+    "steps": [
+      {
+        "index": 0,
+        "summary": "Create the topic kind “School of thought”",
+        "included": true,
+        "dependsOn": [],
+        "topicKind": {
+          "kindKey": "19b4c511-cea0-4cbc-a3c9-2d5d55fa76b4",
+          "kindName": "School of thought",
+          "colorKey": "kind-7",
+          "createsKind": true,
+          "isNewKind": true,
+          "topicId": null,
+          "topicName": null,
+          "previousKindName": null
+        },
+        "skippedReason": null
+      },
+      {
+        "index": 1,
+        "summary": "Set “Dewey” to “School of thought”",
+        "included": true,
+        "dependsOn": [
+          0
+        ],
+        "topicKind": {
+          "kindKey": "19b4c511-cea0-4cbc-a3c9-2d5d55fa76b4",
+          "kindName": "School of thought",
+          "colorKey": "kind-7",
+          "createsKind": false,
+          "isNewKind": true,
+          "topicId": "c868f422-b8ac-40dd-9737-bf6903be634e",
+          "topicName": "Dewey",
+          "previousKindName": null
+        },
+        "skippedReason": null
+      },
+      {
+        "index": 2,
+        "summary": "Set “Freire” to “School of thought”",
+        "included": false,
+        "dependsOn": [
+          0
+        ],
+        "topicKind": {
+          "kindKey": "19b4c511-cea0-4cbc-a3c9-2d5d55fa76b4",
+          "kindName": "School of thought",
+          "colorKey": "kind-7",
+          "createsKind": false,
+          "isNewKind": true,
+          "topicId": "1d707d73-5c9f-4f1c-88da-510ee12e9fe9",
+          "topicName": "Freire",
+          "previousKindName": null
+        },
+        "skippedReason": null
+      },
+      {
+        "index": 3,
+        "summary": "Set “Montessori” to “School of thought”",
+        "included": true,
+        "dependsOn": [
+          0
+        ],
+        "topicKind": {
+          "kindKey": "19b4c511-cea0-4cbc-a3c9-2d5d55fa76b4",
+          "kindName": "School of thought",
+          "colorKey": "kind-7",
+          "createsKind": false,
+          "isNewKind": true,
+          "topicId": "1fb1afdc-c983-4b6d-a005-ac2a68feb716",
+          "topicName": "Montessori",
+          "previousKindName": null
+        },
+        "skippedReason": null
+      }
+    ],
+    "diff": {
+      "collections": [],
+      "memberships": [],
+      "bookEdits": [],
+      "counts": {
+        "collectionsCreated": 0,
+        "collectionsDeleted": 0,
+        "collectionsUpdated": 0,
+        "booksTouched": 0,
+        "membershipsAdded": 0,
+        "membershipsRemoved": 0,
+        "booksLosingMembership": 0,
+        "bookEdits": 0,
+        "topicKindsCreated": 1,
+        "topicKindChanges": 2,
+        "topicKindsGiven": 2,
+        "topicKindsChanged": 0,
+        "topicKindsCleared": 0
+      },
+      "topicKinds": [
+        {
+          "id": "b3750d1e-629d-4b2d-aa70-6b1415694504",
+          "kind": "created",
+          "name": "School of thought",
+          "previousName": null,
+          "colorKey": "kind-7",
+          "topicCount": 2,
+          "stepIndex": 0
+        }
+      ],
+      "topicKindAssignments": [
+        {
+          "topicId": "c868f422-b8ac-40dd-9737-bf6903be634e",
+          "topicName": "Dewey",
+          "kindId": "b3750d1e-629d-4b2d-aa70-6b1415694504",
+          "kindName": "School of thought",
+          "previousKindName": null,
+          "source": "assistant",
+          "stepIndex": 1,
+          "kindColorKey": "kind-7",
+          "previousSource": null
+        },
+        {
+          "topicId": "1fb1afdc-c983-4b6d-a005-ac2a68feb716",
+          "topicName": "Montessori",
+          "kindId": "b3750d1e-629d-4b2d-aa70-6b1415694504",
+          "kindName": "School of thought",
+          "previousKindName": null,
+          "source": "assistant",
+          "stepIndex": 3,
+          "kindColorKey": "kind-7",
+          "previousSource": null
+        }
+      ],
+      "isEmpty": false
+    },
+    "diffHash": "5f8b6bacc3d22aa8e86ae32f82813c54df788e99705d19274affbdc05d58f70c",
+    "actionToken": "cd2496c88fe969201d7f7e5f4b07ef3115c18719e7ba0f31",
+    "reviewReasons": [
+      "The library changed while I was working, so check this before applying.",
+      "Creates the topic kind “School of thought”, so you decide what it means.",
+      "Gives 2 topics a kind."
+    ],
+    "canUndo": true
+  },
+  "partialTick": {
+    "changesetId": "492f251cde354e5b94f1a027049fe9bb",
+    "status": "review",
+    "steps": [
+      {
+        "index": 0,
+        "summary": "Create the topic kind “School of thought”",
+        "included": true,
+        "dependsOn": [],
+        "topicKind": {
+          "kindKey": "31eee9de-4b0c-4b18-a4a4-05b032c057bf",
+          "kindName": "School of thought",
+          "colorKey": "kind-7",
+          "createsKind": true,
+          "isNewKind": true,
+          "topicId": null,
+          "topicName": null,
+          "previousKindName": null
+        },
+        "skippedReason": null
+      },
+      {
+        "index": 1,
+        "summary": "Set “Dewey” to “School of thought”",
+        "included": false,
+        "dependsOn": [
+          0
+        ],
+        "topicKind": {
+          "kindKey": "31eee9de-4b0c-4b18-a4a4-05b032c057bf",
+          "kindName": "School of thought",
+          "colorKey": "kind-7",
+          "createsKind": false,
+          "isNewKind": true,
+          "topicId": "0b5aefab-f362-49bf-b59a-c2fc2dc4f33f",
+          "topicName": "Dewey",
+          "previousKindName": null
+        },
+        "skippedReason": null
+      },
+      {
+        "index": 2,
+        "summary": "Set “Freire” to “School of thought”",
+        "included": true,
+        "dependsOn": [
+          0
+        ],
+        "topicKind": {
+          "kindKey": "31eee9de-4b0c-4b18-a4a4-05b032c057bf",
+          "kindName": "School of thought",
+          "colorKey": "kind-7",
+          "createsKind": false,
+          "isNewKind": true,
+          "topicId": "942d7ef3-b8db-4872-a601-ad97d1620ec4",
+          "topicName": "Freire",
+          "previousKindName": null
+        },
+        "skippedReason": null
+      },
+      {
+        "index": 3,
+        "summary": "Set “Montessori” to “School of thought”",
+        "included": true,
+        "dependsOn": [
+          0
+        ],
+        "topicKind": {
+          "kindKey": "31eee9de-4b0c-4b18-a4a4-05b032c057bf",
+          "kindName": "School of thought",
+          "colorKey": "kind-7",
+          "createsKind": false,
+          "isNewKind": true,
+          "topicId": "3d520fbe-4ed9-4d14-958c-0f4f73843681",
+          "topicName": "Montessori",
+          "previousKindName": null
+        },
+        "skippedReason": null
+      }
+    ],
+    "diff": {
+      "collections": [],
+      "memberships": [],
+      "bookEdits": [],
+      "counts": {
+        "collectionsCreated": 0,
+        "collectionsDeleted": 0,
+        "collectionsUpdated": 0,
+        "booksTouched": 0,
+        "membershipsAdded": 0,
+        "membershipsRemoved": 0,
+        "booksLosingMembership": 0,
+        "bookEdits": 0,
+        "topicKindsCreated": 1,
+        "topicKindChanges": 2,
+        "topicKindsGiven": 2,
+        "topicKindsChanged": 0,
+        "topicKindsCleared": 0
+      },
+      "topicKinds": [
+        {
+          "id": "d7b9dccc-5f6a-46ba-82e4-0d61f3d3e407",
+          "kind": "created",
+          "name": "School of thought",
+          "previousName": null,
+          "colorKey": "kind-7",
+          "topicCount": 2,
+          "stepIndex": 0
+        }
+      ],
+      "topicKindAssignments": [
+        {
+          "topicId": "942d7ef3-b8db-4872-a601-ad97d1620ec4",
+          "topicName": "Freire",
+          "kindId": "d7b9dccc-5f6a-46ba-82e4-0d61f3d3e407",
+          "kindName": "School of thought",
+          "previousKindName": null,
+          "source": "assistant",
+          "stepIndex": 2,
+          "kindColorKey": "kind-7",
+          "previousSource": null
+        },
+        {
+          "topicId": "3d520fbe-4ed9-4d14-958c-0f4f73843681",
+          "topicName": "Montessori",
+          "kindId": "d7b9dccc-5f6a-46ba-82e4-0d61f3d3e407",
+          "kindName": "School of thought",
+          "previousKindName": null,
+          "source": "assistant",
+          "stepIndex": 3,
+          "kindColorKey": "kind-7",
+          "previousSource": null
+        }
+      ],
+      "isEmpty": false
+    },
+    "diffHash": "78a8207346e0a33aa75f8a39026024c254b6a0ec10e3bc88ab7e5b8005664722",
+    "actionToken": "9d542480c0ac4d93379be525cefc5783590463d06a74fd7f",
+    "reviewReasons": [
+      "Creates the topic kind “School of thought”, so you decide what it means.",
+      "Gives 2 topics a kind."
+    ],
+    "canUndo": false
+  },
+  "groupUnticked": {
+    "changesetId": "492f251cde354e5b94f1a027049fe9bb",
+    "status": "review",
+    "steps": [
+      {
+        "index": 0,
+        "summary": "Create the topic kind “School of thought”",
+        "included": true,
+        "dependsOn": [],
+        "topicKind": {
+          "kindKey": "31eee9de-4b0c-4b18-a4a4-05b032c057bf",
+          "kindName": "School of thought",
+          "colorKey": "kind-7",
+          "createsKind": true,
+          "isNewKind": true,
+          "topicId": null,
+          "topicName": null,
+          "previousKindName": null
+        },
+        "skippedReason": null
+      },
+      {
+        "index": 1,
+        "summary": "Set “Dewey” to “School of thought”",
+        "included": false,
+        "dependsOn": [
+          0
+        ],
+        "topicKind": {
+          "kindKey": "31eee9de-4b0c-4b18-a4a4-05b032c057bf",
+          "kindName": "School of thought",
+          "colorKey": "kind-7",
+          "createsKind": false,
+          "isNewKind": true,
+          "topicId": "0b5aefab-f362-49bf-b59a-c2fc2dc4f33f",
+          "topicName": "Dewey",
+          "previousKindName": null
+        },
+        "skippedReason": null
+      },
+      {
+        "index": 2,
+        "summary": "Set “Freire” to “School of thought”",
+        "included": false,
+        "dependsOn": [
+          0
+        ],
+        "topicKind": {
+          "kindKey": "31eee9de-4b0c-4b18-a4a4-05b032c057bf",
+          "kindName": "School of thought",
+          "colorKey": "kind-7",
+          "createsKind": false,
+          "isNewKind": true,
+          "topicId": "942d7ef3-b8db-4872-a601-ad97d1620ec4",
+          "topicName": "Freire",
+          "previousKindName": null
+        },
+        "skippedReason": null
+      },
+      {
+        "index": 3,
+        "summary": "Set “Montessori” to “School of thought”",
+        "included": false,
+        "dependsOn": [
+          0
+        ],
+        "topicKind": {
+          "kindKey": "31eee9de-4b0c-4b18-a4a4-05b032c057bf",
+          "kindName": "School of thought",
+          "colorKey": "kind-7",
+          "createsKind": false,
+          "isNewKind": true,
+          "topicId": "3d520fbe-4ed9-4d14-958c-0f4f73843681",
+          "topicName": "Montessori",
+          "previousKindName": null
+        },
+        "skippedReason": null
+      }
+    ],
+    "diff": {
+      "collections": [],
+      "memberships": [],
+      "bookEdits": [],
+      "counts": {
+        "collectionsCreated": 0,
+        "collectionsDeleted": 0,
+        "collectionsUpdated": 0,
+        "booksTouched": 0,
+        "membershipsAdded": 0,
+        "membershipsRemoved": 0,
+        "booksLosingMembership": 0,
+        "bookEdits": 0,
+        "topicKindsCreated": 0,
+        "topicKindChanges": 0,
+        "topicKindsGiven": 0,
+        "topicKindsChanged": 0,
+        "topicKindsCleared": 0
+      },
+      "topicKinds": [],
+      "topicKindAssignments": [],
+      "isEmpty": true
+    },
+    "diffHash": "0317103bb43052280ebb863b5b451ced47acbb7aac3572b17d8d1aa1d3b5add1",
+    "actionToken": "9d542480c0ac4d93379be525cefc5783590463d06a74fd7f",
+    "reviewReasons": [],
+    "canUndo": false
+  }
+}
