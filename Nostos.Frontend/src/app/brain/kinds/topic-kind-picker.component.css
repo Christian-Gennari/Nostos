@@ -49,20 +49,8 @@
 }
 
 /* The kind list did not arrive: the topic's kind cannot be named, but it is
-   not absent. A muted capsule, not the italic "Add a kind" invitation. */
-.kind-trigger.is-unavailable {
-  padding: 2px 9px;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-pill);
-  background: var(--bg-hover);
-  color: var(--color-text-muted);
-  font-size: var(--text-sm);
-}
-
-.kind-trigger.is-unavailable:hover {
-  filter: none;
-  background: var(--bg-surface);
-}
+   not absent. That state is drawn by the shared pill inside the button, so the
+   button keeps its phone touch target and grows no capsule of its own. */
 
 .kind-picker {
   display: flex;
@@ -114,6 +102,14 @@
 
 .kind-picker-failed p {
   margin: 0;
+}
+
+/* The kinds are still arriving: the panel says so rather than listing only
+   "No kind" and advising a retry for a read that is on its way. */
+.kind-picker-loading {
+  display: flex;
+  justify-content: center;
+  padding: 0.75rem 0;
 }
 
 .kind-picker-error {

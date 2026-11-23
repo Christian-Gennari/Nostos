@@ -273,10 +273,10 @@ describe('BrainKindsPage', () => {
     expect(updateKind).toHaveBeenCalledWith('k1', { colorKey: 'kind-2', swapColor: true });
   });
 
-  it('reorders kinds by trading sort orders', () => {
+  it('reorders kinds by writing every position', () => {
     component().moveKind(person, 1);
-    expect(updateKind).toHaveBeenCalledWith('k1', { sortOrder: 2 });
     expect(updateKind).toHaveBeenCalledWith('k2', { sortOrder: 1 });
+    expect(updateKind).toHaveBeenCalledWith('k1', { sortOrder: 2 });
   });
 
   it('asks before deleting and keeps the topics', () => {
@@ -593,10 +593,11 @@ describe('BrainKindsPage', () => {
   it('keeps the new order while the reload is in flight, so a second click reads it', () => {
     const answer = new Subject<TopicKindDto>();
     updateKind.mockReturnValue(answer);
-    // The GET that follows the writes is held open: the interesting moment is
-    // after the PUTs answered and before the list was read back.
-    const reload = new Subject<TopicKindDto[]>();
-    listKinds.mockReturnValue(reload);
+    // Each read answers on its own subject: the first is the order the writes
+    // replaced, the second the one the queued read finds.
+    const read = new Subject<TopicKindDto[]>();
+    const queued = new Subject<TopicKindDto[]>();
+    listKinds.mockReturnValueOnce(read).mockReturnValueOnce(queued);
 
     component().moveKind(person, 1);
     expect(component().busy()).toBe(true);
@@ -622,10 +623,106 @@ describe('BrainKindsPage', () => {
       ['k2', { sortOrder: 2 }],
     ]);
 
-    // The reload finally lands with the server's order; nothing jumps.
-    reload.next([{ ...idea, sortOrder: 1 }, { ...person, sortOrder: 2 }]);
-    reload.complete();
+    // The read lands with the order from before that second move. It was
+    // superseded while in flight, so it must not put the old order back on
+    // screen while nothing is busy.
+    read.next([{ ...idea, sortOrder: 1 }, { ...person, sortOrder: 2 }]);
+    read.complete();
+    expect(component().kinds().map((item) => item.id)).toEqual(['k1', 'k2']);
+
+    // The queued read answers with the server's order; nothing jumps.
+    queued.next([{ ...person, sortOrder: 1 }, { ...idea, sortOrder: 2 }]);
+    queued.complete();
+    expect(component().kinds().map((item) => item.id)).toEqual(['k1', 'k2']);
+  });
+
+  it('drops a stale kinds read and still writes every row after it', () => {
+    kinds = [
+      kind('k1', 'A', 'kind-1', 1),
+      kind('k2', 'B', 'kind-2', 2),
+      kind('k3', 'C', 'kind-3', 3),
+    ];
+    TestBed.inject(BrainStateService).reloadKinds();
+    fixture.detectChanges();
+
+    // A server that applies what it is sent: a reorder that leaves a row out
+    // shows up as two kinds holding the same position.
+    const stored = new Map(kinds.map((item) => [item.id, item.sortOrder]));
+    updateKind.mockImplementation((id: string, change: { sortOrder: number }) => {
+      stored.set(id, change.sortOrder);
+      return of(kinds.find((item) => item.id === id)!);
+    });
+
+    // Each read answers on its own subject. The first holds the order from
+    // before the second move and lands after it.
+    const first = new Subject<TopicKindDto[]>();
+    const second = new Subject<TopicKindDto[]>();
+    const third = new Subject<TopicKindDto[]>();
+    listKinds.mockReturnValueOnce(first).mockReturnValueOnce(second).mockReturnValueOnce(third);
+
+    const ids = (): string[] => component().kinds().map((item) => item.id);
+    const [a, b, c] = component().kinds();
+
+    component().moveKind(c, -1); // A C B, and the first read starts
+    expect(ids()).toEqual(['k1', 'k3', 'k2']);
+    component().moveKind(b, -1); // A B C; the first read is now superseded
+    expect(ids()).toEqual(['k1', 'k2', 'k3']);
+
+    // The stale answer arrives with the order from before the second move.
+    // Applying it would revert the list while `busy` is false, and the next
+    // move would read that order and leave a row out.
+    first.next([{ ...a, sortOrder: 1 }, { ...c, sortOrder: 2 }, { ...b, sortOrder: 3 }]);
+    fixture.detectChanges();
+    expect(ids()).toEqual(['k1', 'k2', 'k3']);
+
+    // The third move sends its whole order, so a view that thinks a row is
+    // already in place can never leave it on a shared position.
+    const writesBefore = updateKind.mock.calls.length;
+    component().moveKind(component().kinds()[2], -1); // C A B
+    const sent = updateKind.mock.calls.slice(writesBefore) as Array<[string, { sortOrder: number }]>;
+    expect(sent.map(([id]) => id).sort()).toEqual(['k1', 'k2', 'k3']);
+    expect(new Set(sent.map(([, change]) => change.sortOrder)).size).toBe(3);
+
+    // The server ends with every kind on its own position, in the order shown.
+    expect(new Set(stored.values()).size).toBe(3);
+    expect([...stored.entries()].sort((x, y) => x[1] - y[1])).toEqual(
+      component().kinds().map((item) => [item.id, item.sortOrder]),
+    );
+  });
+
+  it('keeps a rename that landed while a reorder was in flight', () => {
+    const writes = new Subject<TopicKindDto>();
+    updateKind.mockImplementation((_id: string, change: { name?: string }) =>
+      change.name ? of({ ...person, name: change.name }) : writes);
+
+    component().moveKind(person, 1);
+
+    // The rename finished first: its reload put "People" in the shared list
+    // while the reorder's writes were still in flight.
+    listKinds.mockReturnValue(of([
+      { ...person, name: 'People', sortOrder: 1 },
+      { ...idea, sortOrder: 2 },
+    ]));
+    component().startRename(person);
+    component().commitRename('k1', 'People');
+    fixture.detectChanges();
+    expect(component().kinds().map((item) => item.name)).toEqual(['People', 'Idea']);
+
+    // The write's reload is held open so the list can be read before it
+    // confirms: the positions must be applied to the list as it stands now, and
+    // the array captured before the writes would put "Person" back.
+    const confirming = new Subject<TopicKindDto[]>();
+    listKinds.mockReturnValueOnce(confirming);
+    writes.next(person);
+    writes.complete();
+
     expect(component().kinds().map((item) => item.id)).toEqual(['k2', 'k1']);
+    expect(component().kinds().map((item) => item.name)).toEqual(['Idea', 'People']);
+    expect(component().kinds().map((item) => item.sortOrder)).toEqual([1, 2]);
+
+    confirming.next([{ ...idea, sortOrder: 1 }, { ...person, name: 'People', sortOrder: 2 }]);
+    confirming.complete();
+    expect(component().kinds().map((item) => item.name)).toEqual(['Idea', 'People']);
   });
 
   it('repairs equal sort orders instead of trading two equal values', () => {
@@ -640,9 +737,10 @@ describe('BrainKindsPage', () => {
 
     component().moveKind(component().kinds()[1], 1); // Idea down, past Field
 
-    // Undoing the duplicates needs 1..N written where it differs: Person is
-    // already first, Field becomes second and Idea third.
+    // Undoing the duplicates needs the whole order written: Person first, Field
+    // second and Idea third, each on its own position.
     expect(updateKind.mock.calls).toEqual([
+      ['k1', { sortOrder: 1 }],
       ['k3', { sortOrder: 2 }],
       ['k2', { sortOrder: 3 }],
     ]);
@@ -782,8 +880,9 @@ describe('BrainKindsPage', () => {
     await settleFrame();
 
     // Tolkien's own suggestion is gone; the next candidate keeps the reader's
-    // place instead of focus falling to the page body.
-    expect(rowFor('Ursula').contains(document.activeElement)).toBe(true);
+    // place instead of focus falling to the page body. It is the suggestion
+    // itself, not the row's name link that comes first in the DOM.
+    expect(document.activeElement).toBe(rowFor('Ursula').querySelector('.person-suggestion'));
   });
 
   it('finds the next row before the answered one leaves the No kind view', async () => {
@@ -799,7 +898,7 @@ describe('BrainKindsPage', () => {
     fixture.detectChanges();
     await settleFrame();
 
-    expect(rowFor('Ursula').contains(document.activeElement)).toBe(true);
+    expect(document.activeElement).toBe(rowFor('Ursula').querySelector('.person-suggestion'));
   });
 
   it('goes to the previous row when the answered one was the last', async () => {
@@ -815,7 +914,25 @@ describe('BrainKindsPage', () => {
     fixture.detectChanges();
     await settleFrame();
 
-    expect(rowFor('Tolkien').contains(document.activeElement)).toBe(true);
+    expect(document.activeElement).toBe(rowFor('Tolkien').querySelector('.person-suggestion'));
+  });
+
+  it('falls back to the name link when the neighbour offers no Person?', async () => {
+    // Education has a kind, so its row offers no suggestion: the reader's place
+    // is kept by its name link instead.
+    topics = [topic('t3', 'Tolkien'), topic('t2', 'Education', 'k1')];
+    TestBed.inject(BrainStateService).refresh();
+    fixture.detectChanges();
+    const rowFor = (name: string): HTMLElement =>
+      (Array.from(fixture.nativeElement.querySelectorAll('.topic-row')) as HTMLElement[])
+        .find((row) => row.querySelector('.topic-name')?.textContent?.includes(name))!;
+
+    (rowFor('Tolkien').querySelector('.person-suggestion') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    await settleFrame();
+
+    expect(rowFor('Education').querySelector('.person-suggestion')).toBeNull();
+    expect(document.activeElement).toBe(rowFor('Education').querySelector('.topic-name'));
   });
 
   it('falls back to the sorter heading when the last Person answer empties the list', async () => {

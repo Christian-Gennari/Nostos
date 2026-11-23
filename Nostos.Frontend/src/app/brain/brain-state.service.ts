@@ -106,6 +106,13 @@ export class BrainStateService {
   private kindsLoading = false;
   /** A reload was asked for while one was in flight; it runs when that one lands. */
   private kindsQueued = false;
+  /**
+   * Bumped when a kind read is superseded by another. The answer to a
+   * superseded read is the server's order from before the write that replaced
+   * it, so applying it would put that order back on screen until the queued
+   * read lands.
+   */
+  private kindsSeq = 0;
 
   /** Loads the topics and counts the first time anything asks. */
   ensureLoaded(): void {
@@ -189,16 +196,24 @@ export class BrainStateService {
   private loadKinds(): void {
     if (this.kindsLoading) {
       // A write landed while the last answer was in flight: read again once it
-      // does, so the counts are the ones after the write.
+      // does, so the counts are the ones after the write. That answer is stale
+      // now — it holds the server's order from before the write — so it must
+      // not be applied when it lands.
       this.kindsQueued = true;
+      this.kindsSeq += 1;
       return;
     }
     this.kindsLoading = true;
+    const seq = ++this.kindsSeq;
     this.topicsService.listKinds().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (kinds) => {
-        this.topicKinds.set(kinds);
-        this.kindsLoaded.set(true);
-        this.kindsFailed.set(false);
+        // A newer read replaced this one: applying its order would revert a
+        // reorder the reader can see for as long as the queued read takes.
+        if (seq === this.kindsSeq) {
+          this.topicKinds.set(kinds);
+          this.kindsLoaded.set(true);
+          this.kindsFailed.set(false);
+        }
         this.kindsLoading = false;
         this.runQueuedKinds();
       },
@@ -206,7 +221,7 @@ export class BrainStateService {
       // loaded list (if any) in place; a first failure is reported to the
       // screens that let the reader add or edit a kind.
       error: () => {
-        this.kindsFailed.set(!this.kindsLoaded());
+        if (seq === this.kindsSeq) this.kindsFailed.set(!this.kindsLoaded());
         this.kindsLoading = false;
         this.runQueuedKinds();
       },

@@ -479,11 +479,14 @@ export class BrainKindsPage {
   /**
    * Moves a kind one place up or down.
    *
-   * The whole new order is computed here, then `1..N` is written for every row
-   * whose stored order differs. Trading two values was wrong in two ways: a
-   * second click landing before the refreshed list arrived read the same old
-   * values and produced duplicates, and once two kinds held the same order the
-   * trade could never separate them again. Writing the positions repairs both.
+   * The whole new order is computed here and every kind's `1..N` position is
+   * written, so the server's order is the one on screen whatever it held
+   * before. Trading two values was wrong in three ways: a second click landing
+   * before the refreshed list arrived read the same old values and produced
+   * duplicates, two kinds with equal orders could never be separated again, and
+   * a view left behind by a reload could leave out a row whose position it
+   * thought was already right, so that row kept an old number another kind now
+   * held.
    */
   moveKind(kind: TopicKindDto, direction: -1 | 1): void {
     if (this.busy()) return;
@@ -495,22 +498,27 @@ export class BrainKindsPage {
     const reordered = [...list];
     const [moved] = reordered.splice(index, 1);
     reordered.splice(target, 0, moved);
-
-    const changes = reordered
-      .map((item, position) => ({ id: item.id, sortOrder: position + 1, current: item.sortOrder }))
-      .filter((change) => change.current !== change.sortOrder);
-    if (!changes.length) return;
+    const positions = reordered.map((item, position) => ({ id: item.id, sortOrder: position + 1 }));
 
     this.busy.set(true);
     forkJoin(
-      changes.map((change) => this.topicsService.updateKind(change.id, { sortOrder: change.sortOrder }))
+      positions.map((position) => this.topicsService.updateKind(position.id, { sortOrder: position.sortOrder }))
     ).subscribe({
       next: () => {
         // The reload is a fire-and-forget read: `busy` used to drop before its
         // answer, so a click landing in between traded the old orders again and
         // duplicated them. The write's own order is the truth until it lands.
-        this.state.topicKinds.set(
-          reordered.map((item, position) => ({ ...item, sortOrder: position + 1 })),
+        const order = new Map(positions.map((position) => [position.id, position.sortOrder]));
+        // The positions are applied to the list as it stands NOW: a rename, a
+        // recolour, a create or a delete may have finished while the writes were
+        // in flight, and the array captured before them would undo it.
+        this.state.topicKinds.update((kinds) =>
+          kinds
+            .map((item) => {
+              const sortOrder = order.get(item.id);
+              return sortOrder === undefined ? item : { ...item, sortOrder };
+            })
+            .sort((first, second) => first.sortOrder - second.sortOrder),
         );
         this.busy.set(false);
         this.state.refresh();
@@ -824,9 +832,12 @@ export class BrainKindsPage {
     if (this.destroyed) return;
     window.requestAnimationFrame(() => {
       if (this.destroyed) return;
+      // The suggestion first: `querySelector('a, b')` returns the first match in
+      // DOM order, and the name link sits before the suggestion in every row.
       const target =
         neighbour?.isConnected
-          ? neighbour.querySelector<HTMLElement>('.person-suggestion, .topic-name')
+          ? neighbour.querySelector<HTMLElement>('.person-suggestion')
+            ?? neighbour.querySelector<HTMLElement>('.topic-name')
           : null;
       (target ?? this.sorterHeading()?.nativeElement)?.focus();
     });

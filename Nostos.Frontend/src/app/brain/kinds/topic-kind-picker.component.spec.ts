@@ -2,6 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { OverlayModule } from '@angular/cdk/overlay';
 import { By } from '@angular/platform-browser';
 import { provideRouter } from '@angular/router';
+import { readFileSync } from 'node:fs';
 import { Subject, of, throwError } from 'rxjs';
 
 import { NotesService } from '../../core/services/notes.service';
@@ -32,6 +33,8 @@ describe('TopicKindPickerComponent', () => {
   let setTopicsKind: ReturnType<typeof vi.fn>;
   let createKind: ReturnType<typeof vi.fn>;
   let kindsFail: boolean;
+  /** A read the test holds open, so the panel is seen while the kinds load. */
+  let kindsPending: Subject<TopicKindDto[]> | null;
 
   const topic: TopicDto = { id: 't1', name: 'Tolkien', usageCount: 3, kindId: null, kindSource: null };
 
@@ -44,7 +47,8 @@ describe('TopicKindPickerComponent', () => {
           provide: TopicsService,
           useValue: {
             list: () => of([topic]),
-            listKinds: () => (kindsFail ? throwError(() => new Error('kinds unavailable')) : of(kinds)),
+            listKinds: () =>
+              (kindsFail ? throwError(() => new Error('kinds unavailable')) : kindsPending ?? of(kinds)),
             setTopicsKind,
             createKind,
           },
@@ -69,6 +73,7 @@ describe('TopicKindPickerComponent', () => {
   beforeEach(async () => {
     kinds = [person, idea];
     kindsFail = false;
+    kindsPending = null;
     setTopicsKind = vi.fn((ids: string[], kindId: string | null) =>
       of({ updatedTopicIds: ids, kindId, kindSource: kindId ? 'reader' : null }));
     createKind = vi.fn(() => of(kind('k3', 'Field', 'kind-3')));
@@ -108,6 +113,29 @@ describe('TopicKindPickerComponent', () => {
     expect(trigger.textContent?.trim()).toBe('Kind unavailable');
     expect(trigger.classList.contains('is-add')).toBe(false);
     expect(trigger.getAttribute('aria-label')).not.toContain('Add a kind');
+  });
+
+  it('draws the unavailable state as the same capsule as every other pill', async () => {
+    kindsFail = true;
+    await remount();
+    fixture.componentRef.setInput('topic', { ...topic, kindId: 'k1', kindSource: 'reader' });
+    fixture.detectChanges();
+
+    // The capsule is the shared pill inside the button, so the button keeps its
+    // 44px phone height without its own 44px-tall capsule.
+    const trigger = fixture.nativeElement.querySelector('.kind-trigger') as HTMLElement;
+    const capsule = trigger.querySelector('.kind-pill') as HTMLElement;
+    expect(capsule).not.toBeNull();
+    expect(capsule.textContent?.trim()).toBe('Kind unavailable');
+    expect(capsule.classList.contains('is-untyped')).toBe(true);
+    expect(trigger.querySelector('.kind-unavailable')).toBeNull();
+
+    const css = readFileSync('src/app/brain/kinds/topic-kind-picker.component.css', 'utf8');
+    const unavailable = css.match(/\.kind-trigger\.is-unavailable\s*\{([^}]*)\}/);
+    expect(unavailable?.[1] ?? '').not.toMatch(/border(-radius)?:|background:/);
+    // The touch target is still the button's.
+    const phone = css.match(/@media \(max-width: 768px\) \{([\s\S]*?)\n\}/);
+    expect(phone?.[1] ?? '').toMatch(/\.kind-trigger\s*\{[^}]*min-height:\s*var\(--control-h-touch\)/);
   });
 
   it('opens with every kind, No kind, New kind… and Manage kinds', () => {
@@ -279,6 +307,32 @@ describe('TopicKindPickerComponent', () => {
     expect(document.querySelector('.kind-picker-failed')).toBeNull();
     expect(Array.from(document.querySelectorAll('.kind-choice')).length).toBe(3);
     expect(document.body.textContent).toContain('New kind…');
+  });
+
+  it('says it is loading the kinds instead of offering Try again first', async () => {
+    kindsPending = new Subject<TopicKindDto[]>();
+    await remount();
+    // A topic that has a kind the list has not arrived to name.
+    fixture.componentRef.setInput('topic', { ...topic, kindId: 'k1', kindSource: 'reader' });
+    fixture.componentInstance.toggle();
+    fixture.detectChanges();
+
+    const panel = document.querySelector('.kind-picker') as HTMLElement;
+    expect(panel.querySelector('nostos-loading-indicator')).not.toBeNull();
+    expect(document.body.textContent).toContain('Loading kinds');
+    expect(document.querySelector('.kind-choice')).toBeNull();
+    // "Try again first" is advice for a read that failed, not one on its way,
+    // and New kind cannot be chosen over an unknown list either.
+    expect(document.body.textContent).not.toContain('Try again first');
+    expect(document.body.textContent).not.toContain('New kind…');
+
+    kindsPending.next([person, idea]);
+    kindsPending.complete();
+    fixture.detectChanges();
+
+    expect(document.querySelector('.kind-picker nostos-loading-indicator')).toBeNull();
+    expect(Array.from(document.querySelectorAll('.kind-choice')).length).toBe(3);
+    expect(document.body.textContent).not.toContain('Try again first');
   });
 
   it('focuses the new kind field when it opens, and the button when it closes', async () => {

@@ -19,6 +19,7 @@ import { TopicsService } from '../../core/services/topics.service';
 import { ToastService } from '../../core/services/toast.service';
 import { ButtonComponent } from '../../ui/button/button.component';
 import { InputDirective } from '../../ui/form-control/form-control.directive';
+import { LoadingIndicatorComponent } from '../../ui/loading-indicator/loading-indicator.component';
 import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
 import {
   SettingsPopoverComponent,
@@ -46,6 +47,7 @@ import { TopicKindPillComponent } from './topic-kind-pill.component';
     RouterLink,
     ButtonComponent,
     InputDirective,
+    LoadingIndicatorComponent,
     NostosIconComponent,
     SettingsPopoverComponent,
     KindChoiceListComponent,

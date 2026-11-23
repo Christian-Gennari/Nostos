@@ -38,7 +38,7 @@ const ONLY = new Set(
   (
     typeof args.only === 'string'
       ? args.only
-      : 'phone,hidden-kind,select-all,kinds-failed,map-failed,picker-failed,map-capped'
+      : 'phone,hidden-kind,select-all,kinds-failed,map-failed,picker-failed,picker-loading,map-capped'
   )
     .split(',')
     .filter(Boolean),
@@ -345,6 +345,38 @@ async function capture(browser, base, cloud, width, theme, seed) {
     await page
       .locator('.brain-map')
       .screenshot({ path: path.join(out, `${side}-${slug}-map-capped-filter.png`) });
+  }
+
+  // 3c. The kind list is still on its way: the picker says so, and must not
+  // offer "Try again first" for a read that has not failed. The route is held
+  // open instead of answered, so the panel is seen mid-read.
+  if (ONLY.has('picker-loading')) {
+    const held = [];
+    await page.route('**/api/topic-kinds', (route) => {
+      held.push(route);
+    });
+    await page.goto(`${base}/brain/topics/${seed.personTopicId}`, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('.kind-trigger');
+    await page.waitForTimeout(400);
+    await page.locator('.kind-trigger').click();
+    await page.waitForTimeout(500);
+    const pickerLoading = await page.evaluate(() => ({
+      loading: !!document.querySelector('.kind-picker .nostos-loading-indicator'),
+      label: document.querySelector('.kind-picker .visually-hidden')?.textContent?.trim() ?? null,
+      choices: document.querySelectorAll('.kind-picker .kind-choice').length,
+      retryFirst: !!document.body.textContent?.includes('Try again first'),
+      newKind: !!document.querySelector('.kind-picker-action'),
+      capsule: document.querySelector('.kind-trigger .kind-pill')?.textContent?.trim() ?? null,
+    }));
+    console.log(
+      `${side} ${slug} loading-kinds picker: loading=${pickerLoading.loading} ` +
+        `label=${JSON.stringify(pickerLoading.label)} choices=${pickerLoading.choices} ` +
+        `retryFirst=${pickerLoading.retryFirst} newKind=${pickerLoading.newKind} ` +
+        `capsule=${JSON.stringify(pickerLoading.capsule)}`,
+    );
+    await shot(page, `${slug}-picker-loading.png`);
+    for (const route of held) await route.abort().catch(() => {});
+    await page.unroute('**/api/topic-kinds');
   }
 
   // 4. `/api/topic-kinds` failing: the map, the kinds page and the picker.

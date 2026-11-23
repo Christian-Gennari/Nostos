@@ -17,7 +17,10 @@
       <app-topic-kind-pill [name]="kind.name" [colorKey]="kind.colorKey" />
       <nostos-icon class="kind-caret" name="caret-down" [size]="12" />
     } @else if (kindUnavailable()) {
-      <span class="kind-unavailable">Kind unavailable</span>
+      <!-- The capsule is the same pill as every other kind: the button keeps
+           the phone's 44px target without becoming a 44px-tall capsule. -->
+      <app-topic-kind-pill untypedLabel="Kind unavailable" />
+      <nostos-icon class="kind-caret" name="caret-down" [size]="12" />
     } @else {
       Add a kind
     }
@@ -39,6 +42,8 @@
           <p>Could not load your kinds.</p>
           <button appButton variant="secondary" size="sm" type="button" (click)="retryKinds()">Try again</button>
         </div>
+      } @else if (!kindsLoaded()) {
+        <nostos-loading-indicator class="kind-picker-loading" label="Loading kinds" />
       } @else {
         <app-kind-choice-list
           [kinds]="kinds()"
@@ -78,9 +83,10 @@
           <p class="kind-create-hint">A free colour is chosen for it.</p>
         </form>
       } @else if (createBlocked()) {
-        <!-- The failed alert above already says the kinds did not load; it owns
-             that message and its Try again. -->
-        @if (!kindsFailed()) {
+        <!-- While the kinds load, the indicator above says so: "Try again
+             first" is advice for a read that failed, and the failed alert owns
+             that message. -->
+        @if (kindsLoaded()) {
           <p class="kind-picker-note">{{ createBlocked() }}</p>
         }
       } @else {
