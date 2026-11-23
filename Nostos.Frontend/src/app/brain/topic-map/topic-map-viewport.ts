@@ -179,9 +179,11 @@ export class TopicMapViewport {
     const { container } = options;
     this.initialFrameId = window.requestAnimationFrame(() => {
       this.initialFrameId = null;
-      if (this.disposed) return;
       const sigma = options.getSigma();
-      if (!sigma) return;
+      if (this.disposed || !sigma) {
+        this.detachUserCamera();
+        return;
+      }
       sigma.refresh();
       this.frameOnLoad({
         sigma,
@@ -194,22 +196,27 @@ export class TopicMapViewport {
       });
       this.framed = true;
       this.carriedCamera = null;
-    });
 
-    // The force layout can finish after the first painted frame. Re-frame once
-    // from the settled extent, so `?focus=` is not framed against seed
-    // positions — but never after the reader has taken control of the camera,
-    // and never on a rebuild, where the kept camera is the reader's view.
-    if (firstBuild) {
+      // The force layout writes its own positions after the first painted
+      // frame, so the settle re-frame must be a LATER frame than the initial
+      // one. Queued alongside it, both callbacks ran in the same frame against
+      // the same extent, and the second was always a no-op. It never runs on a
+      // rebuild either, where the kept camera is the reader's view.
+      if (!firstBuild) {
+        this.detachUserCamera();
+        return;
+      }
       this.settleFrameId = window.requestAnimationFrame(() => {
         this.settleFrameId = null;
+        // The reader's first gesture only matters for these two frames.
+        this.detachUserCamera();
         if (this.disposed || !this.framed || this.userMovedCamera) return;
-        const sigma = options.getSigma();
+        const settledSigma = options.getSigma();
         const graph = options.getGraph();
         const selectedId = options.getSelectedId();
-        if (!sigma || !graph || !selectedId || !options.getCenterOnLoad()) return;
+        if (!settledSigma || !graph || !selectedId || !options.getCenterOnLoad()) return;
         const state = this.focusedCameraState(
-          sigma,
+          settledSigma,
           graph,
           selectedId,
           this.fitOccupancy(),
@@ -218,9 +225,9 @@ export class TopicMapViewport {
         if (!state) return;
         if (this.lastFrameTarget && sameFrame(state, this.lastFrameTarget)) return;
         this.lastFrameTarget = state;
-        sigma.getCamera().animate(state, { duration: 350 });
+        settledSigma.getCamera().animate(state, { duration: 350 });
       });
-    }
+    });
 
     if (typeof ResizeObserver !== 'undefined') {
       let lastWidth = container.clientWidth;
@@ -389,6 +396,12 @@ export class TopicMapViewport {
    * canvas: centring on the middle of the stage put the focused topic under the
    * controls rail, just above the card. The node is centred in that band
    * instead. A wide screen keeps the stage centre.
+   *
+   * `maxRatio` caps the zoom BEFORE the phone band offset is computed: the
+   * offset is a distance in framed coordinates, and the same distance covers a
+   * different number of pixels at every ratio. Computing it at the focal ratio
+   * and then animating at a smaller one put the node hundreds of pixels off the
+   * stage.
    */
   focusedCameraState(
     sigma: Sigma | null,
@@ -396,7 +409,8 @@ export class TopicMapViewport {
     selectedId: string | null,
     occupancy: { x: number; y: number } = this.fitOccupancy(),
     insets: { top: number; bottom: number } = { top: 0, bottom: 0 },
-    phone = isPhoneViewport()
+    phone = isPhoneViewport(),
+    maxRatio: number | null = null
   ): { x: number; y: number; ratio: number } | null {
     if (!selectedId || !graph || !sigma || !graph.hasNode(selectedId)) return null;
 
@@ -409,9 +423,10 @@ export class TopicMapViewport {
     if (!framed) return null;
 
     const fit = this.fitCameraState(sigma, graph, occupancy, insets);
-    const ratio = fit
+    const fitted = fit
       ? Math.max(fit.ratio * 0.6, 0.3)
       : sigma.getCamera().ratio;
+    const ratio = maxRatio !== null ? Math.min(maxRatio, fitted) : fitted;
     if (!phone) return { x: framed.x, y: framed.y, ratio };
 
     const { width, height } = sigma.getDimensions();
@@ -459,10 +474,21 @@ export class TopicMapViewport {
     selectedId: string | null,
     insets: { top: number; bottom: number } = { top: 0, bottom: 0 }
   ): void {
-    const target = this.focusedCameraState(sigma, graph, selectedId, this.fitOccupancy(), insets);
-    if (!target || !sigma) return;
-    const camera = sigma.getCamera();
-    camera.animate({ ...target, ratio: Math.min(camera.ratio, target.ratio) }, { duration: 350 });
+    const camera = sigma?.getCamera() ?? null;
+    // Never zoom out to reach the focus: the reader's ratio is a ceiling, and
+    // it has to be the ratio the phone band offset is measured at. The offset is
+    // computed inside `focusedCameraState` precisely so it uses this ratio.
+    const target = this.focusedCameraState(
+      sigma,
+      graph,
+      selectedId,
+      this.fitOccupancy(),
+      insets,
+      undefined,
+      camera ? camera.ratio : null
+    );
+    if (!target || !sigma || !camera) return;
+    camera.animate(target, { duration: 350 });
   }
 
   /** Keep the selected node out from under the selection card and controls rail. */
@@ -555,6 +581,12 @@ export class TopicMapViewport {
       container.removeEventListener('touchmove', markMoved);
       container.removeEventListener('keydown', markMoved);
     };
+  }
+
+  /** Stop watching for the reader's first gesture; they only matter until the settle frame. */
+  private detachUserCamera(): void {
+    this.detachUserCameraListeners?.();
+    this.detachUserCameraListeners = null;
   }
 
   /** Tear down all listeners, frames, and pending refresh timers on destroy. */

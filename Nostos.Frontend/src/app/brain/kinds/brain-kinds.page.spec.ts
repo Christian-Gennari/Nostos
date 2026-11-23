@@ -1,5 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { OverlayModule } from '@angular/cdk/overlay';
+import { HttpErrorResponse } from '@angular/common/http';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router, type ParamMap } from '@angular/router';
 import { readFileSync } from 'node:fs';
 import { BehaviorSubject, of, Subject, throwError } from 'rxjs';
@@ -40,9 +41,12 @@ describe('BrainKindsPage', () => {
   let topicsFail: boolean;
   let setTopicsKind: ReturnType<typeof vi.fn>;
   let updateKind: ReturnType<typeof vi.fn>;
+  let reorderKinds: ReturnType<typeof vi.fn>;
   let createKind: ReturnType<typeof vi.fn>;
   let deleteKind: ReturnType<typeof vi.fn>;
   let listKinds: ReturnType<typeof vi.fn>;
+  let listBooks: ReturnType<typeof vi.fn>;
+  let kindsFail: boolean;
 
   const component = (): BrainKindsPage => fixture.componentInstance;
 
@@ -65,23 +69,14 @@ describe('BrainKindsPage', () => {
             listKinds,
             setTopicsKind,
             updateKind,
+            reorderKinds,
             createKind,
             deleteKind,
           },
         },
         {
           provide: BooksService,
-          useValue: {
-            list: () => of({
-              items: [
-                { author: 'Ursula K. Le Guin' },
-                { author: 'J.R.R. Tolkien' },
-              ],
-              totalCount: 2,
-              page: 1,
-              pageSize: 500,
-            }),
-          },
+          useValue: { list: listBooks },
         },
         { provide: NotesService, useValue: { summary: () => of({ total: 0 }) } },
         { provide: AssistantService, useValue: { actionExecuted: new Subject() } },
@@ -110,12 +105,23 @@ describe('BrainKindsPage', () => {
       topic('t4', 'Story', 'k2', 'connected-app'),
     ];
     kinds = [person, idea];
+    kindsFail = false;
+    listBooks = vi.fn(() => of({
+      items: [{ author: 'Ursula K. Le Guin' }, { author: 'J.R.R. Tolkien' }],
+      totalCount: 2,
+      page: 1,
+      pageSize: 100,
+    }));
     setTopicsKind = vi.fn((ids: string[], kindId: string | null) =>
       of({ updatedTopicIds: ids, kindId, kindSource: kindId ? 'reader' : null }));
     updateKind = vi.fn(() => of(person));
+    // The server answers a reorder with the kinds in the order sent, numbered
+    // 1..N. A spec that cares about the answer overrides this.
+    reorderKinds = vi.fn((ids: string[]) =>
+      of(ids.map((id, position) => ({ ...kinds.find((item) => item.id === id)!, sortOrder: position + 1 }))));
     createKind = vi.fn(() => of(kind('k3', 'Field', 'kind-3', 3)));
     deleteKind = vi.fn(() => of(undefined));
-    listKinds = vi.fn(() => of(kinds));
+    listKinds = vi.fn(() => (kindsFail ? throwError(() => new Error('kinds unavailable')) : of(kinds)));
 
     await mount();
   });
@@ -128,6 +134,20 @@ describe('BrainKindsPage', () => {
   function setQuery(params: Record<string, string>): void {
     query.next(convertToParamMap(params));
     fixture.detectChanges();
+  }
+
+  /**
+   * The list a real server would return after a kind write: the written topic
+   * carries its new kind, so a filtered view really drops its row on reload.
+   * Without this the mock `list` undid `replaceTopic` and the row stayed.
+   */
+  function serveKindWrites(): void {
+    setTopicsKind.mockImplementation((ids: string[], kindId: string | null) => {
+      topics = topics.map((item) =>
+        ids.includes(item.id) ? { ...item, kindId, kindSource: kindId ? 'reader' : null } : item,
+      );
+      return of({ updatedTopicIds: ids, kindId, kindSource: kindId ? 'reader' : null });
+    });
   }
 
   function checkbox(index: number, desired: boolean, shift = false): void {
@@ -260,10 +280,20 @@ describe('BrainKindsPage', () => {
     expect(updateKind).toHaveBeenCalledWith('k1', { colorKey: 'kind-2', swapColor: true });
   });
 
-  it('reorders kinds by trading sort orders', () => {
+  it('reorders kinds with one request that lists the whole order', () => {
+    reorderKinds.mockReturnValue(of([{ ...idea, sortOrder: 1 }, { ...person, sortOrder: 2 }]));
+    const reads = listKinds.mock.calls.length;
+
     component().moveKind(person, 1);
-    expect(updateKind).toHaveBeenCalledWith('k1', { sortOrder: 2 });
-    expect(updateKind).toHaveBeenCalledWith('k2', { sortOrder: 1 });
+
+    expect(reorderKinds).toHaveBeenCalledTimes(1);
+    expect(reorderKinds).toHaveBeenCalledWith(['k2', 'k1']);
+    expect(updateKind).not.toHaveBeenCalled();
+    expect(component().busy()).toBe(false);
+    expect(component().kinds().map((item) => item.id)).toEqual(['k2', 'k1']);
+    expect(component().kinds().map((item) => item.sortOrder)).toEqual([1, 2]);
+    // No read was open, so the answered order is enough: no extra request.
+    expect(listKinds).toHaveBeenCalledTimes(reads);
   });
 
   it('asks before deleting and keeps the topics', () => {
@@ -403,16 +433,33 @@ describe('BrainKindsPage', () => {
       'Kept 1 topic as yours, but 1 topic could not be kept. Try again.');
   });
 
-  it('rereads the kinds after a failed reorder, so equal sort orders do not stick', () => {
+  it('rereads the kinds after a failed reorder, so the arrows start from the server', () => {
     const state = TestBed.inject(BrainStateService);
     const refresh = vi.spyOn(state, 'refresh');
-    updateKind.mockReturnValue(throwError(() => new Error('network')));
+    reorderKinds.mockReturnValue(throwError(() => new Error('network')));
 
     component().moveKind(person, 1);
 
     expect(refresh).toHaveBeenCalled();
+    expect(component().busy()).toBe(false);
     expect(TestBed.inject(ToastService).error).toHaveBeenCalledWith(
       'Could not reorder the kinds. Try again.');
+  });
+
+  it('tells the reader when the kinds changed elsewhere, and reads the order back', () => {
+    const state = TestBed.inject(BrainStateService);
+    const refresh = vi.spyOn(state, 'refresh');
+    reorderKinds.mockReturnValue(throwError(() => new HttpErrorResponse({
+      status: 409,
+      error: { error: 'The order must list every topic kind exactly once.' },
+    })));
+
+    component().moveKind(person, 1);
+
+    expect(refresh).toHaveBeenCalled();
+    // The server's words describe an invariant, not what the reader can do.
+    expect(TestBed.inject(ToastService).error).toHaveBeenCalledWith(
+      'Your kinds changed somewhere else, so the list was refreshed. Try the move again.');
   });
 
   it('ignores a rename answer for a kind whose field has since closed', () => {
@@ -530,6 +577,569 @@ describe('BrainKindsPage', () => {
       (action) => (action.querySelector('nostos-icon') as HTMLElement).getAttribute('name'));
     expect(glyphs[1]).toBe('minus');
     expect(glyphs.filter((name) => name === 'x')).toHaveLength(0);
+  });
+
+
+  /** Waits for the frame the page defers a focus move to. */
+  const settleFrame = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 40));
+
+  it('clears the search and the filter in one navigation', () => {
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    setQuery({ q: 'tolk', filter: 'untyped' });
+    navigate.mockClear();
+
+    component().clearFilters();
+
+    // Two navigations raced, and the second cancelled the first: `q` survived.
+    expect(navigate).toHaveBeenCalledTimes(1);
+    expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({
+      queryParams: { q: null, filter: null },
+      queryParamsHandling: 'merge',
+    }));
+  });
+
+  it('caps Select all at the first 500 rows, replacing one picked past the cap', () => {
+    topics = Array.from({ length: 520 }, (_, i) => ({
+      id: `t${i}`,
+      name: `Topic ${String(i).padStart(3, '0')}`,
+      usageCount: 3,
+      kindId: null,
+      kindSource: null,
+    })) as TopicDto[];
+    TestBed.inject(BrainStateService).refresh();
+    fixture.detectChanges();
+
+    // A row past the cap is already ticked; Select all must cap at 500, not add
+    // 500 more to it and send 501 to a server that refuses more than 500.
+    checkbox(510, true);
+    expect(component().selectedCount()).toBe(1);
+
+    component().toggleAll();
+    fixture.detectChanges();
+
+    expect(component().selectedCount()).toBe(BULK_KIND_LIMIT);
+    expect(component().selected().has('t510')).toBe(false);
+    const label = (fixture.nativeElement.querySelector('.sorter-tools button') as HTMLElement)
+      .textContent?.trim();
+    expect(label).toBe('Clear selection');
+  });
+
+  it('ignores a second move while the first request is in flight', () => {
+    const answer = new Subject<TopicKindDto[]>();
+    reorderKinds.mockReturnValue(answer);
+
+    component().moveKind(person, 1);
+    expect(component().busy()).toBe(true);
+    expect(reorderKinds).toHaveBeenCalledWith(['k2', 'k1']);
+
+    // The arrows are disabled while `busy`, but a second click can already be
+    // queued: it must not send a second order computed from the old list.
+    component().moveKind(idea, -1);
+    expect(reorderKinds).toHaveBeenCalledTimes(1);
+
+    answer.next([{ ...idea, sortOrder: 1 }, { ...person, sortOrder: 2 }]);
+    answer.complete();
+
+    expect(component().busy()).toBe(false);
+    expect(component().kinds().map((item) => item.id)).toEqual(['k2', 'k1']);
+    expect(component().kinds().map((item) => item.sortOrder)).toEqual([1, 2]);
+  });
+
+  it('replaces the kinds read a write started, so a finished move is not reverted', () => {
+    const state = TestBed.inject(BrainStateService);
+    const reads = listKinds.mock.calls.length;
+
+    // A rename closes while its kinds read is still on its way.
+    const firstRead = new Subject<TopicKindDto[]>();
+    const queuedRead = new Subject<TopicKindDto[]>();
+    listKinds.mockReturnValueOnce(firstRead).mockReturnValueOnce(queuedRead);
+    component().startRename(person);
+    component().commitRename('k1', 'People');
+    expect(listKinds).toHaveBeenCalledTimes(reads + 1);
+    expect(state.kindsLoading()).toBe(true);
+
+    // The move goes out and lands before that read answers.
+    const put = new Subject<TopicKindDto[]>();
+    reorderKinds.mockReturnValue(put);
+    component().moveKind(person, 1);
+    put.next([{ ...idea, sortOrder: 1 }, { ...person, sortOrder: 2 }]);
+    put.complete();
+
+    const ids = (): string[] => component().kinds().map((item) => item.id);
+    expect(component().busy()).toBe(false);
+    expect(ids()).toEqual(['k2', 'k1']);
+    // The read that was open is replaced by a queued one, not sent twice at once.
+    expect(listKinds).toHaveBeenCalledTimes(reads + 1);
+
+    // That read answers with the order from before the move. Applied, it would
+    // revert the list while nothing is busy, and the next arrow click would
+    // then move from the order the reader no longer sees.
+    firstRead.next([{ ...person, sortOrder: 1 }, { ...idea, sortOrder: 2 }]);
+    firstRead.complete();
+    expect(ids()).toEqual(['k2', 'k1']);
+    expect(listKinds).toHaveBeenCalledTimes(reads + 2);
+
+    // The queued read carries the order the server holds, and its names.
+    queuedRead.next([{ ...idea, sortOrder: 1 }, { ...person, name: 'People', sortOrder: 2 }]);
+    queuedRead.complete();
+    expect(ids()).toEqual(['k2', 'k1']);
+    expect(component().kinds().map((item) => item.name)).toEqual(['Idea', 'People']);
+    expect(state.kindsLoading()).toBe(false);
+  });
+
+  it('drops a superseded kinds read and then sends the whole order on screen', () => {
+    kinds = [
+      kind('k1', 'A', 'kind-1', 1),
+      kind('k2', 'B', 'kind-2', 2),
+      kind('k3', 'C', 'kind-3', 3),
+    ];
+    TestBed.inject(BrainStateService).reloadKinds();
+    fixture.detectChanges();
+
+    // Each read answers on its own subject. The first holds the order from
+    // before the second read, and lands after it.
+    const first = new Subject<TopicKindDto[]>();
+    const second = new Subject<TopicKindDto[]>();
+    listKinds.mockReturnValueOnce(first).mockReturnValueOnce(second);
+
+    const ids = (): string[] => component().kinds().map((item) => item.id);
+    const [a, b, c] = component().kinds();
+
+    const state = TestBed.inject(BrainStateService);
+    state.reloadKinds();
+    state.reloadKinds(); // supersedes the read above and is queued behind it
+
+    // The stale answer arrives with the order from before the second read.
+    // Applying it would revert the list while `busy` is false, and the next
+    // move would then send an order the reader can no longer see.
+    first.next([{ ...c, sortOrder: 1 }, { ...b, sortOrder: 2 }, { ...a, sortOrder: 3 }]);
+    fixture.detectChanges();
+    expect(ids()).toEqual(['k1', 'k2', 'k3']);
+
+    second.next([{ ...a, sortOrder: 1 }, { ...b, sortOrder: 2 }, { ...c, sortOrder: 3 }]);
+    second.complete();
+    expect(ids()).toEqual(['k1', 'k2', 'k3']);
+
+    // The request carries the whole order on screen, not just the moved row.
+    reorderKinds.mockClear();
+    component().moveKind(component().kinds()[2], -1); // A C B
+    expect(reorderKinds).toHaveBeenCalledWith(['k1', 'k3', 'k2']);
+  });
+
+  it('keeps a rename that landed while a reorder was in flight', () => {
+    const answer = new Subject<TopicKindDto[]>();
+    reorderKinds.mockReturnValue(answer);
+
+    component().moveKind(person, 1);
+
+    // The rename finished first: its reload put "People" in the shared list
+    // while the reorder's request was still open.
+    listKinds.mockReturnValue(of([
+      { ...person, name: 'People', sortOrder: 1 },
+      { ...idea, sortOrder: 2 },
+    ]));
+    component().startRename(person);
+    component().commitRename('k1', 'People');
+    fixture.detectChanges();
+    expect(component().kinds().map((item) => item.name)).toEqual(['People', 'Idea']);
+
+    // The reorder answers with the kinds as they stood before the rename: its
+    // positions are the truth, but its names are not. Applying the answered
+    // list wholesale would put "Person" back.
+    answer.next([{ ...person, sortOrder: 2 }, { ...idea, sortOrder: 1 }]);
+    answer.complete();
+
+    expect(component().kinds().map((item) => item.id)).toEqual(['k2', 'k1']);
+    expect(component().kinds().map((item) => item.name)).toEqual(['Idea', 'People']);
+    expect(component().kinds().map((item) => item.sortOrder)).toEqual([1, 2]);
+  });
+
+  it('sends the whole order when the stored sort orders are equal', () => {
+    kinds = [
+      kind('k1', 'Person', 'kind-1', 1),
+      kind('k2', 'Idea', 'kind-2', 1),
+      kind('k3', 'Field', 'kind-3', 1),
+    ];
+    TestBed.inject(BrainStateService).reloadKinds();
+    fixture.detectChanges();
+    reorderKinds.mockClear();
+
+    component().moveKind(component().kinds()[1], 1); // Idea down, past Field
+
+    // The server writes 1..N for the whole list, so two kinds that shared a
+    // position can be separated again by one move.
+    expect(reorderKinds).toHaveBeenCalledWith(['k1', 'k3', 'k2']);
+  });
+
+  it('forgets a capped Select all once its rows are pruned', () => {
+    topics = Array.from({ length: 520 }, (_, i) => topic(`t${i}`, `Topic ${String(i).padStart(3, '0')}`));
+    TestBed.inject(BrainStateService).refresh();
+    fixture.detectChanges();
+
+    component().toggleAll();
+    expect(component().selectAllCapped()).toBe(true);
+
+    // One selected row leaves the list (a kind set in the No kind view). The cap
+    // no longer describes what is selected, so the label must not say "Clear
+    // selection" for a list the reader never fully selected.
+    topics = topics.slice(1);
+    TestBed.inject(BrainStateService).refresh();
+    fixture.detectChanges();
+
+    expect(component().selectAllCapped()).toBe(false);
+    expect(component().selectAllActive()).toBe(false);
+  });
+
+  it('keeps only the failed rows selected when a Keep is partly refused', () => {
+    setTopicsKind.mockImplementation((ids: string[], kindId: string | null) =>
+      kindId === 'k2'
+        ? throwError(() => new Error('network'))
+        : of({ updatedTopicIds: ids, kindId, kindSource: 'reader' }));
+    checkbox(indexOf('t2'), true);
+    checkbox(indexOf('t4'), true);
+
+    component().keepSelection();
+    fixture.detectChanges();
+
+    expect([...component().selected()]).toEqual(['t4']);
+    expect(component().selectedCount()).toBe(1);
+  });
+
+  it('keeps the whole selection when every Keep request fails', () => {
+    setTopicsKind.mockReturnValue(throwError(() => new Error('network')));
+    checkbox(indexOf('t2'), true);
+    checkbox(indexOf('t4'), true);
+
+    component().keepSelection();
+    fixture.detectChanges();
+
+    expect(component().selectedCount()).toBe(2);
+  });
+
+  it('does not navigate from a deleted page, but still rereads the shared lists', () => {
+    const answer = new Subject<void>();
+    deleteKind.mockReturnValue(answer);
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    const state = TestBed.inject(BrainStateService);
+    const refresh = vi.spyOn(state, 'refresh');
+    setQuery({ filter: 'k2' });
+    // A swap is waiting on Idea's colour.
+    component().chooseColor(person, 'kind-2');
+    expect(component().pendingSwap()?.other.id).toBe('k2');
+    component().askDelete(idea);
+    navigate.mockClear();
+    refresh.mockClear();
+
+    component().deleteKind();
+    // The page is left while the delete is in flight.
+    fixture.destroy();
+    answer.next();
+
+    // The delete is shared state: other screens still need the list read again.
+    expect(refresh).toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+    expect(component().pendingSwap()).toBeNull();
+  });
+
+  it('lets a second kind be renamed while the first is saving', () => {
+    const first = new Subject<TopicKindDto>();
+    const second = new Subject<TopicKindDto>();
+    updateKind.mockReturnValueOnce(first).mockReturnValueOnce(second);
+
+    component().startRename(person);
+    component().commitRename('k1', 'People');
+    expect(component().isRenaming('k1')).toBe(true);
+
+    component().startRename(idea);
+    component().commitRename('k2', 'Ideas');
+
+    // One page-wide flag used to refuse this second save outright.
+    expect(updateKind).toHaveBeenCalledTimes(2);
+    expect(component().isRenaming('k2')).toBe(true);
+
+    first.next({ ...person, name: 'People' });
+    expect(component().isRenaming('k1')).toBe(false);
+    expect(component().isRenaming('k2')).toBe(true);
+  });
+
+  it('closes the Set kind panel when its selection disappears with the rows', async () => {
+    setQuery({ filter: 'untyped' });
+    checkbox(indexOf('t1'), true);
+    component().setKindOpen.set(true);
+    fixture.detectChanges();
+    // Let the popover's own opening focus pass run before it is closed again
+    // (a panel is never closed and opened in the same tick by a reader).
+    await Promise.resolve();
+
+    // The row got a kind elsewhere and left the "No kind" view.
+    topics = topics.map((item) => (item.id === 't1' ? { ...item, kindId: 'k1' } : item));
+    TestBed.inject(BrainStateService).refresh();
+    fixture.detectChanges();
+
+    expect(component().selectedCount()).toBe(0);
+    expect(component().setKindOpen()).toBe(false);
+  });
+
+  it('focuses the new kind field when the form opens, and the button when it closes', async () => {
+    component().startNewKind();
+    fixture.detectChanges();
+    await settleFrame();
+
+    const field = fixture.nativeElement.querySelector('#new-kind-name') as HTMLInputElement;
+    expect(document.activeElement).toBe(field);
+
+    component().cancelNewKind();
+    fixture.detectChanges();
+
+    expect(document.activeElement).toBe(fixture.nativeElement.querySelector('.new-kind'));
+  });
+
+  it('moves focus to the next row after answering Person?', async () => {
+    const rowFor = (name: string): HTMLElement =>
+      (Array.from(fixture.nativeElement.querySelectorAll('.topic-row')) as HTMLElement[])
+        .find((row) => row.querySelector('.topic-name')?.textContent?.includes(name))!;
+
+    const suggestion = rowFor('Tolkien').querySelector('.person-suggestion') as HTMLButtonElement;
+    suggestion.click();
+    fixture.detectChanges();
+    await settleFrame();
+
+    // Tolkien's own suggestion is gone; the next candidate keeps the reader's
+    // place instead of focus falling to the page body. It is the suggestion
+    // itself, not the row's name link that comes first in the DOM.
+    expect(document.activeElement).toBe(rowFor('Ursula').querySelector('.person-suggestion'));
+  });
+
+  it('finds the next row before the answered one leaves the No kind view', async () => {
+    serveKindWrites();
+    setQuery({ filter: 'untyped' });
+    const rowFor = (name: string): HTMLElement =>
+      (Array.from(fixture.nativeElement.querySelectorAll('.topic-row')) as HTMLElement[])
+        .find((row) => row.querySelector('.topic-name')?.textContent?.includes(name))!;
+
+    // A–Z in this view: Tolkien, then Ursula. Answering Tolkien removes its row
+    // before the frame that moves focus, so the neighbour must be found first.
+    (rowFor('Tolkien').querySelector('.person-suggestion') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    await settleFrame();
+
+    expect(document.activeElement).toBe(rowFor('Ursula').querySelector('.person-suggestion'));
+  });
+
+  it('goes to the previous row when the answered one was the last', async () => {
+    serveKindWrites();
+    setQuery({ filter: 'untyped' });
+    const rowFor = (name: string): HTMLElement =>
+      (Array.from(fixture.nativeElement.querySelectorAll('.topic-row')) as HTMLElement[])
+        .find((row) => row.querySelector('.topic-name')?.textContent?.includes(name))!;
+
+    // Ursula is the last untyped row; its row leaves, so the previous row keeps
+    // the reader's place.
+    (rowFor('Ursula').querySelector('.person-suggestion') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    await settleFrame();
+
+    expect(document.activeElement).toBe(rowFor('Tolkien').querySelector('.person-suggestion'));
+  });
+
+  it('falls back to the name link when the neighbour offers no Person?', async () => {
+    // Education has a kind, so its row offers no suggestion: the reader's place
+    // is kept by its name link instead.
+    topics = [topic('t3', 'Tolkien'), topic('t2', 'Education', 'k1')];
+    TestBed.inject(BrainStateService).refresh();
+    fixture.detectChanges();
+    const rowFor = (name: string): HTMLElement =>
+      (Array.from(fixture.nativeElement.querySelectorAll('.topic-row')) as HTMLElement[])
+        .find((row) => row.querySelector('.topic-name')?.textContent?.includes(name))!;
+
+    (rowFor('Tolkien').querySelector('.person-suggestion') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    await settleFrame();
+
+    expect(rowFor('Education').querySelector('.person-suggestion')).toBeNull();
+    expect(document.activeElement).toBe(rowFor('Education').querySelector('.topic-name'));
+  });
+
+  it('falls back to the sorter heading when the last Person answer empties the list', async () => {
+    serveKindWrites();
+    topics = [topic('t3', 'Tolkien')];
+    TestBed.inject(BrainStateService).refresh();
+    setQuery({ filter: 'untyped' });
+    fixture.detectChanges();
+
+    const suggestion = fixture.nativeElement.querySelector('.person-suggestion') as HTMLButtonElement;
+    suggestion.click();
+    fixture.detectChanges();
+    await settleFrame();
+
+    const heading = fixture.nativeElement.querySelector('#kinds-sorter-title') as HTMLElement;
+    expect(document.activeElement).toBe(heading);
+  });
+
+  it('reads only the author pages the library has, and keeps the ones that answer', async () => {
+    listBooks.mockImplementation(({ page }: { page: number }) =>
+      page === 2
+        ? throwError(() => new Error('network'))
+        : of({
+          items: [{ author: page === 1 ? 'Ursula K. Le Guin' : 'J.R.R. Tolkien' }],
+          totalCount: 250,
+          page,
+          pageSize: 100,
+        }));
+    listBooks.mockClear();
+    await remount();
+
+    // 250 books is three pages of 100, not a fixed five.
+    expect(listBooks.mock.calls.map((call) => call[0].page)).toEqual([1, 2, 3]);
+
+    const suggester = component();
+    // Page 2 failed; the names from pages 1 and 3 are still there.
+    expect(suggester.personSuggestion(topic('x', 'Ursula K. Le Guin'))?.id).toBe('k1');
+    expect(suggester.personSuggestion(topic('y', 'Tolkien'))?.id).toBe('k1');
+  });
+
+  it('says the kinds could not be loaded, offers Try again, and refuses to create one', async () => {
+    kindsFail = true;
+    await remount();
+
+    const failed = fixture.nativeElement.querySelector('.kinds-failed') as HTMLElement;
+    expect(failed).not.toBeNull();
+    expect(failed.textContent).toContain('Could not load your kinds');
+    // Creating over an unknown list would pick a colour another kind holds.
+    const newKind = fixture.nativeElement.querySelector('.new-kind') as HTMLButtonElement;
+    expect(newKind.disabled).toBe(true);
+    component().startNewKind();
+    expect(component().newKindOpen()).toBe(false);
+
+    kindsFail = false;
+    (failed.querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('.kinds-failed')).toBeNull();
+    expect((fixture.nativeElement.querySelector('.new-kind') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('shows the kinds loading while a retry is in flight, and the failure again if it fails', async () => {
+    kindsFail = true;
+    await remount();
+
+    checkbox(0, true);
+    component().setKindOpen.set(true);
+    fixture.detectChanges();
+    const panel = document.querySelector('.bulk-kind-panel') as HTMLElement;
+    expect(panel.textContent).toContain('Could not load your kinds');
+
+    const retry = new Subject<TopicKindDto[]>();
+    listKinds.mockReturnValueOnce(retry);
+    (panel.querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    // The failure is cleared when the read starts, so the panel says it is
+    // loading rather than offering a retry for a read that is already on.
+    expect(panel.querySelector('nostos-loading-indicator')).not.toBeNull();
+    expect(panel.textContent).not.toContain('Could not load your kinds');
+
+    retry.error(new Error('still unavailable'));
+    fixture.detectChanges();
+
+    expect(panel.querySelector('nostos-loading-indicator')).toBeNull();
+    expect(panel.textContent).toContain('Could not load your kinds');
+  });
+
+  it('does not replace a retry that is still in flight when Try again is pressed again', async () => {
+    kindsFail = true;
+    await remount();
+
+    const retry = new Subject<TopicKindDto[]>();
+    listKinds.mockReturnValueOnce(retry);
+    const callsBefore = listKinds.mock.calls.length;
+    component().retryKinds();
+    expect(listKinds).toHaveBeenCalledTimes(callsBefore + 1);
+
+    // A second press while the read is open would start another read and its
+    // answer would be the one kept, while this answer was thrown away. The
+    // list the second read would find is empty, so dropping this one is visible.
+    kinds = [];
+    component().retryKinds();
+    expect(listKinds).toHaveBeenCalledTimes(callsBefore + 1);
+
+    retry.next([person, idea]);
+    retry.complete();
+
+    expect(component().kindsLoaded()).toBe(true);
+    expect(component().kinds().map((item) => item.id)).toEqual(['k1', 'k2']);
+  });
+
+  it('explains a failed kind list inside the bulk Set kind panel', async () => {
+    kindsFail = true;
+    await remount();
+
+    checkbox(0, true);
+    component().setKindOpen.set(true);
+    fixture.detectChanges();
+    await Promise.resolve();
+
+    const panel = document.querySelector('.bulk-kind-panel') as HTMLElement;
+    expect(panel).not.toBeNull();
+    expect(panel.textContent).toContain('Could not load your kinds');
+    expect(panel.querySelector('.kind-choice')).toBeNull();
+    const retry = panel.querySelector('button') as HTMLButtonElement;
+    expect(retry.textContent?.trim()).toBe('Try again');
+
+    kindsFail = false;
+    retry.click();
+    fixture.detectChanges();
+
+    // The bulk list has no "No kind" row: the two kinds are the choices.
+    expect(document.querySelectorAll('.kind-choice').length).toBe(2);
+  });
+
+  it('anchors the bulk Set kind panel to its own trigger', async () => {
+    checkbox(0, true);
+    component().setKindOpen.set(true);
+    fixture.detectChanges();
+    await Promise.resolve();
+
+    const trigger = fixture.nativeElement.querySelector(
+      'button[aria-label="Set kind…"]',
+    ) as HTMLElement;
+    expect(component().setKindOrigin()?.nativeElement).toBe(trigger);
+  });
+
+  it('does not call a typed topic untyped while the kinds are unavailable', async () => {
+    kindsFail = true;
+    await remount();
+
+    // A–Z: Education (Person), Story (Idea), Tolkien, Ursula (no kind). The
+    // first two have a kind the failed list cannot name.
+    const rows = Array.from(fixture.nativeElement.querySelectorAll('.topic-row')) as HTMLElement[];
+    const pills = rows.map(
+      (row) => row.querySelector('app-topic-kind-pill')?.textContent?.trim() ?? null,
+    );
+    expect(pills).toEqual(['Kind unavailable', 'Kind unavailable', 'No kind', 'No kind']);
+    for (const row of rows.slice(0, 2)) {
+      expect(row.querySelector('app-topic-kind-pill')?.textContent).not.toContain('No kind');
+    }
+  });
+
+  it('keeps the No kind filter to topics that really have none while the kinds are unavailable', async () => {
+    kindsFail = true;
+    await remount();
+
+    // The filter reads the topic's own kindId, not the missing list: a typed
+    // topic is not swept into "No kind".
+    setQuery({ filter: 'untyped' });
+
+    expect(component().topics().map((item) => item.id)).toEqual(['t3', 't1']);
+  });
+
+  it('offers no Person? while the kinds are unavailable', async () => {
+    kindsFail = true;
+    await remount();
+
+    // "Tolkien" and "Ursula K. Le Guin" are both library authors and untyped.
+    expect(component().personSuggestion(topic('t9', 'Tolkien'))).toBeNull();
+    expect(fixture.nativeElement.querySelector('.person-suggestion')).toBeNull();
   });
 
   it('returns focus to the kind card when a rename closes', async () => {

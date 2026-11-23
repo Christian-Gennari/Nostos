@@ -75,6 +75,12 @@ public record UpdateTopicKindDto(
     int? SortOrder = null,
     bool SwapColor = false);
 
+/// <summary>
+/// Body of <c>PUT /api/topic-kinds/order</c>: every kind's id, in the order the
+/// reader now sees them. It must name exactly the kinds that exist, once each.
+/// </summary>
+public record ReorderTopicKindsDto(IReadOnlyList<Guid>? Ids);
+
 public record SetTopicsKindDto(IReadOnlyList<Guid> TopicIds, Guid? KindId);
 
 public record SetTopicsKindResultDto(

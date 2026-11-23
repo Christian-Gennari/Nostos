@@ -104,7 +104,7 @@
             [class.is-untyped]="!sel.kindName"
             [style.--kind-color]="sel.kindColor ?? 'var(--map-kind-none)'"
             [attr.aria-label]="'Change kind for ' + sel.name + ': ' + (sel.kindName ?? 'No kind')"
-            (click)="kindPickerRequested.emit({ topicId: sel.id, kindId: sel.kindId })"
+            (click)="requestKindPicker($event, sel)"
           >
             <span class="map-card-kind-dot" aria-hidden="true"></span>
             <span>{{ sel.kindName ?? 'No kind' }}</span>
@@ -200,7 +200,7 @@
             type="button"
             class="map-action"
             icon="crosshair"
-            [disabled]="!selectedNodeId()"
+            [disabled]="!selection()"
             aria-label="Center on selection"
             title="Center on selection"
             (click)="centerSelected()"

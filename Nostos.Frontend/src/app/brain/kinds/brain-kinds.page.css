@@ -379,7 +379,8 @@
   padding: 3rem 0;
 }
 
-.sorter-failed {
+.sorter-failed,
+.kinds-failed {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -389,8 +390,13 @@
   font-size: var(--text-sm);
 }
 
-.sorter-failed p {
+.sorter-failed p,
+.kinds-failed p {
   margin: 0;
+}
+
+.kinds-failed {
+  padding: 0.6rem 0 1rem;
 }
 
 .topic-rows {
@@ -506,6 +512,27 @@
 
 .bulk-kind-panel {
   min-width: 13rem;
+}
+
+/* The kind list did not arrive: the panel says so and offers the same read
+   again, rather than showing an empty list of choices. */
+.bulk-kind-failed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.6rem;
+  color: var(--color-text-light);
+  font-size: var(--text-sm);
+}
+
+.bulk-kind-failed p {
+  margin: 0;
+}
+
+.bulk-kind-loading {
+  display: flex;
+  justify-content: center;
+  padding: 1rem 0;
 }
 
 /* --- Phone ---------------------------------------------------------------- */

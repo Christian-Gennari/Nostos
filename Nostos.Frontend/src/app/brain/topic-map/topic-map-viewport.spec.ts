@@ -3,6 +3,11 @@ import type Sigma from 'sigma';
 
 import { FIT_OCCUPANCY, LABEL_EDGE_ALLOWANCE_FRACTION } from './topic-map.helpers';
 import { graphExtent, TopicMapViewport } from './topic-map-viewport';
+import {
+  framedGraphToViewport,
+  viewportToFramedGraph,
+  type CameraState,
+} from './testing/sigma-camera';
 
 function createMockSigma(overrides: Partial<Record<string, unknown>> = {}) {
   const camera = {
@@ -37,6 +42,53 @@ function createMockSigma(overrides: Partial<Record<string, unknown>> = {}) {
   };
 
   return { sigma: sigma as unknown as Sigma, mock: sigma, camera };
+}
+
+/**
+ * A Sigma whose conversions are Sigma's own camera matrix (see
+ * `testing/sigma-camera.ts`), so a spec can ask where a node really lands after
+ * the camera animates. The graph used with it is square, which is what makes the
+ * ported matrix exact: Sigma's correction ratio is 1 for a square graph on any
+ * stage.
+ */
+function createCameraSigma(width: number, height: number) {
+  const dimensions = { width, height };
+  const camera = {
+    x: 0,
+    y: 0,
+    angle: 0,
+    ratio: 1,
+    animate: vi.fn(() => Promise.resolve()),
+    isAnimating: vi.fn(() => false),
+    setState: vi.fn((next: Partial<CameraState>) => Object.assign(camera, next)),
+    getState: vi.fn(
+      (): CameraState => ({ x: camera.x, y: camera.y, angle: camera.angle, ratio: camera.ratio })
+    ),
+  };
+  const stateOf = (override?: { cameraState?: Partial<CameraState> }): CameraState => ({
+    x: override?.cameraState?.x ?? camera.x,
+    y: override?.cameraState?.y ?? camera.y,
+    angle: override?.cameraState?.angle ?? 0,
+    ratio: override?.cameraState?.ratio ?? camera.ratio,
+  });
+
+  const sigma = {
+    refresh: vi.fn(),
+    getCamera: () => camera,
+    getDimensions: () => dimensions,
+    graphToViewport: vi.fn(
+      (point: { x: number; y: number }, override?: { cameraState?: Partial<CameraState> }) =>
+        framedGraphToViewport(point, stateOf(override), dimensions)
+    ),
+    viewportToFramedGraph: vi.fn(
+      (point: { x: number; y: number }, override?: { cameraState?: Partial<CameraState> }) =>
+        viewportToFramedGraph(point, stateOf(override), dimensions)
+    ),
+  };
+  // Sigma's own signature wants a full camera state; this mock accepts the
+  // target the component animates to, which is x/y/ratio only.
+
+  return { sigma, camera };
 }
 
 function rect(left: number, top: number, width: number, height: number): DOMRect {
@@ -117,7 +169,7 @@ describe('TopicMapViewport', () => {
     expect(fitOpts).toEqual({ duration: 350 });
 
     camera.animate.mockClear();
-    viewport.centerSelected(sigma, graph, 'a');
+    viewport.centerSelected(sigma as unknown as Sigma, graph, 'a');
     expect(camera.animate).toHaveBeenCalledTimes(1);
     const [centerState] = camera.animate.mock.calls[0] as unknown as [
       { x: number; y: number; ratio: number },
@@ -219,11 +271,14 @@ describe('TopicMapViewport', () => {
     expect(state.y).toBeCloseTo(-500 / 600);
   });
 
-  it('re-frames once on settle when the layout moved, but not after the reader takes the camera', () => {
+  it('re-frames once from the settled layout in a frame after the initial one', () => {
     const viewport = new TopicMapViewport();
-    const graph = new Graph();
-    graph.addNode('a', { x: -100, y: -50 });
-    graph.addNode('b', { x: 100, y: 50 });
+    const seeded = new Graph();
+    seeded.addNode('a', { x: -100, y: -50 });
+    seeded.addNode('b', { x: 100, y: 50 });
+    const settled = new Graph();
+    settled.addNode('a', { x: -1000, y: -500 });
+    settled.addNode('b', { x: 1000, y: 500 });
     const { sigma, camera } = createMockSigma();
 
     const container = document.createElement('div');
@@ -245,48 +300,105 @@ describe('TopicMapViewport', () => {
       }
     );
 
+    // The force layout writes its own positions while the first painted frame
+    // is on screen; the graph the viewport reads next is the settled one.
+    let layoutSettled = false;
+
     viewport.observeStage({
       container,
       getSigma: () => sigma,
-      getGraph: () => graph,
+      getGraph: () => (layoutSettled ? settled : seeded),
       getSelectedId: () => 'a',
       getCameraInput: () => null,
       getCenterOnLoad: () => true,
       getOverlayElements: () => ({}),
     });
 
-    // Initial frame paints the focus from the seed extent.
+    // Exactly one frame: the settle re-frame is queued BY the initial frame, so
+    // the two never share a frame (which made the second a no-op).
+    expect(frames).toHaveLength(1);
     frames.shift()!(0);
-    // The simulation settles wider after that first paint.
-    graph.setNodeAttribute('a', 'x', -1000);
-    graph.setNodeAttribute('a', 'y', -500);
-    graph.setNodeAttribute('b', 'x', 1000);
-    graph.setNodeAttribute('b', 'y', 500);
-    camera.animate.mockClear();
 
+    camera.animate.mockClear();
+    layoutSettled = true;
+    expect(frames).toHaveLength(1);
     frames.shift()!(0);
+
     expect(camera.animate).toHaveBeenCalledTimes(1);
-    const [settled] = camera.animate.mock.calls[0] as unknown as [
+    const [reFramed] = camera.animate.mock.calls[0] as unknown as [
       { x: number; y: number; ratio: number },
     ];
-    expect(settled.ratio).toBeGreaterThan(1.5);
+    expect(reFramed.ratio).toBeGreaterThan(1.5);
     // The focused topic stays centred after the settled re-frame.
-    expect(settled.x).toBeCloseTo(-1000 / 800);
-    expect(settled.y).toBeCloseTo(-500 / 600);
+    expect(reFramed.x).toBeCloseTo(-1000 / 800);
+    expect(reFramed.y).toBeCloseTo(-500 / 600);
 
     // A rebuild has its own kept camera; it must not get a settle re-frame.
     camera.animate.mockClear();
-    graph.setNodeAttribute('a', 'x', -1500);
     viewport.observeStage({
       container,
       getSigma: () => sigma,
-      getGraph: () => graph,
+      getGraph: () => settled,
       getSelectedId: () => 'a',
       getCameraInput: () => null,
       getCenterOnLoad: () => true,
       getOverlayElements: () => ({}),
     });
     expect(frames).toHaveLength(1); // initial frame only, no settle frame
+    frames.shift()!(0);
+    expect(frames).toHaveLength(0);
+
+    vi.unstubAllGlobals();
+  });
+
+  it('stops watching for the reader camera after the settle frame and on a rebuild', () => {
+    const viewport = new TopicMapViewport();
+    const graph = new Graph();
+    graph.addNode('a', { x: -100, y: -50 });
+    graph.addNode('b', { x: 100, y: 50 });
+    const { sigma } = createMockSigma();
+    const container = document.createElement('div');
+    Object.defineProperty(container, 'clientWidth', { get: () => 800 });
+    Object.defineProperty(container, 'clientHeight', { get: () => 600 });
+    const removeListener = vi.spyOn(container, 'removeEventListener');
+
+    const frames: FrameRequestCallback[] = [];
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+      frames.push(cb);
+      return frames.length;
+    });
+    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {});
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe = vi.fn();
+        disconnect = vi.fn();
+        unobserve = vi.fn();
+      }
+    );
+
+    const options = {
+      container,
+      getSigma: () => sigma,
+      getGraph: () => graph,
+      getSelectedId: () => 'a',
+      getCameraInput: () => null,
+      getCenterOnLoad: () => true,
+      getOverlayElements: () => ({}),
+    };
+
+    viewport.observeStage(options);
+    frames.shift()!(0); // initial frame: the gesture window is still open
+    expect(removeListener).not.toHaveBeenCalledWith('wheel', expect.any(Function));
+    frames.shift()!(0); // settle frame: nothing left to watch
+    expect(removeListener).toHaveBeenCalledWith('wheel', expect.any(Function));
+
+    // A rebuild has no settle frame, so it stops watching as soon as it paints.
+    removeListener.mockClear();
+    viewport.observeStage(options);
+    frames.shift()!(0);
+    expect(removeListener).toHaveBeenCalledWith('wheel', expect.any(Function));
+    expect(frames).toHaveLength(0);
 
     vi.unstubAllGlobals();
   });
@@ -533,6 +645,50 @@ describe('TopicMapViewport', () => {
     const [wide] = camera.animate.mock.calls.at(-1) as unknown as [{ x: number; y: number }];
     expect(wide.x).toBeCloseTo(0);
     expect(wide.y).toBeCloseTo(0);
+
+    vi.unstubAllGlobals();
+  });
+
+  it('centres a focused topic in the phone band when the camera is already zoomed in', () => {
+    const viewport = new TopicMapViewport();
+    const graph = new Graph();
+    graph.addNode('a', { x: 0, y: 0 });
+    // A wide extent, so the fitted ratio is far above the reader's 0.5: the
+    // target has to be clamped, and the band offset measured at the clamped one.
+    graph.addNode('b', { x: 4000, y: 4000 });
+    const { sigma, camera } = createCameraSigma(390, 700);
+    camera.ratio = 0.5; // the reader zoomed in before centring
+    vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true }) as MediaQueryList));
+
+    // A 390x700 phone stage whose selection card covers the bottom 260px.
+    viewport.centerSelected(sigma as unknown as Sigma, graph, 'a', { top: 0, bottom: 260 });
+
+    const [state] = camera.animate.mock.calls.at(-1) as unknown as [Partial<CameraState>];
+    expect(state.ratio).toBe(0.5);
+    // Where the node really lands, through Sigma's camera matrix.
+    const landed = sigma.graphToViewport({ x: 0, y: 0 }, { cameraState: state });
+    expect(landed.x).toBeCloseTo(195, 0);
+    expect(landed.y).toBeCloseTo(220, 0); // the middle of the band above the card
+
+    vi.unstubAllGlobals();
+  });
+
+  it('clamps the zoom to the reader camera without moving the node off a wide stage', () => {
+    const viewport = new TopicMapViewport();
+    const graph = new Graph();
+    graph.addNode('a', { x: 0, y: 0 });
+    graph.addNode('b', { x: 4000, y: 4000 });
+    const { sigma, camera } = createCameraSigma(1280, 800);
+    camera.ratio = 0.5;
+    vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false }) as MediaQueryList));
+
+    viewport.centerSelected(sigma as unknown as Sigma, graph, 'a');
+
+    const [state] = camera.animate.mock.calls.at(-1) as unknown as [Partial<CameraState>];
+    expect(state.ratio).toBe(0.5);
+    const landed = sigma.graphToViewport({ x: 0, y: 0 }, { cameraState: state });
+    expect(landed.x).toBeCloseTo(640, 0);
+    expect(landed.y).toBeCloseTo(400, 0);
 
     vi.unstubAllGlobals();
   });

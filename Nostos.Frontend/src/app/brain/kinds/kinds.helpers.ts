@@ -147,6 +147,10 @@ export function personKind(kinds: readonly TopicKindDto[]): TopicKindDto | null 
 /**
  * Lower-cases and strips accents and punctuation, so "Ursula K. Le Guin",
  * "ursula k le guin" and "Ursula K Le Guin" compare alike.
+ *
+ * The letters are Unicode classes, not `[a-z0-9]`: a topic named after
+ * "Фёдор Достоевский" or "村上春樹" folded to an empty string and could never
+ * match its author.
  */
 export function normalizePersonName(value: string): string {
   return value
@@ -154,17 +158,70 @@ export function normalizePersonName(value: string): string {
     .replace(/[\u0300-\u036f]/g, '')
     .toLocaleLowerCase()
     .replace(/['’`]/g, '')
-    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .trim();
 }
 
-/** The individual authors named in a book's author field. */
+/**
+ * Academic and generational suffixes that follow an author's name after a
+ * comma. They are not part of the name: "Ursula K. Le Guin, PhD" is one person
+ * called Ursula K. Le Guin, and a topic named "PhD" is not that person.
+ */
+const AUTHOR_CREDENTIALS = new Set([
+  'phd', 'md', 'mphil', 'msc', 'bsc', 'ba', 'ma', 'mfa', 'ms', 'mse', 'jd', 'llm',
+  'esq', 'jr', 'sr', 'ii', 'iii', 'iv', 'rn', 'cpa', 'frs', 'obe', 'mbe', 'cbe',
+  'dr', 'prof',
+]);
+
+/** Whether a comma-separated tail is a credential rather than a given name. */
+function isAuthorCredential(part: string): boolean {
+  const trimmed = part.trim();
+  const folded = normalizePersonName(trimmed).replace(/\s+/g, '');
+  if (!folded) return true;
+  if (AUTHOR_CREDENTIALS.has(folded)) return true;
+  // "MD", "PHD": an all-capitals short token with no dots. A dotted token
+  // ("J.R.R.") is initials, i.e. a given name, and is swapped like one.
+  return !trimmed.includes('.') && /^[A-Z][A-Z&]{1,4}$/.test(trimmed);
+}
+
+/**
+ * The individual authors named in a book's author field.
+ *
+ * Authors are separated by `;`, `&` or "and". A single comma inside a segment
+ * means the surname came first ("Le Guin, Ursula K."), which is turned back
+ * into a name a topic can match; a comma-separated tail that is only
+ * credentials ("…, PhD") is dropped instead. More than one comma is the older
+ * comma-separated list ("Ursula K. Le Guin, J.R.R. Tolkien"), so those parts
+ * are separate authors again.
+ */
 export function authorNames(author: string | null | undefined): string[] {
   if (!author?.trim()) return [];
-  return author
-    .split(/\s*(?:;|&|\band\b|,\s*)\s*/i)
-    .map((name) => name.trim())
-    .filter(Boolean);
+  const names: string[] = [];
+  for (const segment of author.split(/\s*(?:;|&|\band\b)\s*/i)) {
+    if (!segment.trim()) continue;
+    const parts = segment.split(',').map((part) => part.trim()).filter(Boolean);
+    if (parts.length <= 1) {
+      if (parts[0]) names.push(parts[0]);
+      continue;
+    }
+    if (parts.length > 2) {
+      // A comma-separated list, not "Last, First".
+      names.push(...parts.filter((part) => !isAuthorCredential(part)));
+      continue;
+    }
+    const [surname, tail] = parts;
+    if (isAuthorCredential(tail)) {
+      names.push(surname);
+      continue;
+    }
+    // One comma is either "Last, First" or two authors. Cover both readings:
+    // the joined name is what makes "Ursula K. Le Guin" match when the library
+    // stored "Le Guin, Ursula K.", and the parts are what make a comma-joined
+    // pair ("Ursula K. Le Guin, J.R.R. Tolkien") still name two authors.
+    names.push(`${tail} ${surname}`.trim());
+    names.push(surname, tail);
+  }
+  return names;
 }
 
 /**

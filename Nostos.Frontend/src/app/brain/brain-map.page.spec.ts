@@ -335,6 +335,14 @@ describe('BrainMapPage', () => {
     expect(fixture.componentInstance.effectiveColorMode()).toBe('cluster');
     expect(el().querySelector('.map-legend-kinds')).toBeNull();
     expect(el().textContent).not.toContain('No kind (');
+
+    // The Colour control has to say the mode the map actually paints: it read
+    // the reader's stored choice and said "Kind" over a Cluster map.
+    const modes = Array.from(
+      el().querySelectorAll('.map-controls nostos-segmented button[role="radio"]')
+    ) as HTMLButtonElement[];
+    expect(modes.map((button) => button.textContent?.trim())).toEqual(['Kind', 'Cluster', 'None']);
+    expect(modes.map((button) => button.getAttribute('aria-checked'))).toEqual(['false', 'true', 'false']);
   });
 
   it('puts the same kind legend in the Controls sheet, with the map a11y contract', async () => {
@@ -398,17 +406,47 @@ describe('BrainMapPage', () => {
     );
   });
 
-  it('opens the kind picker from a map-card pill and closes it back to the card', async () => {
+  it('opens the kind picker from a map-card pill, anchored to that pill', async () => {
+    await mountPage({});
+    const page = fixture.componentInstance;
+    const pill = document.createElement('button');
+    el().appendChild(pill);
+
+    page.openKindPicker({ topicId: 'edu', kindId: 'k1', origin: pill });
+    expect(page.kindPickerTopic()?.id).toBe('edu');
+    expect(page.kindPickerOrigin()).toBe(pill);
+
+    // A second press on the same topic's pill is the reader closing the panel.
+    page.openKindPicker({ topicId: 'edu', kindId: 'k1', origin: pill });
+    expect(page.kindPickerTopic()).toBeNull();
+    expect(page.kindPickerOrigin()).toBeNull();
+  });
+
+  it('never hangs the kind picker from the page body', async () => {
     await mountPage({});
     const page = fixture.componentInstance;
 
-    page.openKindPicker({ topicId: 'edu', kindId: 'k1' });
-    expect(page.kindPickerTopic()?.id).toBe('edu');
-    expect(page.kindPickerOrigin()).toBeInstanceOf(HTMLElement);
+    // Safari's document.activeElement is <body> after a touch.
+    page.openKindPicker({ topicId: 'edu', kindId: 'k1', origin: document.body });
 
-    page.closeKindPicker();
+    expect(page.kindPickerTopic()?.id).toBe('edu');
+    expect(page.kindPickerOrigin()).not.toBe(document.body);
+  });
+
+  it('anchors an unusable pill request to the Controls button, and a second press closes it', async () => {
+    await mountPage({});
+    const page = fixture.componentInstance;
+    const controls = el().querySelector('.map-controls-trigger') as HTMLElement;
+
+    // A touch in Safari leaves activeElement on <body>: the panel falls back to
+    // the Controls button (whose ElementRef must be read, not the component).
+    page.openKindPicker({ topicId: 'edu', kindId: 'k1', origin: document.body });
+    expect(page.kindPickerOrigin()).toBe(controls);
+    expect(page.kindPickerTopic()?.id).toBe('edu');
+
+    // The second press closes it even though the request did not carry a pill.
+    page.openKindPicker({ topicId: 'edu', kindId: 'k1', origin: document.body });
     expect(page.kindPickerTopic()).toBeNull();
-    expect(page.kindPickerOrigin()).toBeNull();
   });
 
   it('ignores a picker request for a topic the page no longer holds', async () => {

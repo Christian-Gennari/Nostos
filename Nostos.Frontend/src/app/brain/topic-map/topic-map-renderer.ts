@@ -664,7 +664,23 @@ export class TopicMapRenderer {
     this.callbacks = null;
   }
 
+  /**
+   * The node the map is focused on: hovered, selected, or the local map's root,
+   * in that order — but only while it is still IN the graph. Hiding a topic's
+   * kind removes its node, and an id the graph no longer holds matched nothing:
+   * every other node fell through to "dimmed" and the whole map turned grey.
+   */
   private activeNodeId(): string | null {
-    return this.callbacks?.getHoveredId() ?? this.callbacks?.getSelectedId() ?? this.callbacks?.getRootId?.() ?? null;
+    const graph = this.graph;
+    if (!graph) return null;
+    const candidates = [
+      this.callbacks?.getHoveredId() ?? null,
+      this.callbacks?.getSelectedId() ?? null,
+      this.callbacks?.getRootId?.() ?? null,
+    ];
+    for (const id of candidates) {
+      if (id && graph.hasNode(id)) return id;
+    }
+    return null;
   }
 }

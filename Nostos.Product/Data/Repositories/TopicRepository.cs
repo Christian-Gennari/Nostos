@@ -1102,6 +1102,88 @@ public class TopicRepository : ITopicRepository
         }
     }
 
+    public async Task<TopicKindReorderResult> ReorderKindsAsync(
+        IReadOnlyList<Guid>? ids,
+        CancellationToken cancellationToken = default)
+    {
+        var ownsTransaction = _db.Database.CurrentTransaction is null;
+        await using var transaction = ownsTransaction
+            ? await _db.Database.BeginTransactionAsync(cancellationToken)
+            : null;
+        try
+        {
+            // The lock every other kind write takes: a create or a delete cannot
+            // slip between this read and this write and leave the order
+            // describing a list that no longer exists.
+            await LibraryRevision.LockSingletonAsync(_db, cancellationToken);
+
+            var kinds = await _db.TopicKinds.ToListAsync(cancellationToken);
+            var requested = ids ?? [];
+            if (!IsCompleteOrder(requested, kinds))
+            {
+                if (transaction is not null)
+                    await transaction.RollbackAsync(CancellationToken.None);
+                return new TopicKindReorderResult(
+                    TopicKindReorderStatus.Conflict,
+                    ErrorMessage: "The order must list every topic kind exactly once.");
+            }
+
+            var byId = kinds.ToDictionary(kind => kind.Id);
+            for (var position = 0; position < requested.Count; position++)
+            {
+                byId[requested[position]].SortOrder = position + 1;
+            }
+
+            // One SaveChanges: the whole order lands, or none of it does.
+            await _db.SaveChangesAsync(cancellationToken);
+
+            var counts = await _db.Topics
+                .Where(t => t.KindId != null)
+                .GroupBy(t => t.KindId!.Value)
+                .Select(group => new { KindId = group.Key, Count = group.Count() })
+                .ToDictionaryAsync(row => row.KindId, row => row.Count, cancellationToken);
+
+            var ordered = requested
+                .Select(id => byId[id])
+                .Select(kind => new TopicKindDto(
+                    kind.Id,
+                    kind.Name,
+                    kind.ColorKey,
+                    kind.SortOrder,
+                    kind.CreatedAt,
+                    counts.GetValueOrDefault(kind.Id)))
+                .ToList();
+
+            if (transaction is not null)
+                await transaction.CommitAsync(cancellationToken);
+
+            return new TopicKindReorderResult(TopicKindReorderStatus.Success, ordered);
+        }
+        catch
+        {
+            if (transaction is not null)
+                await transaction.RollbackAsync(CancellationToken.None);
+            throw;
+        }
+    }
+
+    private static bool IsCompleteOrder(
+        IReadOnlyList<Guid> requested,
+        IReadOnlyCollection<TopicKindModel> kinds)
+    {
+        if (requested.Count != kinds.Count)
+            return false;
+
+        var seen = new HashSet<Guid>();
+        foreach (var id in requested)
+        {
+            if (!seen.Add(id))
+                return false;
+        }
+
+        return kinds.All(kind => seen.Contains(kind.Id));
+    }
+
     public async Task<bool> DeleteKindAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var ownsTransaction = _db.Database.CurrentTransaction is null;

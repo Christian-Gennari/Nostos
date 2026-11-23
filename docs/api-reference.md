@@ -1057,6 +1057,23 @@ If another kind holds `colorKey`, returns `409` unless `swapColor: true`, which
 exchanges the two kinds' colours atomically in one transaction. `400` on invalid
 name/colour; `404` for an unknown id; `409` on duplicate name.
 
+### `PUT /api/topic-kinds/order`
+
+Set the whole order in one request: the reader's Up/Down arrows move one kind,
+but as many as twelve rows change position at once, and a request that fails
+halfway would leave two kinds on the same `sortOrder`.
+
+**Body:** `{ "ids": ["<kind id>", …] }` — every kind's id, in the order it
+should be shown.
+
+The positions `1..N` are written in one transaction under the same library
+write lock the other kind routes take, and the new list (`TopicKindDto[]`,
+in the order given) is returned.
+
+**Response:** `200 OK` with the reordered `TopicKindDto[]`. `409` when `ids` is
+not exactly the current set of kinds — a missing (deleted) id, an extra
+(created) id, or a duplicate — and then nothing is changed.
+
 ### `DELETE /api/topic-kinds/{id}`
 
 Delete a topic kind. Any topics assigned to it become untyped (`kindId` and

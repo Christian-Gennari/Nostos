@@ -44,6 +44,7 @@ import {
   filterScopedGraphByKind,
   filterTopicsByKind,
   kindCssVar,
+  kindFilterKeyOf,
   scopeGraph,
   type KindLegendEntry,
   type MapCamera,
@@ -147,7 +148,12 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
   @Output() readonly kindToggled = new EventEmitter<string>();
   @Output() readonly clearKindFilter = new EventEmitter<void>();
   /** Asks the page to open the kind picker for this topic (wired by #1769). */
-  @Output() readonly kindPickerRequested = new EventEmitter<{ topicId: string; kindId: string | null }>();
+  @Output() readonly kindPickerRequested = new EventEmitter<{
+    topicId: string;
+    kindId: string | null;
+    /** The pill that was clicked, so the panel hangs from it rather than the page body. */
+    origin: HTMLElement | null;
+  }>();
 
   @ViewChild('sigmaContainer', { static: false }) sigmaContainer!: ElementRef<HTMLDivElement>;
   @ViewChild('mapStage', { static: false }) mapStage!: ElementRef<HTMLElement>;
@@ -172,8 +178,8 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
   private lastEffectiveMin = 1;
   private activeRootId: string | null = null;
   /** The scope before the cap, and the topics actually drawn, for legend counts. */
-  private lastLegendItems: ReadonlyArray<{ kindId?: string | null }> = [];
-  private lastDrawnItems: ReadonlyArray<{ kindId?: string | null }> = [];
+  private lastLegendItems: ReadonlyArray<{ id: string; kindId?: string | null }> = [];
+  private lastDrawnItems: ReadonlyArray<{ id: string; kindId?: string | null }> = [];
 
   /* State signals for the template. */
   readonly loading = signal(true);
@@ -181,6 +187,12 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
   readonly hoveredId = signal<string | null>(null);
   readonly selectedNodeId = signal<string | null>(null);
   readonly isFullscreen = signal(false);
+  /**
+   * The topics the built graph was scoped to (after the kind filter). Written
+   * only when a graph is built: an in-place metadata update changes colours,
+   * not the source set, and counting every topic again made a filtered map
+   * claim "Showing 50 of 50" the moment a kind was re-saved.
+   */
   readonly sourceCount = signal(0);
   readonly scopeTotal = signal(0);
   readonly shownCount = signal(0);
@@ -243,7 +255,10 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
   /** In Kind mode an untyped topic still says so; other modes show no pill for it. */
   readonly showUntypedCardPill = computed(() => {
     const { colorMode, kindsLoaded, kindPickerEnabled } = this.kindView();
-    return (kindsLoaded && colorMode === 'kind') || kindPickerEnabled;
+    // Without the kind list a typed topic's kind name cannot be resolved, so
+    // the card would call it "No kind" — worse than saying nothing.
+    if (!kindsLoaded) return false;
+    return colorMode === 'kind' || kindPickerEnabled;
   });
 
   @HostListener('document:keydown', ['$event'])
@@ -274,7 +289,34 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
       this.renderer.refresh();
     }
     if (changes['topics']) {
-      this.sourceCount.set((this.topics ?? []).length);
+      const nextTopics = this.topics ?? [];
+      // A kind (or the topic's own words) changing on the topics already drawn
+      // is not a different graph. Reading the graph back and disposing Sigma
+      // for it dropped the reader's view and re-ran the layout for a colour;
+      // only a change to which nodes the kind filter draws needs a rebuild, and
+      // that one can reuse the graph in hand.
+      if (
+        this.isTopicMetadataUpdate(
+          changes['topics'].previousValue as TopicDto[] | undefined,
+          nextTopics
+        )
+      ) {
+        const rebuilt = this.applyTopicMetadata(
+          changes['topics'].previousValue as TopicDto[],
+          nextTopics
+        );
+        // The same pass may also have changed the scope (`?around`, depth,
+        // strength, kind filter) without the metadata update rebuilding for it.
+        // The early return must not skip that rebuild.
+        if (!rebuilt && this.scopeInputsChanged(changes) && this.graphData && !this.loading()) {
+          if (this.viewInitialized) {
+            this.rebuildSigma();
+          } else {
+            this.pendingRebuild = true;
+          }
+        }
+        return;
+      }
       this.loadGraphData();
       return;
     }
@@ -284,14 +326,7 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
     if (colourChanged && this.graphData && !this.loading() && this.lastBuilt) {
       this.applyKindAppearance();
     }
-    if (
-      (changes['rootId'] ||
-        changes['depth'] ||
-        changes['minShared'] ||
-        changes['visibleKindKeys']) &&
-      this.graphData &&
-      !this.loading()
-    ) {
+    if (this.scopeInputsChanged(changes) && this.graphData && !this.loading()) {
       if (this.viewInitialized) {
         this.rebuildSigma();
       } else {
@@ -372,11 +407,102 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
 
   /** Recolour the mounted graph after kind metadata or the colour mode changed. */
   private applyKindAppearance(): void {
-    if (!this.lastBuilt || !this.renderer.graphInstance) return;
-    const hueById = this.renderer.recolor(this.effectiveColorMode(), this.topicKinds ?? []);
+    // With every topic hidden by the kind filter there is no Sigma to recolour,
+    // but the legend is exactly what the reader needs to bring the topics back.
+    if (!this.lastBuilt) return;
+    if (this.renderer.graphInstance) {
+      const hueById = this.renderer.recolor(this.effectiveColorMode(), this.topicKinds ?? []);
+      this.model.update((model) => (model ? { ...model, hue: hueById } : model));
+      this.renderer.refresh();
+    }
     this.updateKindLegend();
-    this.model.update((model) => (model ? { ...model, hue: hueById } : model));
-    this.renderer.refresh();
+  }
+
+  /**
+   * Whether a new topic list describes the same graph: the same ids and the same
+   * reference counts, so only kind (or the topic's own words) differs.
+   */
+  private isTopicMetadataUpdate(
+    previous: readonly TopicDto[] | undefined,
+    next: readonly TopicDto[]
+  ): boolean {
+    // While a read is in flight the graph in hand is already stale: applying
+    // metadata to it would describe a graph that is about to be replaced.
+    if (this.loading() || !this.lastBuilt || !previous || previous.length !== next.length) return false;
+    const before = new Map(previous.map((topic) => [topic.id, topic]));
+    return next.every((topic) => {
+      const old = before.get(topic.id);
+      return !!old && old.usageCount === topic.usageCount && old.name === topic.name;
+    });
+  }
+
+  /**
+   * Show new kind metadata on the graph already drawn, without reading the graph
+   * back: the nodes, the edges and the layout are unchanged. Only when the kind
+   * filter now draws a different set does the graph have to be built again, and
+   * even then from the data in hand.
+   */
+  private applyTopicMetadata(
+    previous: readonly TopicDto[],
+    next: readonly TopicDto[]
+  ): boolean {
+    const before = new Map(previous.map((topic) => [topic.id, topic]));
+    const kindById = new Map(next.map((topic) => [topic.id, topic.kindId ?? null]));
+    const withKind = <T extends { id: string; kindId?: string | null }>(items: readonly T[]): T[] =>
+      items.map((item) =>
+        kindById.has(item.id) ? { ...item, kindId: kindById.get(item.id)! } : item
+      );
+
+    const visibleKindKeys = this.visibleKindKeys;
+    const drawingChanged =
+      visibleKindKeys !== null &&
+      next.some((topic) => {
+        const old = before.get(topic.id);
+        if (!old) return false;
+        const wasDrawn = visibleKindKeys.has(kindFilterKeyOf(old.kindId));
+        const isDrawn = visibleKindKeys.has(kindFilterKeyOf(topic.kindId));
+        return wasDrawn !== isDrawn;
+      });
+
+    if (this.graphData) {
+      this.graphData = { nodes: withKind(this.graphData.nodes), edges: this.graphData.edges };
+    }
+    this.lastLegendItems = withKind(this.lastLegendItems);
+    this.lastDrawnItems = withKind(this.lastDrawnItems);
+
+    if (drawingChanged) {
+      // No request: the graph the map was built from is still the right one.
+      this.rebuildSigma();
+      return true;
+    }
+
+    const graph = this.renderer.graphInstance;
+    if (graph) {
+      graph.forEachNode((node) => {
+        if (!kindById.has(node)) return;
+        graph.setNodeAttribute(node, 'kindId', kindById.get(node)!);
+      });
+    }
+    this.model.update((model) => {
+      if (!model) return model;
+      const kindId = new Map(model.kindId);
+      for (const [id, value] of kindById) {
+        if (kindId.has(id)) kindId.set(id, value);
+      }
+      return { ...model, kindId };
+    });
+    this.applyKindAppearance();
+    return false;
+  }
+
+  /** A change that rescopes or refilters the drawn graph, not just its colours. */
+  private scopeInputsChanged(changes: SimpleChanges): boolean {
+    return !!(
+      changes['rootId'] ||
+      changes['depth'] ||
+      changes['minShared'] ||
+      changes['visibleKindKeys']
+    );
   }
 
   /** Recompute the legend from the scope and the topics actually drawn. */
@@ -425,7 +551,7 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
     let hiddenByKind = 0;
     let maxShared = 1;
     let effectiveMin = explicitMin ?? 1;
-    let legendItems: ReadonlyArray<{ kindId?: string | null }> = [];
+    let legendItems: ReadonlyArray<{ id: string; kindId?: string | null }> = [];
 
     if (normalizedRootId) {
       const allowedIds = new Set(allTopics.map((t) => t.id));
@@ -739,6 +865,20 @@ export class TopicMapComponent implements OnChanges, AfterViewInit, OnDestroy {
 
   onToggleKind(key: string): void {
     this.kindToggled.emit(key);
+  }
+
+  /**
+   * The card's kind pill was clicked. The element travels with the request: the
+   * popover hangs from what the reader actually touched. `document.activeElement`
+   * is `<body>` in Safari after a touch, which anchored the panel to the page.
+   */
+  requestKindPicker(event: Event, selection: MapSelection): void {
+    const origin = event.currentTarget ?? event.target;
+    this.kindPickerRequested.emit({
+      topicId: selection.id,
+      kindId: selection.kindId,
+      origin: origin instanceof HTMLElement ? origin : null,
+    });
   }
 
   zoomIn(): void {
