@@ -335,19 +335,22 @@ public sealed class LibraryChangesetService(
         Dictionary<string, Guid> refs,
         CancellationToken ct)
     {
-        var colorKey = op.ColorKey;
-        if (string.IsNullOrWhiteSpace(colorKey))
+        var colorKey = op.ColorKey?.Trim();
+        if (string.IsNullOrEmpty(colorKey) || TopicKindModel.IsValidColorKey(colorKey))
         {
             var used = await db.TopicKinds.AsNoTracking()
                 .Select(kind => kind.ColorKey)
                 .ToListAsync(ct);
-            colorKey = TopicKindModel.PaletteColorKeys
-                .FirstOrDefault(candidate => !used.Contains(candidate, StringComparer.Ordinal));
-            if (colorKey is null)
+            if (string.IsNullOrEmpty(colorKey) || used.Contains(colorKey, StringComparer.Ordinal))
             {
-                return new OperationFailure(
-                    LibraryChangesetErrorCodes.TopicKindLimit,
-                    $"A library can have at most {TopicKindModel.MaxKinds} topic kinds. Delete one before adding another.");
+                colorKey = TopicKindModel.PaletteColorKeys
+                    .FirstOrDefault(candidate => !used.Contains(candidate, StringComparer.Ordinal));
+                if (colorKey is null)
+                {
+                    return new OperationFailure(
+                        LibraryChangesetErrorCodes.TopicKindLimit,
+                        $"A library can have at most {TopicKindModel.MaxKinds} topic kinds. Delete one before adding another.");
+                }
             }
         }
 

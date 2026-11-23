@@ -45,6 +45,15 @@ public sealed class AssistantChangesetDraft(ILibraryChangesetService changesets,
 
     public bool IsEmpty => _steps.Count == 0;
 
+    /// <summary>The counts of everything currently staged in this draft.</summary>
+    public LibraryChangesetCountsDto Counts => Diff?.Counts ?? EmptyCounts;
+
+    /// <summary>
+    /// Names of created topic kinds that were previously in <see cref="Steps"/>
+    /// and were dropped by the most recent commit/replan because no topic used them.
+    /// </summary>
+    public IReadOnlyList<string> LastDroppedCreatedKinds { get; private set; } = [];
+
     /// <summary>
     /// Reads a collection argument: an existing collection's id, or the name
     /// (or <c>ref</c>) of a collection created or reused earlier in this turn
@@ -127,6 +136,7 @@ public sealed class AssistantChangesetDraft(ILibraryChangesetService changesets,
             && prior.Before.Collections.ContainsKey(deletedId)
             && !prior.After.Collections.ContainsKey(deletedId))
         {
+            LastDroppedCreatedKinds = [];
             return CurrentResult();
         }
 
@@ -193,16 +203,16 @@ public sealed class AssistantChangesetDraft(ILibraryChangesetService changesets,
     /// the ref alive in case a later call in the same turn assigns other topics
     /// to it.
     /// </summary>
-    public async Task NoteTopicKindNamedAsync(string kindRef, CancellationToken ct)
+    public async Task<AssistantToolResult> NoteTopicKindNamedAsync(string kindRef, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(kindRef) || !_namedCreatedKindRefs.Add(kindRef))
-            return;
-
-        if (_lastPreviewState is null)
-            return;
+        if (string.IsNullOrWhiteSpace(kindRef) || !_namedCreatedKindRefs.Add(kindRef) || _lastPreviewState is null)
+        {
+            LastDroppedCreatedKinds = [];
+            return CurrentResult();
+        }
 
         var rawCandidate = new List<LibraryChangeOp>(_rawOps);
-        await CommitFromPreviewAsync(rawCandidate, _refCounter, _lastPreviewState, rawPreview: null, ct);
+        return await CommitFromPreviewAsync(rawCandidate, _refCounter, _lastPreviewState, rawPreview: null, ct);
     }
 
     private async Task<AssistantToolResult> CommitFromPreviewAsync(
@@ -212,15 +222,20 @@ public sealed class AssistantChangesetDraft(ILibraryChangesetService changesets,
         LibraryChangesetResult? rawPreview,
         CancellationToken ct)
     {
+        // A replan that fails below commits nothing, so it drops nothing: clear
+        // the last call's list first, or a refused stage would repeat its names.
+        LastDroppedCreatedKinds = [];
         var plan = AssistantChangesetPlanBuilder.Build(previewState, rawCandidate, _namedCreatedKindRefs);
         if (plan.Ops.Count == 0)
         {
+            var dropped = DroppedCreatedKinds([]);
             CommitState(rawCandidate, nextRefId, previewState);
             _steps.Clear();
             Diff = null;
             LastStageWasNoChange = true;
             DiffHash = null;
-            return NoChangeResult(EmptyCounts);
+            LastDroppedCreatedKinds = dropped;
+            return NoChangeResult(EmptyCounts, dropped);
         }
 
         var canonicalPreview = await changesets.PreviewAsync(plan.Ops, ct);
@@ -284,25 +299,57 @@ public sealed class AssistantChangesetDraft(ILibraryChangesetService changesets,
         LibraryChangesetResult finalPreview,
         CancellationToken ct)
     {
-        CommitState(rawCandidate, nextRefId, previewState);
-
         if (finalPreview.Diff!.IsEmpty)
         {
+            var dropped = DroppedCreatedKinds([]);
+            CommitState(rawCandidate, nextRefId, previewState);
             _steps.Clear();
             Diff = null;
             LastStageWasNoChange = true;
             DiffHash = null;
-            return NoChangeResult(finalPreview.Diff.Counts);
+            LastDroppedCreatedKinds = dropped;
+            return NoChangeResult(finalPreview.Diff.Counts, dropped);
         }
 
+        var droppedKinds = DroppedCreatedKinds(presentedOps);
+        CommitState(rawCandidate, nextRefId, previewState);
         var rebuilt = await BuildStepsAsync(presentedOps, dependsOn, deletedDescendantCounts, previewState, ct);
         _steps.Clear();
         _steps.AddRange(rebuilt);
         LastStageWasNoChange = false;
         Diff = finalPreview.Diff;
         DiffHash = finalPreview.DiffHash;
+        LastDroppedCreatedKinds = droppedKinds;
 
-        return StagedResult(_steps, finalPreview.Diff.Counts);
+        return StagedResult(_steps, finalPreview.Diff.Counts, droppedKinds);
+    }
+
+    private IReadOnlyList<string> DroppedCreatedKinds(IReadOnlyList<LibraryChangeOp> nextOps)
+    {
+        if (_steps.Count == 0)
+            return [];
+
+        var kept = nextOps
+            .OfType<CreateTopicKindOp>()
+            .Select(op => op.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return _steps
+            .Select(step => step.Op)
+            .OfType<CreateTopicKindOp>()
+            .Select(op => op.Name)
+            .Where(name => !kept.Contains(name))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    internal static string AppendDroppedKindsNote(string baseNote, IReadOnlyList<string> droppedKinds)
+    {
+        if (droppedKinds.Count == 0)
+            return baseNote;
+
+        var sentences = string.Join(" ", droppedKinds.Select(name => $"“{name}” will not be created: no topic uses it."));
+        return string.IsNullOrEmpty(baseNote) ? sentences : $"{baseNote} {sentences}";
     }
 
     private void CommitState(
@@ -360,18 +407,23 @@ public sealed class AssistantChangesetDraft(ILibraryChangesetService changesets,
             ? NoChangeResult(Diff?.Counts ?? EmptyCounts)
             : StagedResult(_steps, Diff.Counts);
 
-    private static AssistantToolResult NoChangeResult(LibraryChangesetCountsDto counts) =>
+    private static AssistantToolResult NoChangeResult(
+        LibraryChangesetCountsDto counts,
+        IReadOnlyList<string>? droppedKinds = null) =>
         AssistantToolResult.Ok(JsonSerializer.SerializeToElement(new
         {
             status = "no_change",
             steps = Array.Empty<string>(),
-            note = "No library change was needed: the library already matches what you asked for.",
+            note = AppendDroppedKindsNote(
+                "No library change was needed: the library already matches what you asked for.",
+                droppedKinds ?? []),
             changesetSoFar = counts,
         }, Json));
 
     private static AssistantToolResult StagedResult(
         IReadOnlyList<AssistantStagedStep> steps,
-        LibraryChangesetCountsDto counts) =>
+        LibraryChangesetCountsDto counts,
+        IReadOnlyList<string>? droppedKinds = null) =>
         AssistantToolResult.Ok(JsonSerializer.SerializeToElement(new
         {
             status = "staged",
@@ -382,7 +434,9 @@ public sealed class AssistantChangesetDraft(ILibraryChangesetService changesets,
             // before this was trimmed).
             stepCount = steps.Count,
             latestStep = steps.Count == 0 ? null : steps[^1].Summary,
-            note = "Staged, not applied. Stage every change the request needs; Nostos applies or presents them together when you finish.",
+            note = AppendDroppedKindsNote(
+                "Staged, not applied. Stage every change the request needs; Nostos applies or presents them together when you finish.",
+                droppedKinds ?? []),
             changesetSoFar = counts,
         }, Json));
 
