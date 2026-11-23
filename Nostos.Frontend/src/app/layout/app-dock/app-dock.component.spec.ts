@@ -97,7 +97,9 @@ describe('AppDockComponent', () => {
     ) as HTMLAnchorElement;
 
     expect(feedback).toBeTruthy();
-    expect(feedback.textContent).toContain('Feedback');
+    expect(feedback.textContent).toContain('Send feedback (opens in a new tab)');
+    expect(feedback.getAttribute('title')).toBe('Send feedback (opens in a new tab)');
+    expect(feedback.getAttribute('aria-label')).toBe('Send feedback (opens in a new tab)');
     expect(feedback.href).toBe('https://nostos.page/feedback?from=library');
     expect(feedback.target).toBe('_blank');
     expect(feedback.rel).toBe('noopener noreferrer');
@@ -163,7 +165,16 @@ describe('AppDockComponent', () => {
               ? 'Ask'
               : el.querySelector('.label')?.textContent?.trim(),
         );
-      expect(order).toEqual(['Library', 'Brain', 'Studio', '|', 'Ask', '|', 'Feedback', 'Settings']);
+      expect(order).toEqual([
+        'Library',
+        'Brain',
+        'Studio',
+        '|',
+        'Ask',
+        '|',
+        'Send feedback (opens in a new tab)',
+        'Settings',
+      ]);
     });
 
     it('takes the centre slot of the phone rail', () => {

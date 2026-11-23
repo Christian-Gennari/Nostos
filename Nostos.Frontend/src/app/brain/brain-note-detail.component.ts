@@ -9,16 +9,20 @@ import {
   output,
   signal,
   untracked,
+  viewChild,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { forkJoin, of } from 'rxjs';
 import { catchError, map } from 'rxjs/operators';
 
-import type { NoteSearchHit } from '../core/dtos/note.dtos';
+import { isPassage, type NoteSearchHit } from '../core/dtos/note.dtos';
 import { UNKNOWN_BOOK } from '../core/book-format';
 import { TopicsService, type NoteContextDto, type TopicWritingUsageDto } from '../core/services/topics.service';
+import { IconButtonComponent } from '../ui/icon-button/icon-button.component';
+import { NOSTOS_MENU } from '../ui/menu/menu.component';
 import { NostosDatePipe } from '../ui/pipes/nostos-date.pipe';
 import { NoteItemComponent, type CitingWriting } from '../ui/note-item/note-item.component';
+import { noteLocationLabel } from '../ui/note-item/note-item.helpers';
 import type { QuoteBlockSize } from '../ui/quote-block/quote-block.component';
 import { BrainNoteActionsService } from './brain-note-actions.service';
 import { BrainStateService } from './brain-state.service';
@@ -45,10 +49,10 @@ const RELATED_SHOWN = 4;
 const USAGE_LIMIT = 50;
 
 /**
- * One note in full (issue #1531): the quote or passage opening, the reader's
- * own words, topics, where it sits in its book, its related notes and the
- * writings that cite it. The same component is the note's own page and the
- * wide Brain's detail pane, so the two can never drift.
+ * One note in full (issues #1531, #1808): the 56px reader header with book
+ * title (serif), author (sans) and note actions menu, followed by the 680px
+ * reading column with a meta line above the text, the quote/words at the
+ * reading size, and related notes below.
  *
  * It owns no note data: the host says which note is open and how to show a
  * change. The related notes and citations are composed from the topic
@@ -57,7 +61,7 @@ const USAGE_LIMIT = 50;
 @Component({
   selector: 'app-brain-note-detail',
   standalone: true,
-  imports: [NostosDatePipe, NoteItemComponent],
+  imports: [NostosDatePipe, NoteItemComponent, IconButtonComponent, ...NOSTOS_MENU],
   templateUrl: './brain-note-detail.component.html',
   styleUrls: ['./brain-note-detail.component.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -67,6 +71,7 @@ export class BrainNoteDetailComponent {
   readonly note = input.required<NoteSearchHit>();
   /** The larger quote step where the note is the page, not a row in a list. */
   readonly quoteSize = input<QuoteBlockSize>('lg');
+  readonly showMoreFromBook = input(true);
 
   readonly moreFromBook = output<void>();
   /** A related note was chosen: the host opens it in the same place. */
@@ -77,10 +82,14 @@ export class BrainNoteDetailComponent {
   protected readonly suggestions = inject(BrainTopicSuggestionsService);
   private readonly topicsService = inject(TopicsService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly noteItem = viewChild(NoteItemComponent);
 
   readonly related = signal<readonly RelatedNote[]>([]);
   readonly cited = signal<readonly CitingWriting[]>([]);
   readonly busy = computed(() => this.noteActions.busy().has(this.note().id));
+
+  readonly noteKindLabel = computed(() => (isPassage(this.note()) ? 'Passage' : 'Note'));
+  readonly location = computed(() => noteLocationLabel(this.note()));
 
   /** The note's topics that the Brain knows, so their notes can be read. */
   private readonly contextTopics = computed(() => {
@@ -157,7 +166,12 @@ export class BrainNoteDetailComponent {
     });
   }
 
+  startEdit(): void {
+    this.noteItem()?.startEdit();
+  }
+
   openRelated(note: RelatedNote): void {
     this.relatedChosen.emit(note.id);
   }
 }
+

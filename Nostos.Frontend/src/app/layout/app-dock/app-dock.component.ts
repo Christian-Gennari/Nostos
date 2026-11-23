@@ -203,13 +203,14 @@ const isNarrowViewport = isPhoneViewport;
               [href]="feedbackHref"
               target="_blank"
               rel="noopener noreferrer"
-              title="Send feedback"
+              title="Send feedback (opens in a new tab)"
+              aria-label="Send feedback (opens in a new tab)"
               data-testid="dock-feedback"
             >
               <span class="dock-icon">
                 <nostos-icon name="paper-plane-tilt" [size]="20"></nostos-icon>
               </span>
-              <span class="label">Feedback</span>
+              <span class="label">Send feedback (opens in a new tab)</span>
             </a>
           }
           <a
@@ -240,11 +241,12 @@ const isNarrowViewport = isPhoneViewport;
       :host {
         position: fixed;
         bottom: var(--dock-float-bottom);
-        left: 50%;
+        left: var(--dock-anchor-x, 50%);
         z-index: var(--layer-navigation);
         width: auto;
         padding: 0;
         transform: translateX(-50%);
+        transition: left var(--motion-slow) var(--ease-standard);
       }
 
       .app-dock-container {
@@ -300,7 +302,7 @@ const isNarrowViewport = isPhoneViewport;
         align-items: center;
         justify-content: center;
         gap: 7px;
-        height: 38px;
+        height: 40px;
         padding: 0 14px 0 12px;
         border: 0;
         /* Links and the native buttons must paint exactly the same at rest.
@@ -314,7 +316,7 @@ const isNarrowViewport = isPhoneViewport;
         border-radius: calc(var(--radius-dock) - 5px);
         color: var(--color-text-muted);
         cursor: pointer;
-        font-family: 'Hanken Grotesk', sans-serif;
+        font-family: var(--font-ui);
         font-size: inherit;
         line-height: inherit;
         text-decoration: none;
@@ -393,7 +395,7 @@ const isNarrowViewport = isPhoneViewport;
       /* Utilities are square, icon-only buttons; the label is kept as the
          accessible name. */
       .dock-item-utility {
-        width: 38px;
+        width: 40px;
         padding: 0;
       }
 
@@ -424,7 +426,7 @@ const isNarrowViewport = isPhoneViewport;
         background: var(--dock-field);
         color: var(--color-text-muted);
         cursor: text;
-        font-family: 'Hanken Grotesk', sans-serif;
+        font-family: var(--font-ui);
         font-size: 0.82rem;
         font-weight: 500;
         line-height: 1;
@@ -507,6 +509,7 @@ const isNarrowViewport = isPhoneViewport;
           left: 0;
           width: 100%;
           transform: none;
+          transition: none;
         }
 
         .app-dock-container {
@@ -616,6 +619,12 @@ const isNarrowViewport = isPhoneViewport;
 
         .dock-item-ask .label {
           font-weight: 650;
+        }
+      }
+
+      @media (forced-colors: active) {
+        .app-dock-container {
+          border-color: CanvasText;
         }
       }
 

@@ -34,7 +34,7 @@ a.nav-item {
 }
 
 .sidebar {
-  --panel-width: 300px;
+  --panel-width: 248px;
   --rail-motion: var(--motion-slow) var(--ease-standard);
   /* Text leaves a little faster than the rail narrows, and arrives a little
      after the rail has opened far enough to hold it. */
@@ -46,10 +46,8 @@ a.nav-item {
   height: 100%;
   display: flex;
   flex-direction: column;
-  /* The page ground, not a panel of its own: the rail is set off by one
-     hairline on its inner edge (the library column's border), as the book
-     page's Details rail is. */
-  background: var(--bg-body);
+  /* The sidebar pane ground, set off by one hairline on its inner edge. */
+  background: var(--bg-pane-nav);
   animation: sidebar-enter var(--motion-base) var(--ease-out);
 }
 
@@ -186,6 +184,15 @@ input.sidebar-input {
   --brand-lockup-word-opacity: 0;
 }
 
+.sidebar.collapsed .sidebar-brand {
+  display: none;
+}
+
+.sidebar.collapsed .sidebar-header {
+  justify-content: flex-start;
+  padding: 0 20px;
+}
+
 /* --- FOLDING VERTICAL GROUPS -----------------------------------------
    Section labels and the collection tree fold to zero height with animated
    grid tracks, so the rail never grows a hole and the footer group (pinned to
@@ -230,15 +237,14 @@ input.sidebar-input {
      has to be declared HERE as well: a `transition` on the fade rule alone
      loses to this shorthand (same specificity, later in source) and the label
      would snap off instead of fading. */
-  transition: visibility 0s linear var(--motion-slow), opacity var(--label-out) linear var(--motion-slow);;
+  transition: visibility 0s linear var(--motion-slow), opacity var(--label-out) linear var(--motion-slow);
 }
 
 /* --- FOOTER --- */
 .sidebar-footer {
   flex: none;
   /* 4px of left padding puts the 64px footer slot on the rail axis, so the
-     collapse button sits on the same centre line as the nav icons in both
-     states and never travels. */
+     indicator sits on the same centre line as the nav icons. */
   padding: 0.75rem 1rem 0.75rem 4px;
   display: flex;
   align-items: center;
@@ -265,6 +271,7 @@ input.sidebar-input {
 
 /* The collapse control is an appIconButton (32px); the sidebar's own radius. */
 .toggle-btn {
+  flex: none;
   border-radius: var(--radius-lg);
 }
 
@@ -317,6 +324,15 @@ input.sidebar-input {
 
   .sidebar.collapsed {
     --brand-lockup-word-opacity: 1;
+  }
+
+  .sidebar.collapsed .sidebar-brand {
+    display: inline-flex;
+  }
+
+  .sidebar.collapsed .sidebar-header {
+    justify-content: space-between;
+    padding: 0 0.75rem 0 1rem;
   }
 
   .sidebar.collapsed .collapsible {

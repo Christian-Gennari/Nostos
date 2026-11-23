@@ -69,4 +69,19 @@
             </div>
           </div>
         }
+
+        <div class="theme-slots">
+          <div class="theme-slot">
+            <span class="theme-slot-label" id="note-text-size-label">
+              Note text size
+            </span>
+            <nostos-segmented
+              aria-labelledby="note-text-size-label"
+              data-testid="note-text-size"
+              [options]="noteTextSizeOptions"
+              [value]="noteTextSize()"
+              (valueChange)="setNoteTextSize($event)"
+            />
+          </div>
+        </div>
       </section>

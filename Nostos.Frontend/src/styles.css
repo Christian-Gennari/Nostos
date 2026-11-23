@@ -84,11 +84,16 @@
   --bg-input: #ffffff;
   --bg-hover: #EEEEEF;
   --surface-image-ground: #EEEEEF; /* the paper art sits on while it decodes */
+  --bg-pane-nav: var(--bg-sidebar);
+  --bg-pane-list: var(--bg-body);
+  --bg-pane-reader: var(--bg-surface);
+  --row-hover: var(--bg-surface-alt);
+  --row-selected: var(--bg-hover);
 
   /* ── Text ── */
   --color-text-main: #121316;
   --color-text-muted: #4A4D54;
-  --color-text-light: #76777B;
+  --color-text-light: #6a6b6f;
   --color-text-placeholder: #94979E;
   --color-text-faint: #C7C6CB;
 
@@ -186,7 +191,7 @@
   /* The floating desktop dock's geometry. The compact Ask Nostos panel opens
      from the dock, so it reads the same two numbers rather than guessing. */
   --dock-float-bottom: 24px;
-  --dock-bar-h: 48px;
+  --dock-bar-h: 50px;
   /* The pill that slides behind the selected dock item, the wash under a
      hovered one, and the inset field that launches Ask Nostos. Each is one
      step off the dock surface: inward on light, upward on dark, where the
@@ -708,25 +713,50 @@
    restate one. */
 .side-nav .sidebar-header {
   flex: none;
-  height: 68px;
+  height: 56px;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 12px;
+  border-bottom: 1px solid var(--border-color);
   /* 16px puts the 40px mark on the Library rail's axis: 16 + 20 = 36. */
-  padding: 0 1rem;
+  padding: 0 0.75rem 0 1rem;
 }
 
 .side-nav .nav-scroll-area {
   flex: 1;
   min-height: 0;
-  padding: 0.75rem 1rem;
+  padding: 0.75rem 1rem calc(var(--dock-bar-h) + var(--dock-float-bottom) + 40px);
   overflow-y: auto;
   overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
   display: flex;
   flex-direction: column;
   /* Groups are separated by more room than rows are, so the space itself says
      where one group ends. */
   gap: 1.75rem;
+}
+
+.side-nav:is(:hover, :focus-within) .nav-scroll-area {
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+.side-nav .nav-scroll-area::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.side-nav .nav-scroll-area::-webkit-scrollbar-thumb {
+  background: transparent;
+}
+
+.side-nav:is(:hover, :focus-within) .nav-scroll-area::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+}
+
+.side-nav:is(:hover, :focus-within) .nav-scroll-area::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
 }
 
 .side-nav .nav-group {
@@ -780,7 +810,7 @@
   background: transparent;
   color: var(--color-text-muted);
   cursor: pointer;
-  font-family: 'Hanken Grotesk', sans-serif;
+  font-family: var(--font-ui);
   font-size: 0.88rem;
   font-weight: var(--fw-medium);
   letter-spacing: -0.01em;
@@ -950,6 +980,11 @@
   --bg-input: #121318;
   --bg-hover: #20222a;
   --surface-image-ground: #181a20;
+  --bg-pane-nav: var(--bg-surface-alt);
+  --bg-pane-list: var(--bg-surface);
+  --bg-pane-reader: var(--bg-body);
+  --row-hover: var(--bg-surface-alt);
+  --row-selected: var(--bg-hover);
 
   /* ── Text ──
      Crisp Primary Silver / Secondary Rag / Muted Graphite. Every role is
@@ -1620,6 +1655,11 @@
 }
 
 :root {
+  /* ── Font Families ── */
+  --font-ui: 'Hanken Grotesk', sans-serif;
+  --font-reading: 'Newsreader', Georgia, serif;
+  --note-reading-size: 21px;
+
   /* ── Font Weights ── */
   --fw-light: 300;
   --fw-regular: 400;
@@ -1717,7 +1757,7 @@ html.nostos-scroll-locked {
 
 html,
 body {
-  font-family: 'Hanken Grotesk', sans-serif;
+  font-family: var(--font-ui);
   color: var(--color-text-main);
   overflow-x: hidden;
   height: 100dvh;
@@ -1736,7 +1776,7 @@ h1,
 h2,
 h3,
 h4 {
-  font-family: 'Newsreader', serif;
+  font-family: var(--font-reading);
   color: var(--primary-ink);
 }
 
@@ -2337,6 +2377,11 @@ app-assistant {
   --bg-input: #fefbf5;
   --bg-hover: #efe7d9;
   --surface-image-ground: #efe7d9;
+  --bg-pane-nav: var(--bg-sidebar);
+  --bg-pane-list: var(--bg-body);
+  --bg-pane-reader: var(--bg-surface);
+  --row-hover: var(--bg-surface-alt);
+  --row-selected: var(--bg-hover);
 
   /* ── Text: brown-black, never mid-brown ── */
   --color-text-main: #2b2118;
@@ -2492,6 +2537,11 @@ app-assistant {
   --bg-input: #1e2026;
   --bg-hover: #2d3037;
   --surface-image-ground: #24272d;
+  --bg-pane-nav: var(--bg-sidebar);
+  --bg-pane-list: var(--bg-surface);
+  --bg-pane-reader: var(--bg-body);
+  --row-hover: var(--bg-surface-alt);
+  --row-selected: var(--bg-hover);
   --color-text-main: #c8ccd4;
   --color-text-muted: #a9adb6;
   --color-text-light: #989da7;
@@ -2638,6 +2688,11 @@ app-assistant {
   --bg-input: #1a1814;
   --bg-hover: #2a2620;
   --surface-image-ground: #201d18;
+  --bg-pane-nav: var(--bg-sidebar);
+  --bg-pane-list: var(--bg-surface);
+  --bg-pane-reader: var(--bg-body);
+  --row-hover: var(--bg-surface-alt);
+  --row-selected: var(--bg-hover);
   --color-text-main: #e4d5bf;
   --color-text-muted: #bcae96;
   --color-text-light: #9c917c;
@@ -2802,7 +2857,7 @@ app-assistant {
   border: 1px solid var(--border-color);
   border-radius: var(--radius-popover);
   box-shadow: var(--shadow-md);
-  font-family: 'Hanken Grotesk', sans-serif;
+  font-family: var(--font-ui);
   transform-origin: top right;
   animation: nostos-surface-in var(--motion-fast) var(--ease-out);
 }
@@ -2863,7 +2918,7 @@ app-assistant {
 
 .nostos-surface-heading h2 {
   margin: 0;
-  font-family: 'Newsreader', serif;
+  font-family: var(--font-reading);
   font-size: 1.125rem;
   font-weight: var(--fw-medium);
   color: var(--color-text-main);

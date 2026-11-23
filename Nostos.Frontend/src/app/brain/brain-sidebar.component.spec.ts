@@ -120,9 +120,9 @@ describe('BrainSidebarComponent', () => {
     expect(row.querySelector('.row-menu-trigger')).toBeTruthy();
   });
 
-  it('offers the Library’s collapse control at the foot of the sidebar', () => {
-    const footer = fixture.nativeElement.querySelector('.sidebar-footer') as HTMLElement;
-    const toggle = footer.querySelector('button.toggle-btn') as HTMLButtonElement;
+  it('offers the Library’s collapse control in the sidebar header', () => {
+    const header = fixture.nativeElement.querySelector('.sidebar-header') as HTMLElement;
+    const toggle = header.querySelector('button.toggle-btn') as HTMLButtonElement;
 
     expect(toggle).toBeTruthy();
     expect(toggle.getAttribute('aria-expanded')).toBe('true');

@@ -56,25 +56,44 @@ function contrast(a: string, b: string): number {
   return (hi + 0.05) / (lo + 0.05);
 }
 
+const BRAIN_SURFACES = [
+  '--bg-pane-nav',
+  '--bg-pane-list',
+  '--bg-pane-reader',
+  '--row-hover',
+  '--row-selected',
+] as const;
+
+const CORE_SURFACES = [
+  '--bg-body',
+  '--bg-surface',
+  '--bg-sidebar',
+  '--bg-surface-alt',
+  '--bg-hover',
+  ...BRAIN_SURFACES,
+] as const;
+
 /**
- * WCAG AA in the new themes (issue #1074). Light and Dark have their own
- * history and checks; these three were drawn for the whole app here, so every
- * text role is held to AA on every surface it sits on.
+ * WCAG AA across all five app themes (issues #1074, #1808). Every text role
+ * is held to 4.5:1 on every surface it sits on, including the Brain's three
+ * pane surfaces and two row states, and the focus ring holds 3:1 on all of them.
  */
-describe('Sepia, Mist and Writer\'s Study meet WCAG AA (issue #1074)', () => {
-  for (const theme of ['sepia', 'mist', 'study'] as const) {
+describe('All five themes meet WCAG AA on core and Brain surfaces (issues #1074, #1808)', () => {
+  for (const theme of ['light', 'sepia', 'mist', 'study', 'dark'] as const) {
     describe(theme, () => {
       const t = tokens(theme);
       const c = (token: string) => colour(t, token);
 
-      it('has its own block', () => {
-        expect(blockTokens(`:root[data-palette='${theme}']`)['--bg-body'], `${theme} block missing`).toBeTruthy();
-      });
+      if (theme !== 'light' && theme !== 'dark') {
+        it('has its own block', () => {
+          expect(blockTokens(`:root[data-palette='${theme}']`)['--bg-body'], `${theme} block missing`).toBeTruthy();
+        });
+      }
 
-      it('keeps body, muted and light text readable on every surface', () => {
-        for (const surface of ['--bg-body', '--bg-surface', '--bg-sidebar', '--bg-surface-alt', '--bg-hover']) {
+      it('keeps body, muted and light text readable on every surface, pane and row state', () => {
+        for (const surface of CORE_SURFACES) {
           for (const ink of ['--color-text-main', '--color-text-muted', '--color-text-light']) {
-            expect(contrast(c(ink), c(surface)), `${ink} on ${surface}`).toBeGreaterThanOrEqual(4.5);
+            expect(contrast(c(ink), c(surface)), `${theme}: ${ink} on ${surface}`).toBeGreaterThanOrEqual(4.5);
           }
         }
       });
@@ -83,20 +102,23 @@ describe('Sepia, Mist and Writer\'s Study meet WCAG AA (issue #1074)', () => {
         expect(contrast(c('--on-primary'), c('--primary-fill'))).toBeGreaterThanOrEqual(4.5);
       });
 
-      it('gives the page 7:1 body text and AA everywhere else', () => {
-        // Long reading wants 7:1.
-        expect(contrast(c('--manuscript-ink'), c('--manuscript-paper'))).toBeGreaterThanOrEqual(7);
-        for (const surface of [c('--manuscript-paper'), c('--bg-sidebar')]) {
-          for (const ink of ['--manuscript-ink', '--manuscript-ink-soft', '--manuscript-ink-faint']) {
-            expect(contrast(c(ink), surface), `${ink}`).toBeGreaterThanOrEqual(4.5);
+      if (theme === 'sepia' || theme === 'mist' || theme === 'study') {
+        it('gives the page 7:1 body text and AA everywhere else', () => {
+          // Long reading wants 7:1.
+          expect(contrast(c('--manuscript-ink'), c('--manuscript-paper'))).toBeGreaterThanOrEqual(7);
+          for (const surface of [c('--manuscript-paper'), c('--bg-sidebar')]) {
+            for (const ink of ['--manuscript-ink', '--manuscript-ink-soft', '--manuscript-ink-faint']) {
+              expect(contrast(c(ink), surface), `${ink}`).toBeGreaterThanOrEqual(4.5);
+            }
           }
-        }
-        expect(contrast(c('--manuscript-link'), c('--manuscript-paper'))).toBeGreaterThanOrEqual(4.5);
-      });
+          expect(contrast(c('--manuscript-link'), c('--manuscript-paper'))).toBeGreaterThanOrEqual(4.5);
+        });
+      }
 
-      it('keeps the focus ring visible (3:1 for UI)', () => {
-        expect(contrast(c('--focus-ring'), c('--bg-body'))).toBeGreaterThanOrEqual(3);
-        expect(contrast(c('--focus-ring'), c('--bg-surface'))).toBeGreaterThanOrEqual(3);
+      it('keeps the focus ring visible (3:1 for UI) on every pane and row state', () => {
+        for (const surface of ['--bg-body', '--bg-surface', ...BRAIN_SURFACES]) {
+          expect(contrast(c('--focus-ring'), c(surface)), `${theme}: --focus-ring on ${surface}`).toBeGreaterThanOrEqual(3);
+        }
       });
     });
   }
@@ -106,7 +128,7 @@ describe('Sepia, Mist and Writer\'s Study meet WCAG AA (issue #1074)', () => {
     // app yellow when it was tried app-wide. The chrome stays warm but well
     // under it; only the reading page is allowed the richer cream.
     const t = tokens('sepia');
-    for (const token of ['--bg-body', '--bg-surface', '--bg-sidebar', '--bg-surface-alt']) {
+    for (const token of ['--bg-body', '--bg-surface', '--bg-sidebar', '--bg-surface-alt', ...BRAIN_SURFACES]) {
       const hex = colour(t, token);
       const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
       // Warm (red ≥ green ≥ blue) and gently so: blue no more than 22 below red.

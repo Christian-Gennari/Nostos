@@ -1,6 +1,18 @@
 <nav id="library-collections-sidebar" class="side-nav sidebar" [class.collapsed]="!expanded()">
   <div class="sidebar-header">
-    <nostos-brand-lockup />
+    <nostos-brand-lockup class="sidebar-brand" />
+    <button
+      appIconButton
+      [icon]="expanded() ? 'arrow-line-left' : 'arrow-line-right'"
+      [glyphSize]="18"
+      weight="thin"
+      class="toggle-btn"
+      type="button"
+      (click)="toggle()"
+      [attr.aria-expanded]="expanded()"
+      [attr.title]="expanded() ? 'Collapse sidebar' : 'Expand sidebar'"
+      [attr.aria-label]="expanded() ? 'Collapse sidebar' : 'Expand sidebar'"
+    ></button>
   </div>
 
   <div class="nav-scroll-area">
@@ -224,9 +236,9 @@
     </div>
   </div>
 
-  <div class="sidebar-footer">
-    <div class="footer-slot">
-      @if (!expanded() && filters.collectionId()) {
+  @if (!expanded() && filters.collectionId()) {
+    <div class="sidebar-footer">
+      <div class="footer-slot">
         <span
           class="collapsed-collection-indicator"
           role="status"
@@ -235,21 +247,9 @@
         >
           <nostos-icon name="folder" [size]="14" weight="light"></nostos-icon>
         </span>
-      }
-      <button
-        appIconButton
-        [icon]="expanded() ? 'arrow-line-left' : 'arrow-line-right'"
-        [glyphSize]="18"
-        weight="thin"
-        class="toggle-btn"
-        type="button"
-        (click)="toggle()"
-        [attr.aria-expanded]="expanded()"
-        [attr.title]="expanded() ? 'Collapse sidebar' : 'Expand sidebar'"
-        [attr.aria-label]="expanded() ? 'Collapse sidebar' : 'Expand sidebar'"
-      ></button>
+      </div>
     </div>
-  </div>
+  }
 
   <!-- The app's single confirmation surface, reused here so deleting a
        collection asks the same question in the same language as deleting a

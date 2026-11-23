@@ -37,7 +37,6 @@ import { EmptyStateComponent } from '../ui/empty-state/empty-state.component';
 import { PagingStatusComponent } from '../ui/paging-status/paging-status.component';
 import { SelectionBarComponent } from '../ui/selection-bar/selection-bar.component';
 import { NOSTOS_MENU } from '../ui/menu/menu.component';
-import { NoteItemComponent } from '../ui/note-item/note-item.component';
 import { NoticeComponent } from '../ui/notice/notice.component';
 import { TopicPickerPopoverComponent } from '../ui/topic-picker-popover/topic-picker-popover.component';
 import { InlineRenameComponent } from '../ui/inline-rename/inline-rename.component';
@@ -86,10 +85,11 @@ const SELECTION_PICKER_POSITIONS: ConnectedPosition[] = [
 ];
 
 /**
- * One list of notes: All notes, Passages, Unsorted, or a topic. Every place
- * has the same toolbar (search, book, order, select) and the same card; a
- * topic adds its own header. What is shown is in the URL (`q`, `book`,
- * `order`, `with`), so Back and a shared link reopen the same view.
+ * One list of notes: All notes, Passages, Unsorted, or a topic. The list
+ * column owns its 56px header, search + book toolbar row, optional topic
+ * strips, and plain note rows; at ≥1280px the selected note opens beside it in
+ * the reader column. What is shown is in the URL (`q`, `book`, `order`, `with`,
+ * `note`), so Back and a shared link reopen the same view.
  */
 @Component({
   selector: 'app-brain-list-page',
@@ -107,7 +107,6 @@ const SELECTION_PICKER_POSITIONS: ConnectedPosition[] = [
     NostosIconComponent,
     InputDirective,
     LoadingIndicatorComponent,
-    NoteItemComponent,
     NoticeComponent,
     TopicPickerPopoverComponent,
     InlineRenameComponent,
@@ -555,7 +554,6 @@ export class BrainListPage {
    * or, while notes are being ticked, ticks the focused one.
    */
   onListKeydown(event: KeyboardEvent): void {
-    if (!this.wide()) return;
     const target = (event.target as HTMLElement | null)?.closest<HTMLElement>('[data-note-row]');
     // Only a note row is a listbox option. The paging status below the list
     // keeps its own keyboard behaviour.
@@ -577,13 +575,19 @@ export class BrainListPage {
       const row = rows[next];
       const id = row?.dataset['noteId'];
       if (!id) return;
-      this.selectNote(id, true);
+      // Below the wide layout a note opens on its own page, so the arrows only
+      // move focus; Enter or Space opens the focused note (#1808).
+      if (this.wide()) this.selectNote(id, true);
       row.focus();
       return;
     }
 
     if (event.key === 'Enter') {
       event.preventDefault();
+      if (!this.wide()) {
+        if (currentId) this.selectNote(currentId);
+        return;
+      }
       if (currentId && this.selectedNoteId() !== currentId) this.selectNote(currentId);
       this.focusDetail();
       return;

@@ -7,6 +7,10 @@ import {
 } from '@angular/core';
 
 import {
+  LibraryPreferencesService,
+  NoteTextSize,
+} from '../../core/services/library-preferences.service';
+import {
   DAY_THEMES,
   NIGHT_THEMES,
   THEMES,
@@ -19,11 +23,11 @@ import { NostosIconComponent } from '../../ui/icon/nostos-icon.component';
 import { SegmentedComponent, SegmentedOption } from '../../ui/segmented/segmented.component';
 
 /**
- * Settings → General → Colour theme (issue #1074).
+ * Settings → General → Colour theme (issue #1074) and Note text size (issue #1808).
  *
  * Follow system and the five themes, each card showing its theme's real paper,
  * ink and accent without wearing it. The choice belongs to this device, so the
- * card talks only to `ThemeService`.
+ * card talks only to `ThemeService` and `LibraryPreferencesService`.
  */
 @Component({
   selector: 'app-theme-settings',
@@ -36,6 +40,7 @@ import { SegmentedComponent, SegmentedOption } from '../../ui/segmented/segmente
 export class ThemeSettingsComponent {
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly themeService = inject(ThemeService);
+  private readonly preferences = inject(LibraryPreferencesService);
 
   readonly themeChoice = this.themeService.choice;
   readonly themeCards: readonly { value: ThemeChoice; label: string }[] = [
@@ -50,8 +55,14 @@ export class ThemeSettingsComponent {
     value: t.value,
     label: t.label,
   }));
+  readonly noteTextSizeOptions: readonly SegmentedOption<NoteTextSize>[] = [
+    { value: 'sm', label: 'Small' },
+    { value: 'md', label: 'Medium' },
+    { value: 'lg', label: 'Large' },
+  ];
   readonly dayTheme = this.themeService.dayTheme;
   readonly nightTheme = this.themeService.nightTheme;
+  readonly noteTextSize = this.preferences.noteTextSize;
   readonly dayThemeOption = computed(() => themeOption(this.dayTheme()));
   readonly nightThemeOption = computed(() => themeOption(this.nightTheme()));
 
@@ -65,6 +76,10 @@ export class ThemeSettingsComponent {
 
   setNightTheme(name: ThemeName): void {
     this.themeService.setNightTheme(name);
+  }
+
+  setNoteTextSize(size: NoteTextSize): void {
+    this.preferences.setNoteTextSize(size);
   }
 
   /** A theme card's swatch colours (not for Follow system, which shows day and night). */

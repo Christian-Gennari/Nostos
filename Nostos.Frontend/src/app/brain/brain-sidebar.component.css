@@ -11,10 +11,10 @@
 
 .sidebar {
   /* The Library's collapse contract (sidebar-collections.component.css): this
-     panel keeps its full 300px geometry at all times. The shell's column is the
+     panel keeps its full 248px geometry at all times. The shell's column is the
      only thing that changes width, and it clips this box, so nothing inside
      reflows and no fade has to disguise a layout shift. */
-  --panel-width: 300px;
+  --panel-width: 248px;
   --rail-motion: var(--motion-slow) var(--ease-standard);
   --label-out: 140ms var(--ease-out);
   --label-in: 200ms var(--ease-out) 120ms;
@@ -24,14 +24,14 @@
   flex-direction: column;
   width: var(--panel-width);
   height: 100%;
-  background: var(--bg-body);
+  background: var(--bg-pane-nav);
   --brand-lockup-word-opacity: 1;
   --brand-lockup-word-transition: opacity var(--label-out);
 }
 
 /* Room under the last topic for the floating dock. */
 .nav-scroll-area {
-  padding-bottom: 6rem;
+  padding-bottom: calc(var(--dock-bar-h) + var(--dock-float-bottom) + 40px);
 }
 
 /* The Library's section head carries a 24px "+" beside the label. Hold this
@@ -73,7 +73,7 @@ app-dropdown.topic-sort {
   padding: 0 8px 0 12px;
   border-radius: var(--radius-row);
   color: var(--color-text-muted);
-  font-family: 'Hanken Grotesk', sans-serif;
+  font-family: var(--font-ui);
   font-size: 0.88rem;
   font-weight: 500;
   text-decoration: none;
@@ -220,11 +220,11 @@ app-dropdown.topic-sort {
 }
 
 /* --- The collapse rail (the Library's sidebar-collections contract) ------ */
-/* The shell's column narrows to 72px and clips this 300px panel; the rail is
+/* The shell's column narrows to 72px and clips this 248px panel; the rail is
    not a separate layout. Labels and counts fade, the Topics group folds, and
    the selected place's tint narrows to the Library's 40px rail square. Every
    horizontal element is centred on the rail axis (x = 36 of the 72px rail):
-   brand tile 16-56, place icons 28-44, their pill 16-56, footer button 20-52. */
+   place icons 28-44, their pill 16-56, header expand button 20-52. */
 .sidebar .nav-item::before {
   transition: width var(--rail-motion), height var(--rail-motion), background-color 0.12s ease;
 }
@@ -261,6 +261,15 @@ app-dropdown.topic-sort {
   --brand-lockup-word-opacity: 0;
 }
 
+.sidebar.collapsed .sidebar-brand {
+  display: none;
+}
+
+.sidebar.collapsed .sidebar-header {
+  justify-content: flex-start;
+  padding: 0 20px;
+}
+
 /* The Topics head and list fold to zero height with animated grid tracks, as
    the Library folds its section labels and collection tree: the rail never
    grows a hole where the group was. */
@@ -283,27 +292,9 @@ app-dropdown.topic-sort {
   transition: visibility 0s linear var(--motion-slow), opacity var(--label-out) linear var(--motion-slow);
 }
 
-/* --- Footer (the Library's) ---------------------------------------------- */
-/* 4px of left padding puts the 64px footer slot on the rail axis, so the
-   collapse button sits on the same centre line as the icons in both states
-   and never travels. */
-.sidebar-footer {
-  flex: none;
-  padding: 0.75rem 1rem 0.75rem 4px;
-  display: flex;
-  align-items: center;
-}
-
-.footer-slot {
-  width: 64px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-}
-
 /* The collapse control is an appIconButton (32px); the sidebar's own radius. */
 .toggle-btn {
+  flex: none;
   border-radius: var(--radius-lg);
 }
 
@@ -326,6 +317,15 @@ app-dropdown.topic-sort {
     --brand-lockup-word-opacity: 1;
   }
 
+  .sidebar.collapsed .sidebar-brand {
+    display: inline-flex;
+  }
+
+  .sidebar.collapsed .sidebar-header {
+    justify-content: space-between;
+    padding: 0 0.75rem 0 1rem;
+  }
+
   /* The drawer is not the rail, so the tint is the full row it labels — icon,
      name and count. The Brain's drawer opens from its own state
      (`drawerOpen`), not from the preference, so a drawer opened while
@@ -346,8 +346,19 @@ app-dropdown.topic-sort {
   }
 
   /* A rail control has no meaning in the drawer. */
-  .sidebar-footer {
+  .toggle-btn {
     display: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .sidebar .sidebar-header {
+    border-bottom-color: CanvasText;
+  }
+
+  .sidebar .nav-scroll-area {
+    scrollbar-width: auto;
+    scrollbar-color: auto;
   }
 }
 

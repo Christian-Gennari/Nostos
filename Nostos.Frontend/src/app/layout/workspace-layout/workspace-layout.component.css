@@ -1,4 +1,5 @@
 .workspace-layout {
+  --dock-anchor-x: 50%;
   display: flex;
   height: 100vh;
   height: 100dvh; /* Mobile viewport fix */
@@ -30,14 +31,41 @@
   padding-bottom: calc(var(--dock-rail-h) + env(safe-area-inset-bottom, 0px));
 }
 
-/* The dock is global, but the library has a substantial left rail. Keep the
-   floating navigation centred over the usable reading area instead of the
-   rail/content boundary. */
+/* The dock is global. --dock-anchor-x centres it on everything to the right
+   of the left sidebar (#1808, decided after review): the same spot in Library
+   and Brain, so it does not jump between modes, and it reads as centred. In the
+   wide Brain that region holds the list and the reader, so a wide dock (Ask
+   Nostos on) can cross their border on narrower desktops; the panes' bottom
+   padding keeps every last line clear of it. The Studio centres it on the
+   editor between its two optional sidebars. */
 @media (min-width: 769px) {
   .workspace-content {
     padding-bottom: 0;
   }
+
+  .workspace-layout:has(.library-right-side),
+  .workspace-layout:has(.brain-layout) {
+    --dock-anchor-x: calc(50% + 124px);
+  }
+
+  .workspace-layout:has(.layout-wrapper.sidebar-collapsed .library-right-side),
+  .workspace-layout:has(.brain-layout.sidebar-collapsed) {
+    --dock-anchor-x: calc(50% + 36px);
+  }
+
+  .workspace-layout:has(.studio-layout .sidebar-left.open):not(:has(.studio-layout .sidebar-right.open)) {
+    --dock-anchor-x: calc(50% + 124px);
+  }
+
+  .workspace-layout:has(.studio-layout .sidebar-right.open):not(:has(.studio-layout .sidebar-left.open)) {
+    --dock-anchor-x: calc(50% - 180px);
+  }
+
+  .workspace-layout:has(.studio-layout .sidebar-left.open):has(.studio-layout .sidebar-right.open) {
+    --dock-anchor-x: calc(50% - 56px);
+  }
 }
+
 
 .workspace-content:has(.settings-page) {
   overflow-y: auto;
