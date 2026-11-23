@@ -195,19 +195,6 @@ public sealed class AssistantChangesetDraft(ILibraryChangesetService changesets,
         var canonicalPreview = await changesets.PreviewAsync(plan.Ops, ct);
         if (!canonicalPreview.Success)
         {
-            // The raw sequence is a last resort for a genuinely irregular plan
-            // (a staged name swap, say), not a scaling path: it is a second full
-            // preview plus a second step build. A turn classifies at most a few
-            // pages of 250 topics per call, so a canonical plan over 1,000 ops
-            // is already beyond what one request should stage; refuse it rather
-            // than pay for the fallback twice.
-            if (plan.Ops.Count > 1_000)
-            {
-                return AssistantToolResult.Fail(
-                    "changeset_too_large",
-                    "This change is too large to stage in one go. Split it into a few requests and stage each one.");
-            }
-
             // Keep the topic-kind operations canonical even in this fallback:
             // one op per topic is what lets the review card tick a topic on its
             // own, and what makes the client's included set agree with the
@@ -217,8 +204,36 @@ public sealed class AssistantChangesetDraft(ILibraryChangesetService changesets,
                 .ToList();
             fallbackOps.AddRange(AssistantChangesetPlanBuilder.BuildTopicKindOps(
                 previewState.Before, previewState.After, rawCandidate));
+
+            // The raw sequence is a last resort for a genuinely irregular plan
+            // (a staged name swap, say), not a scaling path: it is a second full
+            // preview plus a second step build. A turn classifies at most a few
+            // pages of 250 topics per call, so a fallback plan over the service's
+            // limit is already beyond what one request should stage; refuse it
+            // rather than pay for the fallback twice.
+            if (fallbackOps.Count > LibraryChangesetService.MaxChangesetOperations)
+            {
+                return AssistantToolResult.Fail(
+                    "changeset_too_large",
+                    "This change is too large to stage in one go. Split it into a few requests and stage each one.");
+            }
+
+            // The fallback drops and rebuilds the kind operations, so the raw
+            // preview is only the fallback's own preview when nothing was rebuilt.
+            var fallbackPreview = fallbackOps.SequenceEqual(rawCandidate)
+                ? rawPreview
+                : await changesets.PreviewAsync(fallbackOps, ct);
+            if (!fallbackPreview.Success)
+            {
+                var message = fallbackPreview.ErrorMessage ?? "That change could not be made.";
+                return AssistantToolResult.Fail(
+                    fallbackPreview.ErrorCode ?? "changeset_invalid",
+                    message,
+                    JsonSerializer.SerializeToElement(new { status = "not_staged", reason = message }, Json));
+            }
+
             var fallbackDepends = ComputeSimpleDependsOn(fallbackOps);
-            return await CommitAsync(rawCandidate, nextRefId, previewState, fallbackOps, fallbackDepends, new Dictionary<Guid, int>(), rawPreview, ct);
+            return await CommitAsync(rawCandidate, nextRefId, previewState, fallbackOps, fallbackDepends, new Dictionary<Guid, int>(), fallbackPreview, ct);
         }
 
         return await CommitAsync(rawCandidate, nextRefId, previewState, plan.Ops, plan.DependsOn, plan.DeletedDescendantCounts, canonicalPreview, ct);
