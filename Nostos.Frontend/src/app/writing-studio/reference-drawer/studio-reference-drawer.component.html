@@ -5,7 +5,7 @@
       appIconButton
       size="xs"
       class="reference-rail-collapse"
-      icon="sidebar-simple"
+      [icon]="isOpen() ? 'arrow-line-right' : 'arrow-line-left'"
       [glyphSize]="16"
       weight="thin"
       (click)="collapseRail.emit()"

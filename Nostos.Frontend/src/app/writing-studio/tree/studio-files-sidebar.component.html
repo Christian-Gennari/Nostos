@@ -30,7 +30,7 @@
           appIconButton
           size="xs"
           class="files-rail-collapse"
-          icon="sidebar-simple"
+          [icon]="isOpen() ? 'arrow-line-left' : 'arrow-line-right'"
           [glyphSize]="16"
           weight="thin"
           (click)="collapseRail.emit()"

@@ -1,11 +1,15 @@
 import { Component, Input } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { marked } from 'marked';
 import { Note } from '../../core/dtos/note.dtos';
 import { NOSTOS_ICONS } from '../../ui/icon/nostos-icons';
+import { IconButtonComponent } from '../../ui/icon-button/icon-button.component';
 import { NoteItemComponent } from '../../ui/note-item/note-item.component';
 import { clearReferencePreviewCache } from '../reference-preview';
 import { StudioReferenceDrawerComponent } from './studio-reference-drawer.component';
+
+const svgPaths = (markup: string) => (markup.match(/\sd="[^"]*"/g) ?? []).join('|');
 
 @Component({ selector: 'app-note-item', standalone: true, template: '' })
 class NoteItemStub {
@@ -91,5 +95,24 @@ describe('StudioReferenceDrawerComponent', () => {
     (fixture.nativeElement.querySelector('.reference-source-row-main') as HTMLButtonElement).click();
     expect(inspected).toHaveLength(1);
     expect(inspected[0].id).toBe('n-1');
+  });
+
+  it('renders arrow-line-right when open and arrow-line-left when closed with thin weight', () => {
+    const collapseDe = () => fixture.debugElement.query(By.css('.reference-rail-collapse'));
+    const iconBtn = () => collapseDe().injector.get(IconButtonComponent);
+    const svg = () => (collapseDe().nativeElement as HTMLElement).querySelector('svg')!;
+
+    fixture.componentRef.setInput('isOpen', false);
+    fixture.detectChanges();
+    expect(iconBtn().icon()).toBe('arrow-line-left');
+    expect(iconBtn().weight()).toBe('thin');
+    expect(iconBtn().glyphSize()).toBe(16);
+    expect(svgPaths(svg().innerHTML)).toBe(svgPaths(NOSTOS_ICONS['arrow-line-left'].thin!));
+
+    fixture.componentRef.setInput('isOpen', true);
+    fixture.detectChanges();
+    expect(iconBtn().icon()).toBe('arrow-line-right');
+    expect(iconBtn().weight()).toBe('thin');
+    expect(svgPaths(svg().innerHTML)).toBe(svgPaths(NOSTOS_ICONS['arrow-line-right'].thin!));
   });
 });
