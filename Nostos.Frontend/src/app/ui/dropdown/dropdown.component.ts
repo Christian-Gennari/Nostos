@@ -156,9 +156,9 @@ let nextDropdownId = 0;
         display: inline-flex;
         align-items: center;
         justify-content: space-between;
-        gap: 0.75rem;
+        gap: var(--dropdown-trigger-gap, 0.75rem);
         width: 100%;
-        min-width: 7.5rem;
+        min-width: var(--dropdown-min-width, 7.5rem);
         min-height: var(--control-h-field);
         padding: 0.5rem 0.8rem;
         border: 1px solid var(--dropdown-border, var(--control-border));
@@ -201,7 +201,6 @@ let nextDropdownId = 0;
         --dropdown-border: transparent;
         --dropdown-bg: transparent;
         --dropdown-compact-height: var(--control-h-field-compact);
-        --dropdown-compact-padding: 0.4rem 0.7rem;
       }
 
       .nostos-dropdown__trigger:hover:not(:disabled) {

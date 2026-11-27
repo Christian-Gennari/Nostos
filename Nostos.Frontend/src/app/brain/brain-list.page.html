@@ -25,7 +25,7 @@
           } @else {
           <h1 class="page-title">{{ title() }}</h1>
           }
-          @if (loaded()) {
+          @if (loaded() && !renamingTitle()) {
           <span class="page-count" role="status" aria-live="polite">
             {{ place() === 'topic' && !filtersActive() && !withTopic() ? topicSummary() : countText() }}
           </span>
@@ -66,7 +66,7 @@
             (valueChange)="setOrder($event)"
           />
           <button appButton variant="ghost" size="sm" type="button" class="select-toggle" aria-label="Select notes"
-            [attr.aria-pressed]="selecting()" (click)="toggleSelecting()">
+            title="Select notes" [attr.aria-pressed]="selecting()" (click)="toggleSelecting()">
             <nostos-icon name="check-square" [size]="16" /><span class="select-label">Select</span>
           </button>
           @if (place() === 'topic' && topic(); as current) {
