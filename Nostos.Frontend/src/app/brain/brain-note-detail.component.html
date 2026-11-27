@@ -69,14 +69,14 @@
   @if (related().length) {
   <section class="related" [attr.aria-labelledby]="'related-' + note().id">
     <div class="related-head">
-      <span class="eyebrow" [id]="'related-' + note().id">Related notes</span>
+      <h2 class="related-title" [id]="'related-' + note().id">Related notes <span class="related-count">· {{ related().length }}</span></h2>
       @if (sharedTopicsLabel()) {
       <span class="related-sharing">sharing {{ sharedTopicsLabel() }}</span>
       }
     </div>
     @for (related of related(); track related.id) {
     <button type="button" class="related-row" (click)="openRelated(related)">
-      <span class="related-text">{{ related.excerpt || 'A note with no words yet.' }}</span>
+      <span class="related-text" [class.is-quote]="related.isQuote" [class.nostos-accent-rail]="related.isQuote">{{ related.excerpt || 'A note with no words yet.' }}</span>
       <span class="related-meta">{{ related.bookTitle }} · {{ related.createdAt | nostosDate }}</span>
     </button>
     }

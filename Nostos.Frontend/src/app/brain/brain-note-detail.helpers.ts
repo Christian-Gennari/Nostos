@@ -15,6 +15,8 @@ export interface RelatedNote {
   bookTitle: string;
   createdAt?: string;
   excerpt: string;
+  /** True when the excerpt is the book's words (the note's quote), not the reader's own. */
+  isQuote: boolean;
   /** The topic names the two notes have in common, in the order asked. */
   sharedTopics: string[];
 }
@@ -66,6 +68,7 @@ export function relatedNotesFrom(
       bookTitle: note.bookTitle,
       createdAt: note.createdAt,
       excerpt: (note.selectedText?.trim() || plainNoteText(note.content)).trim(),
+      isQuote: !!note.selectedText?.trim(),
       sharedTopics: [...shared],
     }));
 }

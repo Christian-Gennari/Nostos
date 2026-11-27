@@ -139,6 +139,10 @@ describe('BrainNoteDetailComponent', () => {
     );
     expect(rows[0].querySelector('.related-meta')?.textContent?.trim()).toBe('Walden · 14 Oct 2026');
     expect(element.querySelector('.related-sharing')?.textContent?.trim()).toBe('sharing Attention');
+    // A heading with the count closes off the open note (#1823); a note's own
+    // words carry no quote rail.
+    expect(element.querySelector('h2.related-title')?.textContent?.replace(/\s+/g, ' ').trim()).toBe('Related notes · 1');
+    expect(rows[0].querySelector('.related-text')?.classList.contains('nostos-accent-rail')).toBe(false);
 
     rows[0].click();
     expect(chosen).toEqual(['note-2']);

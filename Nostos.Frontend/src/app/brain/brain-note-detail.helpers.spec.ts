@@ -53,6 +53,7 @@ describe('brain note detail helpers', () => {
     ], 'open');
 
     expect(related.map((item) => item.excerpt)).toEqual(['Only the words.', 'A quoted line.']);
+    expect(related.map((item) => item.isQuote)).toEqual([false, true]);
   });
 
   it('caps the related notes', () => {

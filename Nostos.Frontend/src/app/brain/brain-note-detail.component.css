@@ -111,10 +111,15 @@
   display: none;
 }
 
+/* The rail hangs in the gutter, but inside the quote's own box: the box reaches
+   16px into the gutter and pads its text back to the shared edge. A clamped
+   quote clips its overflow, so a rail drawn outside the box would only show
+   once the note is unfolded (#1822). */
 :host ::ng-deep .reader-note-item .note-item-quote.nostos-accent-rail {
-  --nostos-accent-rail-inline-start: -16px;
+  --nostos-accent-rail-inline-start: 0;
   --nostos-accent-rail-width: 3px;
-  padding-left: 0;
+  margin-left: -16px;
+  padding-left: 16px;
   font-family: var(--font-reading);
   font-size: var(--note-reading-size, 21px);
   line-height: 1.6;
@@ -142,8 +147,15 @@
 }
 
 /* --- Related notes ------------------------------------------------------- */
+/* Related notes (#1823). The open note ends at a hairline rule across the
+   reading column, with more space above it than between the note's own parts,
+   and each related note is its own bordered card in a quieter voice: muted,
+   smaller, cut at three lines. A related quote carries the neutral quote rail,
+   so quote and note stay told apart here too. */
 .related {
-  margin-top: 2.25rem;
+  margin-top: 3rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border-color);
 }
 
 .related-head {
@@ -151,16 +163,23 @@
   flex-wrap: wrap;
   align-items: baseline;
   gap: 0.25rem 0.75rem;
-  padding: 0 0 0.4rem;
+  padding: 0 0 0.75rem;
 }
 
-.eyebrow {
-  color: var(--color-text-light);
+.related-title {
+  margin: 0;
+  color: var(--color-text-main);
   font-family: var(--font-ui);
-  font-size: 0.7rem;
+  font-size: var(--text-sm);
   font-weight: var(--fw-semibold);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.related-count {
+  color: var(--color-text-light);
+  font-weight: var(--fw-regular);
+  font-variant-numeric: tabular-nums;
 }
 
 .related-sharing {
@@ -172,18 +191,24 @@
 .related-row {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
-  width: calc(100% + 1.5rem);
-  margin-inline: -0.75rem;
-  padding: 0.65rem 0.75rem;
-  border: 0;
+  gap: 0.4rem;
+  width: 100%;
+  margin: 0 0 0.5rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--border-color);
   border-radius: var(--radius-row);
   background: transparent;
   color: var(--color-text-main);
   font-family: var(--font-ui);
   text-align: left;
   cursor: pointer;
-  transition: background-color var(--motion-fast) var(--ease-standard);
+  transition:
+    background-color var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard);
+}
+
+.related-row:last-child {
+  margin-bottom: 0;
 }
 
 .related-row:hover {
@@ -192,16 +217,30 @@
 
 .related-row:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: -2px;
+  outline-offset: 2px;
 }
 
 .related-text {
-  color: var(--color-text-main);
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  color: var(--color-text-muted);
   font-family: var(--font-ui);
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   line-height: 1.5;
   overflow-wrap: anywhere;
   text-wrap: pretty;
+}
+
+/* The rail sits inside the clamped box, like the reader's own quote. */
+.related-text.is-quote {
+  --nostos-accent-rail-width: 2px;
+  --nostos-accent-rail-color: var(--border-color);
+  padding-left: 0.75rem;
+  font-family: var(--font-reading);
+  font-size: 0.875rem;
 }
 
 .related-meta {
@@ -222,9 +261,8 @@
     border-bottom-color: CanvasText;
   }
 
-  .related-row:hover {
-    outline: 1px solid CanvasText;
-    outline-offset: -1px;
+  .related-row {
+    border-color: CanvasText;
   }
 }
 
