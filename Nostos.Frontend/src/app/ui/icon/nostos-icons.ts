@@ -169,7 +169,6 @@ import quotes from '@phosphor-icons/core/regular/quotes.svg';
 import scroll from '@phosphor-icons/core/regular/scroll.svg';
 import graph from '@phosphor-icons/core/regular/graph.svg';
 import scan from '@phosphor-icons/core/regular/scan.svg';
-import sidebarSimple from '@phosphor-icons/core/regular/sidebar-simple.svg';
 import slidersHorizontal from '@phosphor-icons/core/regular/sliders-horizontal.svg';
 import skipBack from '@phosphor-icons/core/regular/skip-back.svg';
 import skipForward from '@phosphor-icons/core/regular/skip-forward.svg';
@@ -300,7 +299,6 @@ export const NOSTOS_ICONS = {
   'scroll': { regular: scroll, light: scrollLight, },
   'graph': { regular: graph, light: graphLight, },
   'scan': { regular: scan, },
-  'sidebar-simple': { regular: sidebarSimple, },
   'sliders-horizontal': { regular: slidersHorizontal, },
   'skip-back': { regular: skipBack, },
   'skip-forward': { regular: skipForward, },

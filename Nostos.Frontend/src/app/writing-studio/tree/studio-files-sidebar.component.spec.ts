@@ -1,8 +1,13 @@
 import { Component, input, output } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { WritingDto } from '../../core/dtos/writing.dtos';
 import { FlatTreeComponent } from '../../ui/flat-tree/flat-tree.component';
+import { NOSTOS_ICONS } from '../../ui/icon/nostos-icons';
+import { IconButtonComponent } from '../../ui/icon-button/icon-button.component';
 import { StudioFilesSidebarComponent } from './studio-files-sidebar.component';
+
+const svgPaths = (markup: string) => (markup.match(/\sd="[^"]*"/g) ?? []).join('|');
 
 @Component({ selector: 'app-flat-tree', standalone: true, template: '' })
 class FlatTreeStub {
@@ -65,5 +70,24 @@ describe('StudioFilesSidebarComponent', () => {
 
     expect(fixture.nativeElement.querySelector('nostos-empty-state')).toBeTruthy();
     expect(events).toEqual(['doc', 'folder', 'collapse']);
+  });
+
+  it('renders arrow-line-left when open and arrow-line-right when closed with thin weight', () => {
+    const collapseDe = () => fixture.debugElement.query(By.css('.files-rail-collapse'));
+    const iconBtn = () => collapseDe().injector.get(IconButtonComponent);
+    const svg = () => (collapseDe().nativeElement as HTMLElement).querySelector('svg')!;
+
+    fixture.componentRef.setInput('isOpen', false);
+    fixture.detectChanges();
+    expect(iconBtn().icon()).toBe('arrow-line-right');
+    expect(iconBtn().weight()).toBe('thin');
+    expect(iconBtn().glyphSize()).toBe(16);
+    expect(svgPaths(svg().innerHTML)).toBe(svgPaths(NOSTOS_ICONS['arrow-line-right'].thin!));
+
+    fixture.componentRef.setInput('isOpen', true);
+    fixture.detectChanges();
+    expect(iconBtn().icon()).toBe('arrow-line-left');
+    expect(iconBtn().weight()).toBe('thin');
+    expect(svgPaths(svg().innerHTML)).toBe(svgPaths(NOSTOS_ICONS['arrow-line-left'].thin!));
   });
 });
