@@ -102,6 +102,9 @@
 /* --- Help, not buttons --------------------------------------------------- */
 
 .import-help {
+  /* Wide enough for the longest name with its badge on one line; the steps
+     panel indents by the same amount. */
+  --import-help-name-width: 8.25rem;
   display: flex;
   flex-direction: column;
 }
@@ -134,7 +137,7 @@
 
 .import-help__summary {
   display: grid;
-  grid-template-columns: 7.5rem minmax(0, 1fr) auto;
+  grid-template-columns: var(--import-help-name-width) minmax(0, 1fr) auto;
   gap: 10px;
   align-items: baseline;
   width: 100%;
@@ -158,14 +161,19 @@
 }
 
 .import-help__name {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  white-space: nowrap;
   color: var(--color-text-main);
   font-size: 0.84rem;
   font-weight: var(--fw-semibold);
 }
 
+/* The capsule is a little taller than the name's line; the negative margin
+   keeps that from making its row taller than the others. */
 .import-help__beta {
-  margin-left: 0.35rem;
-  vertical-align: middle;
+  margin-block: -2px;
 }
 
 .import-help__hint {
@@ -185,7 +193,7 @@
 }
 
 .import-help__panel {
-  padding: 0 2px 12px calc(7.5rem + 10px);
+  padding: 0 2px 12px calc(var(--import-help-name-width) + 10px);
 }
 
 .import-help__steps {

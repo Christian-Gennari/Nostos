@@ -77,9 +77,11 @@
   font-weight: var(--fw-semibold);
 }
 
-.highlight-beta {
-  margin-left: 0.5rem;
-  vertical-align: middle;
+/* The same placement as the Beta badge in the drop zone's help list. */
+.highlight-import-title:has(.highlight-beta) {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
 }
 
 .highlight-steps-note {

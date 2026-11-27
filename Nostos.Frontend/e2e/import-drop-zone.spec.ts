@@ -182,6 +182,46 @@ test.describe('one import drop zone', () => {
     await expect(zone).not.toHaveClass(/is-dragging/);
   });
 
+  for (const [label, width] of [
+    ['desktop', 1280],
+    ['phone', 390],
+  ] as const) {
+    test(`keeps the Beta badge on the name's line at ${label} width`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      const entry = page.locator('[data-testid="import-help-applebooks"]');
+      await expect(entry).toBeVisible();
+
+      const layout = await page.getByTestId('import-help').evaluate((help) => {
+        const entries = [...help.querySelectorAll('.import-help__entry')].map((row) => {
+          const name = row.querySelector('.import-help__name')!;
+          const range = document.createRange();
+          range.selectNodeContents(
+            [...name.childNodes].find((n) => n.nodeType === 3 && n.textContent!.trim())!,
+          );
+          const badge = name.querySelector('[appBadge]');
+          return {
+            height: row.getBoundingClientRect().height,
+            hintX: row.querySelector('.import-help__hint')!.getBoundingClientRect().x,
+            name: range.getBoundingClientRect().toJSON() as DOMRect,
+            badge: badge?.getBoundingClientRect().toJSON() as DOMRect | undefined,
+          };
+        });
+        return { entries, beta: entries.find((e) => e.badge)! };
+      });
+
+      const { name, badge } = layout.beta;
+      expect(badge!.left).toBeGreaterThanOrEqual(name.right);
+      expect(badge!.top).toBeLessThan(name.bottom);
+      expect(Math.abs((badge!.top + badge!.bottom) / 2 - (name.top + name.bottom) / 2)).toBeLessThan(
+        1.5,
+      );
+      // Every hint here fits on one line, so the rows must all be the same height.
+      const heights = layout.entries.map((e) => e.height);
+      expect(Math.max(...heights) - Math.min(...heights)).toBeLessThan(0.5);
+      expect(new Set(layout.entries.map((e) => e.hintX)).size).toBe(1);
+    });
+  }
+
   test('imports every highlight source with no source chosen first', async ({ page }) => {
     await importHighlights(page, [Kobo]);
     await importHighlights(page, [KOReader]);
