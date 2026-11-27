@@ -47,6 +47,9 @@
   flex-direction: column;
   min-width: 0;
   background: var(--bg-pane-list);
+  /* The header answers the list column's own width, not the window's: at
+     ≥1280px the list column is 380px beside the reader pane (#1814). */
+  container-type: inline-size;
 }
 
 /* --- 56px List Header ----------------------------------------------------- */
@@ -80,11 +83,14 @@
   gap: 8px;
   min-width: 0;
   flex: 1 1 auto;
+  overflow: hidden;
 }
 
 /* Override the global h1–h4 serif rule inside Brain chrome. */
 .page-title {
   margin: 0;
+  min-width: 0;
+  flex: 0 1 auto;
   overflow: hidden;
   color: var(--color-text-main);
   font-family: var(--font-ui);
@@ -97,12 +103,15 @@
 }
 
 .page-count {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
   color: var(--color-text-light);
   font-family: var(--font-ui);
   font-size: var(--text-xs);
   font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
   white-space: nowrap;
-  flex: none;
 }
 
 .toolbar-right {
@@ -432,10 +441,66 @@
   }
 }
 
+/* --- Narrow list column (≤540px, including the 380px wide column, #1814) --- */
+/* Stack the title and count inside the 56px header, drop the Select label, and
+   let the order dropdown hug its text so the count and controls never collide. */
+@container (max-width: 540px) {
+  .list-header {
+    gap: 8px;
+    padding: 0 16px 0 24px;
+  }
+
+  .toolbar-title {
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 1px;
+  }
+
+  .page-title,
+  .page-count {
+    max-width: 100%;
+    line-height: 1.2;
+  }
+
+  .toolbar-right {
+    gap: 2px;
+  }
+
+  app-dropdown.order-select {
+    --dropdown-min-width: 0;
+    --dropdown-trigger-gap: 0.35rem;
+    --dropdown-compact-padding: 0.4rem 0.5rem;
+  }
+
+  .select-toggle {
+    width: var(--control-h-field-compact);
+    min-width: var(--control-h-field-compact);
+    height: var(--control-h-field-compact);
+    min-height: var(--control-h-field-compact);
+    padding: 0;
+    justify-content: center;
+  }
+
+  .select-label {
+    display: none;
+  }
+
+  .topic-more {
+    width: var(--control-h-field-compact);
+    height: var(--control-h-field-compact);
+  }
+}
+
 /* --- Phone (≤768px) ------------------------------------------------------- */
 @media (max-width: 768px) {
   .list-header {
+    gap: 12px;
     padding: 0 14px;
+  }
+
+  .toolbar-right {
+    gap: 6px;
   }
 
   .place-switch {
@@ -481,6 +546,7 @@
     width: var(--control-h-touch);
     min-width: var(--control-h-touch);
     height: var(--control-h-touch);
+    min-height: var(--control-h-touch);
     padding: 0;
     justify-content: center;
   }

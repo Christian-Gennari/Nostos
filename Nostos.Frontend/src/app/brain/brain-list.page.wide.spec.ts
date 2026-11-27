@@ -236,4 +236,103 @@ describe('BrainListPage — wide list and detail (#1531)', () => {
     setQuery({ note: 'today-a' });
     expect(navigate).toHaveBeenCalledWith(['/brain/notes', 'today-a'], { replaceUrl: true });
   });
+
+  it('keeps accessible Select control metadata and hides the count line during inline topic rename (#1814)', async () => {
+    const selectButton = el().querySelector<HTMLButtonElement>('.list-header .select-toggle');
+    expect(selectButton?.getAttribute('aria-label')).toBe('Select notes');
+    expect(selectButton?.getAttribute('title')).toBe('Select notes');
+    expect(el().querySelector('.list-header .page-count')?.textContent?.trim()).toBe('3 notes');
+
+    // Reconfigure for a topic page to exercise the inline title rename path.
+    fixture.destroy();
+    TestBed.resetTestingModule();
+    const topic = { id: 't1', name: 'Ethics', usageCount: 8, description: null, kindId: null };
+    const topicActions = {
+      renameId: signal<string | null>(null),
+      renameSurface: signal<'sidebar' | 'title'>('sidebar'),
+      renameValue: signal(''),
+      renameError: signal<string | null>(null),
+      renaming: signal(false),
+      startRename: vi.fn(),
+      commitRename: vi.fn(),
+      cancelRename: vi.fn(),
+      openDelete: vi.fn(),
+      openMerge: vi.fn(),
+    };
+    await TestBed.configureTestingModule({
+      imports: [BrainListPage],
+      providers: [
+        provideRouter([]),
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            data: of({ place: 'topic' }),
+            paramMap: of(convertToParamMap({ topicId: 't1' })),
+            queryParamMap: of(convertToParamMap({})),
+            snapshot: {
+              data: { place: 'topic' },
+              paramMap: convertToParamMap({ topicId: 't1' }),
+              queryParamMap: convertToParamMap({}),
+            },
+          },
+        },
+        {
+          provide: NotesService,
+          useValue: {
+            browse: vi.fn(() => of({ items: [note('n1')], totalCount: 8, offset: 0, limit: 25 })),
+            books: vi.fn(() => of([{ bookId: 'b', workId: 'w', bookTitle: 'Meditations', noteCount: 8 }])),
+            get,
+          },
+        },
+        {
+          provide: TopicsService,
+          useValue: {
+            getRelated: vi.fn(() => of([])),
+            getWritingUsage: vi.fn(() => of({ totalWritings: 0, writings: [], noteCitations: [] })),
+          },
+        },
+        { provide: ToastService, useValue: { success: vi.fn(), error: vi.fn() } },
+        { provide: BrainListCacheService, useValue: { restore: () => null, save: vi.fn() } },
+        { provide: AssistantService, useValue: { turnFinished: new Subject() } },
+        { provide: AssistantContextService, useValue: {} },
+        {
+          provide: BrainStateService,
+          useValue: {
+            ensureLoaded: vi.fn(),
+            ensureKindsLoaded: vi.fn(),
+            reloadKinds: vi.fn(),
+            replaceTopic: vi.fn(),
+            topicById: (id: string | null) => (id === 't1' ? topic : null),
+            topicsLoaded: signal(true),
+            topics: signal([topic]),
+            topicKinds: signal([]),
+            kindsLoaded: signal(true),
+            kindsFailed: signal(false),
+            kindsLoading: signal(false),
+            lookup: signal(new Map()),
+            drawerOpen: signal(false),
+            dataVersion: signal(0),
+            topicsRewritten: signal(0),
+          },
+        },
+        { provide: BrainTopicActionsService, useValue: topicActions },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(BrainListPage);
+    fixture.detectChanges();
+    fixture.detectChanges();
+
+    expect(el().querySelector('.list-header .page-title')?.textContent?.trim()).toBe('Ethics');
+    expect(el().querySelector('.list-header .page-count')?.textContent?.trim()).toBe('8 notes from 1 book');
+    expect(el().querySelector('.list-header .order-select')).not.toBeNull();
+    expect(el().querySelector('.list-header .topic-more')).not.toBeNull();
+
+    topicActions.renameId.set('t1');
+    topicActions.renameSurface.set('title');
+    fixture.detectChanges();
+
+    expect(el().querySelector('.list-header nostos-inline-rename')).not.toBeNull();
+    expect(el().querySelector('.list-header .page-count')).toBeNull();
+  });
 });
