@@ -86,17 +86,19 @@ import { IconButtonComponent } from '../icon-button/icon-button.component';
   `,
   styles: [
     `
-      /* Fixed, bottom-centre, clear of the dock. The offsets are the ones the
-         two hand-written bars used, now expressed through the dock's geometry
-         tokens so the bar and the dock cannot drift apart. */
+      /* Fixed, bottom-centre, clear of the dock. Shares the dock's horizontal
+         anchor (--dock-anchor-x, set on .workspace-layout, with a 50%
+         fallback outside it) and vertical tokens so the two bars never
+         drift apart. */
       :host {
         position: fixed;
-        left: 50%;
+        left: var(--dock-anchor-x, 50%);
         bottom: calc(var(--dock-float-bottom) + var(--dock-rail-h) + 16px);
         z-index: var(--layer-selection-bar);
         display: block;
         max-width: calc(100vw - 2rem);
         transform: translateX(-50%);
+        transition: left var(--motion-slow) var(--ease-standard);
       }
 
       /* The dock's material, not a filled pill: a raised surface with a
@@ -171,6 +173,7 @@ import { IconButtonComponent } from '../icon-button/icon-button.component';
       @media (max-width: 768px) {
         :host {
           bottom: calc(var(--dock-rail-h) + env(safe-area-inset-bottom, 0px) + 12px);
+          transition: none;
         }
 
         .selection-bar {
@@ -195,6 +198,12 @@ import { IconButtonComponent } from '../icon-button/icon-button.component';
         .selection-close {
           width: var(--control-h-touch);
           height: var(--control-h-touch);
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        :host {
+          transition: none;
         }
       }
     `,

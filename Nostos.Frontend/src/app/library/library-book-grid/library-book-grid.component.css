@@ -410,6 +410,14 @@ app-library-empty-state {
     contain-intrinsic-size: 0 340px;
   }
 
+  /* `content-visibility: auto` brings paint containment, which clips the
+     selection ring (drawn 2px outside the cover) on the top and sides. A
+     selected card is on screen anyway, so it opts out and keeps the full
+     ring, as on desktop. */
+  .book-card.is-selected {
+    content-visibility: visible;
+  }
+
   /* The container already holds the toolbar's 16px gutter, so the grid adds
      none: covers line up with the search field and come out ~28px wider.
      `minmax(0, 1fr)` is deliberate: a bare `1fr` track takes its minimum from

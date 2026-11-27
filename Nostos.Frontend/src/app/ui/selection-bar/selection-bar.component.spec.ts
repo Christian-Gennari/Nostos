@@ -184,4 +184,16 @@ describe('SelectionBarComponent', () => {
     expect(layer('selection-bar')).toBeGreaterThan(layer('navigation'));
     expect(layer('selection-bar')).toBeLessThan(layer('backdrop'));
   });
+
+  it('centres on --dock-anchor-x with a 50% fallback so it aligns with the dock', () => {
+    const barTs = barSource();
+    const dockTs = readFileSync(
+      path.resolve(process.cwd(), 'src/app/layout/app-dock/app-dock.component.ts'),
+      'utf8',
+    );
+
+    expect(barTs).toContain('left: var(--dock-anchor-x, 50%)');
+    expect(barTs).toContain('transform: translateX(-50%)');
+    expect(dockTs).toContain('left: var(--dock-anchor-x, 50%)');
+  });
 });
