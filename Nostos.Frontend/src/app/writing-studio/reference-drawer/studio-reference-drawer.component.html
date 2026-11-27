@@ -1,6 +1,7 @@
 <div class="sidebar-header compact">
+  <!-- The collapse sits at the rail's inner edge, mirroring the Files rail;
+       the title follows it so the header still reads left to right. -->
   <div class="sidebar-title-row">
-    <h2>Reference</h2>
     <button
       appIconButton
       size="xs"
@@ -14,6 +15,7 @@
       [attr.aria-expanded]="isOpen()"
       [attr.aria-pressed]="isOpen()"
     ></button>
+    <h2>Reference</h2>
   </div>
 
   <!-- Top-level reference mode switch: "For this document" vs "Library" (issue #491) -->

@@ -569,7 +569,7 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
     expect(document.activeElement).toBe(referenceToggle);
   });
 
-  it('uses directional arrow icons with thin weight for both panel toggles in open and closed states across desktop and compact widths', () => {
+  it('keeps the header toggles as list and book-open while the rail collapse buttons use directional arrows, open and closed, desktop and compact', () => {
     const svgPaths = (markup: string) => (markup.match(/\sd="[^"]*"/g) ?? []).join('|');
     const iconFor = (selector: string) => {
       const de = fixture.debugElement.query(By.css(selector));
@@ -584,8 +584,12 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
       component.showBrainSidebar.set(false);
       fixture.detectChanges();
 
+      // The header toggles keep their own glyphs; only the rails use arrows.
+      expect(iconFor('.files-toggle').btn.icon()).toBe('list');
+      expect(iconFor('.reference-toggle').btn.icon()).toBe('book-open');
+
       // Both panels closed: left panel points right (to open), right panel points left (to open).
-      for (const selector of ['.files-toggle', '.files-rail-collapse']) {
+      for (const selector of ['.files-rail-collapse']) {
         const { btn, host, svg } = iconFor(selector);
         expect(btn.icon()).toBe('arrow-line-right');
         expect(btn.weight()).toBe('thin');
@@ -594,7 +598,7 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
       }
       expect(iconFor('.files-toggle').host.getAttribute('aria-pressed')).toBe('false');
 
-      for (const selector of ['.reference-toggle', '.reference-rail-collapse']) {
+      for (const selector of ['.reference-rail-collapse']) {
         const { btn, host, svg } = iconFor(selector);
         expect(btn.icon()).toBe('arrow-line-left');
         expect(btn.weight()).toBe('thin');
@@ -606,7 +610,7 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
       // Open Files: Files icons flip to arrow-line-left; Reference stays arrow-line-left.
       iconFor('.files-toggle').host.click();
       fixture.detectChanges();
-      for (const selector of ['.files-toggle', '.files-rail-collapse']) {
+      for (const selector of ['.files-rail-collapse']) {
         const { btn, host, svg } = iconFor(selector);
         expect(btn.icon()).toBe('arrow-line-left');
         expect(btn.weight()).toBe('thin');
@@ -614,12 +618,12 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
         expect(host.getAttribute('aria-expanded')).toBe('true');
       }
       expect(iconFor('.files-toggle').host.getAttribute('aria-pressed')).toBe('true');
-      expect(iconFor('.reference-toggle').btn.icon()).toBe('arrow-line-left');
+      expect(iconFor('.reference-toggle').btn.icon()).toBe('book-open');
 
       // Open Reference: Reference icons flip to arrow-line-right; in compact mode Files closes and flips back.
       iconFor('.reference-toggle').host.click();
       fixture.detectChanges();
-      for (const selector of ['.reference-toggle', '.reference-rail-collapse']) {
+      for (const selector of ['.reference-rail-collapse']) {
         const { btn, host, svg } = iconFor(selector);
         expect(btn.icon()).toBe('arrow-line-right');
         expect(btn.weight()).toBe('thin');
@@ -627,12 +631,12 @@ describe('WritingStudio zen mode (issue #49) + paper frame (expert design §2/§
         expect(host.getAttribute('aria-expanded')).toBe('true');
       }
       expect(iconFor('.reference-toggle').host.getAttribute('aria-pressed')).toBe('true');
-      expect(iconFor('.files-toggle').btn.icon()).toBe(compact ? 'arrow-line-right' : 'arrow-line-left');
+      expect(iconFor('.files-toggle').btn.icon()).toBe('list');
 
       // Close Reference from its rail heading: Reference flips back to arrow-line-left.
       iconFor('.reference-rail-collapse').host.click();
       fixture.detectChanges();
-      expect(iconFor('.reference-toggle').btn.icon()).toBe('arrow-line-left');
+      expect(iconFor('.reference-toggle').btn.icon()).toBe('book-open');
       expect(iconFor('.reference-rail-collapse').btn.icon()).toBe('arrow-line-left');
     }
   });
