@@ -115,7 +115,8 @@ import { ReaderNotesPanel } from './reader-notes-panel.component';
 import { ReaderNotesSession } from './reader-notes-session';
 import { ReaderTocPanel } from './reader-toc-panel.component';
 import { ReaderSearchPanel } from './reader-search-panel.component';
-import { ReaderSelectionSurface, type MenuPlacement } from './reader-selection-surface.component';
+import { ReaderSelectionSurface } from './reader-selection-surface.component';
+import { placeMenuAtAnchor, type MenuArea, type MenuPlacement } from './menu-placement';
 import { ReaderHighlightCard } from './reader-highlight-card.component';
 import { ReadAloudController } from './read-aloud/read-aloud-controller';
 import { ServerVoice } from './read-aloud/server-voice';
@@ -384,23 +385,31 @@ export class ReaderShell implements OnInit, OnDestroy {
   private menuPlacement(anchor: SelectionAnchor | null, maxWidth = 360): MenuPlacement | null {
     if (!anchor || this.dockedLayout()) return null;
     if (typeof window === 'undefined') return null;
+    const viewport = { width: window.innerWidth, height: window.innerHeight };
+    return placeMenuAtAnchor(anchor, viewport, this.readingArea(viewport.height), maxWidth);
+  }
 
-    const gap = 8;
-    const edge = 8;
-    const minVisible = 64;
-    const reserve = 240; // room for the note editor when it opens
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    const width = Math.min(maxWidth, vw - edge * 2);
-    const centre = (anchor.left + anchor.right) / 2;
-    const left = Math.min(Math.max(centre - width / 2, edge), vw - width - edge);
-
-    const roomBelow = vh - anchor.bottom;
-    const roomAbove = anchor.top;
-    if (roomBelow >= reserve || roomBelow >= roomAbove) {
-      return { left, width, top: Math.min(anchor.bottom + gap, vh - minVisible), bottom: null };
+  /**
+   * The band of the viewport the anchored menus may use, in viewport
+   * coordinates: the reading area, less the header and the toolbar while they
+   * show. The menus live in the reading area's stacking context, so the header
+   * and toolbar paint over anything placed under them (#1829). In immersive
+   * mode they overlay the page; hidden, they are transparent and do not count.
+   * Reading `chromeShown()` keeps the placement current when they toggle.
+   */
+  private readingArea(viewportHeight: number): MenuArea {
+    const root = this.host.nativeElement;
+    const content = root.querySelector('.reader-content')?.getBoundingClientRect();
+    const laidOut = !!content && content.height > 0;
+    let top = laidOut ? content.top : 0;
+    let bottom = laidOut ? content.bottom : viewportHeight;
+    if (this.chromeShown()) {
+      const header = root.querySelector('[data-testid="reader-chrome-top"]')?.getBoundingClientRect();
+      if (header && header.height > 0) top = Math.max(top, header.bottom);
+      const toolbar = root.querySelector('[data-testid="reader-chrome-bottom"]')?.getBoundingClientRect();
+      if (toolbar && toolbar.height > 0) bottom = Math.min(bottom, toolbar.top);
     }
-    return { left, width, top: null, bottom: Math.min(vh - anchor.top + gap, vh - minVisible) };
+    return { top, bottom };
   }
 
   // ------------------------------------------------------------------

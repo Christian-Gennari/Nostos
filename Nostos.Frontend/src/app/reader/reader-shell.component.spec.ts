@@ -2586,6 +2586,25 @@ describe('ReaderShell in-text selection actions (#650, EPUB)', () => {
     expect(parseFloat(menu.style.left) + parseFloat(menu.style.width)).toBeLessThanOrEqual(1280 - 8);
   });
 
+  it('desktop: keeps the menu inside the reading area, clear of the header (#1829)', async () => {
+    const component = await openBook();
+    component.dockedLayout.set(false);
+    const content = fixture.nativeElement.querySelector('.reader-content') as HTMLElement;
+    vi.spyOn(content, 'getBoundingClientRect').mockReturnValue(
+      { top: 56, bottom: 744, left: 0, right: 1280, width: 1280, height: 688, x: 0, y: 56 } as DOMRect,
+    );
+    // A long selection from just under the header to near the foot: the
+    // viewport counts 118px above it, the reading area only 46px, and 38px
+    // below. The menu floats over the text inside the reading area.
+    await capture(component, { top: 118, bottom: 690, left: 300, right: 900 });
+
+    const menu = el('selection-menu')!;
+    expect(menu.style.top).toBe('');
+    expect(parseFloat(menu.style.bottom)).toBe(800 - 736);
+    // Its top edge can reach no higher than 8px under the header.
+    expect(800 - parseFloat(menu.style.bottom) - parseFloat(menu.style.maxHeight)).toBe(56 + 8);
+  });
+
   it('Highlight saves in one action with no note text', async () => {
     const component = await openBook();
     component.dockedLayout.set(false);

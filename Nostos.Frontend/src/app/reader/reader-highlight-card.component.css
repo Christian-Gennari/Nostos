@@ -30,6 +30,10 @@
   border-radius: var(--radius-popover);
   box-shadow: var(--shadow-md);
   animation: selection-menu-in var(--motion-fast) var(--ease-out);
+  /* Capped to the room beside the text (#1829): scroll inside rather than
+     run under the header or the toolbar. */
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 @keyframes selection-menu-in {
