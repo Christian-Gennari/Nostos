@@ -9,8 +9,9 @@ import { PenPickerComponent } from '../ui/pen-swatches/pen-picker.component';
 import { QuoteBlockComponent } from '../ui/quote-block/quote-block.component';
 import { HighlightColour } from './highlight-colours';
 
-/** Viewport placement of a menu anchored at text; null docks the surface. */
-export type MenuPlacement = { left: number; width: number; top: number | null; bottom: number | null };
+import type { MenuPlacement } from './menu-placement';
+
+export type { MenuPlacement } from './menu-placement';
 
 /**
  * One set of selection decisions (#650, consolidated #1722), placed two ways:
